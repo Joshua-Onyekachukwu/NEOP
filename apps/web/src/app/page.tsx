@@ -10,11 +10,30 @@ import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
 import { supabase } from "@/lib/supabase-browser";
 
+interface ElectionConfig {
+  election_type: string;
+  title: string;
+  subtitle: string;
+  date: string;
+  total_polling_units: number;
+}
+
 const HomePage: React.FC = () => {
   const [currentTime, setCurrentTime] = useState("");
   const [isLive, setIsLive] = useState(false);
+  const [config, setConfig] = useState<ElectionConfig>({
+    election_type: "PRESIDENTIAL",
+    title: "Presidential & National Assembly Election",
+    subtitle: "16 January 2027",
+    date: "2027-01-16",
+    total_polling_units: 176846,
+  });
 
   useEffect(() => {
+    // Fetch election config
+    fetchConfig();
+
+    // Update time
     const updateTime = () => {
       setCurrentTime(
         new Date().toLocaleTimeString("en-NG", {
@@ -25,10 +44,10 @@ const HomePage: React.FC = () => {
         })
       );
     };
-
     updateTime();
-    const interval = setInterval(updateTime, 1000);
+    const timeInterval = setInterval(updateTime, 1000);
 
+    // Supabase realtime health check
     const channel = supabase
       .channel("health-check")
       .on("presence", { event: "sync" }, () => setIsLive(true))
@@ -37,10 +56,22 @@ const HomePage: React.FC = () => {
       });
 
     return () => {
-      clearInterval(interval);
+      clearInterval(timeInterval);
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch("/api/public/config");
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(data);
+      }
+    } catch {
+      // Use defaults
+    }
+  };
 
   return (
     <div className="min-h-screen pt-[56px]">
@@ -54,9 +85,9 @@ const HomePage: React.FC = () => {
           <div className="flex flex-col md:flex-row items-end justify-between gap-[24px]">
             <div>
               <div className="stat-label mb-[8px]">
-                Presidential &amp; House of Assembly Election — 16 January 2027
+                {config.title} — {config.subtitle}
               </div>
-              <h1 className="big-number">176,846</h1>
+              <h1 className="big-number">{config.total_polling_units.toLocaleString()}</h1>
               <div className="stat-label mt-[8px]">polling units across Nigeria</div>
             </div>
 
