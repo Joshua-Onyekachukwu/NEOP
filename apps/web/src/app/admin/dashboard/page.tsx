@@ -15,6 +15,16 @@ interface AdminStats {
   totalIncidents: number;
 }
 
+interface SimResult {
+  scenario: string;
+  description: string;
+  total_polling_units: number;
+  results_created: number;
+  party_results_created: number;
+  total_votes: number;
+  ndc_wins: boolean;
+}
+
 const AdminDashboard: React.FC = () => {
   const router = useRouter();
   const [stats, setStats] = useState<AdminStats>({
@@ -24,16 +34,17 @@ const AdminDashboard: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "verification" | "volunteers" | "incidents" | "simulation">("overview");
-  const [simConfig, setSimConfig] = useState<any>(null);
-  const [simRunning, setSimRunning] = useState(false);
-  const [simElectionType, setSimElectionType] = useState<"PRESIDENTIAL" | "HOUSE_OF_REPS" | "GOVERNORSHIP">("PRESIDENTIAL");
-  const [simSpeed, setSimSpeed] = useState(3);
-  const [simTargetStates, setSimTargetStates] = useState("");
-  const [simLoading, setSimLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [incidents, setIncidents] = useState<any[]>([]);
   const [batchVerifying, setBatchVerifying] = useState(false);
+
+  // Simulation state
+  const [simScenario, setSimScenario] = useState<string>("random");
+  const [simRunning, setSimRunning] = useState(false);
+  const [simProgress, setSimProgress] = useState<string>("");
+  const [simResult, setSimResult] = useState<SimResult | null>(null);
+  const [simError, setSimError] = useState<string>("");
 
   useEffect(() => { checkAuth(); fetchStats(); }, []);
 
@@ -41,7 +52,6 @@ const AdminDashboard: React.FC = () => {
     if (activeTab === "verification") fetchResults();
     if (activeTab === "volunteers") fetchVolunteers();
     if (activeTab === "incidents") fetchIncidents();
-    if (activeTab === "simulation") fetchSimStatus();
   }, [activeTab]);
 
   const checkAuth = async () => {
@@ -59,8 +69,8 @@ const AdminDashboard: React.FC = () => {
         supabase.from("agent_assignments").select("*", { count: "exact", head: true }),
         supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
         supabase.from("result_submissions").select("*", { count: "exact", head: true }),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("verification_status", "VERIFIED"),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("verification_status", "UNVERIFIED"),
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "UNVERIFIED"),
         supabase.from("incidents").select("*", { count: "exact", head: true }),
       ]);
       setStats({
@@ -89,12 +99,12 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleVerify = async (id: string) => {
-    if (!window.confirm("Verify this result? This action cannot be undone.")) return;
+    if (!window.confirm("Verify this result?")) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     await fetch("/api/verify/result", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ result_id: id }),
     });
     fetchResults();
@@ -107,7 +117,7 @@ const AdminDashboard: React.FC = () => {
       if (!session) return;
       await fetch("/api/verify/batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ limit: 50 }),
       });
       fetchResults();
@@ -117,62 +127,55 @@ const AdminDashboard: React.FC = () => {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/admin/login"); };
 
-  // --- Simulation ---
-  const fetchSimStatus = async () => {
-    try {
-      const res = await fetch("/api/admin/simulate");
-      const data = await res.json();
-      setSimConfig(data.config);
-      setSimRunning(data.isRunning);
-    } catch { /* silently fail */ }
-  };
+  // ── Simulation ──
+  const runSimulation = async () => {
+    setSimRunning(true);
+    setSimError("");
+    setSimResult(null);
+    setSimProgress("Clearing old data and loading polling units…");
 
-  const startSimulation = async () => {
-    setSimLoading(true);
+    // Simulate progress messages while the API works
+    const progressMessages = [
+      "Clearing old data and loading polling units…",
+      "Loading 188,042 polling units across 37 states…",
+      "Applying regional vote patterns for NDC coalition…",
+      "Generating results for each polling unit…",
+      "Creating party-level vote breakdowns (9 parties)…",
+      "Inserting results into database…",
+      "This may take 5-10 minutes for 100M+ votes…",
+    ];
+
+    let msgIdx = 0;
+    const progressInterval = setInterval(() => {
+      msgIdx = Math.min(msgIdx + 1, progressMessages.length - 1);
+      setSimProgress(progressMessages[msgIdx]);
+    }, 30000);
+
     try {
-      const targetStateCodes = simTargetStates
-        ? simTargetStates.split(",").map((s) => s.trim().toUpperCase())
-        : [];
       const res = await fetch("/api/admin/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          election_type: simElectionType,
-          speed: simSpeed,
-          target_states: targetStateCodes,
-        }),
+        body: JSON.stringify({ scenario: simScenario }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setSimRunning(true);
-        setSimConfig(data.config);
+
+      clearInterval(progressInterval);
+
+      if (!res.ok) {
+        const err = await res.json();
+        setSimError(err.error || "Simulation failed");
+        return;
       }
-    } finally { setSimLoading(false); }
-  };
 
-  const stopSimulation = async () => {
-    setSimLoading(true);
-    try {
-      await fetch("/api/admin/simulate", { method: "DELETE" });
+      const data: SimResult = await res.json();
+      setSimResult(data);
+      fetchStats(); // refresh stats
+    } catch (e: any) {
+      setSimError(e.message || "Network error");
+    } finally {
       setSimRunning(false);
-      fetchSimStatus();
-    } finally { setSimLoading(false); }
+      setSimProgress("");
+    }
   };
-
-  const tickSimulation = async () => {
-    try {
-      await fetch("/api/admin/simulate/tick", { method: "POST" });
-      fetchSimStatus();
-      fetchStats();
-    } catch { /* silently fail */ }
-  };
-
-  // Auto-tick while simulation is running
-  useEffect(() => {
-    if (!simRunning) return;
-    const interval = setInterval(tickSimulation, 5000);
-    return () => clearInterval(interval);
-  }, [simRunning]);
 
   const tabs = ["overview", "verification", "volunteers", "incidents", "simulation"] as const;
 
@@ -258,15 +261,11 @@ const AdminDashboard: React.FC = () => {
                               r.status === "VERIFIED" ? "text-[var(--color-green-bright)]" :
                               r.status === "DISPUTED" ? "text-[var(--color-red)]" :
                               "text-[var(--color-amber)]"
-                            }>
-                              {r.status}
-                            </span>
+                            }>{r.status}</span>
                           </td>
                           <td className="px-2 py-1.5">
                             {r.status === "UNVERIFIED" && (
-                              <button onClick={() => handleVerify(r.id)} className="px-2 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)] font-mono text-[10px] hover:bg-[var(--color-green)] hover:text-white transition-colors">
-                                VERIFY
-                              </button>
+                              <button onClick={() => handleVerify(r.id)} className="px-2 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)] font-mono text-[10px] hover:bg-[var(--color-green)] hover:text-white transition-colors">VERIFY</button>
                             )}
                           </td>
                         </tr>
@@ -308,9 +307,6 @@ const AdminDashboard: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {volunteers.length === 0 && (
-                      <tr><td colSpan={6} className="px-2 py-8 text-center font-mono text-[var(--color-text-dim)]">No volunteers</td></tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -332,137 +328,117 @@ const AdminDashboard: React.FC = () => {
                       <tr key={i.id} className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink-light)]">
                         <td className="px-2 py-1.5 font-mono text-[var(--color-text-muted)]">{i.category}</td>
                         <td className="px-2 py-1.5 font-mono text-[10px]">
-                          <span className={
-                            i.severity === "CRITICAL" ? "text-[var(--color-red)]" :
-                            i.severity === "HIGH" ? "text-[var(--color-amber)]" :
-                            "text-[var(--color-text-dim)]"
-                          }>{i.severity}</span>
+                          <span className={i.severity === "CRITICAL" ? "text-[var(--color-red)]" : i.severity === "HIGH" ? "text-[var(--color-amber)]" : "text-[var(--color-text-dim)]"}>{i.severity}</span>
                         </td>
                         <td className="px-2 py-1.5 text-[var(--color-text-muted)] max-w-[200px] truncate">{i.what_observed}</td>
                         <td className="px-2 py-1.5 font-mono text-[var(--color-text-dim)]">{(i.polling_units as any)?.official_code || "—"}</td>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)]">{i.status}</td>
                       </tr>
                     ))}
-                    {incidents.length === 0 && (
-                      <tr><td colSpan={5} className="px-2 py-8 text-center font-mono text-[var(--color-text-dim)]">No incidents</td></tr>
-                    )}
                   </tbody>
                 </table>
               </div>
             )}
 
-            {/* Simulation */}
+            {/* ── SIMULATION TAB ── */}
             {activeTab === "simulation" && (
               <div className="space-y-4">
-                {/* Status card */}
+                {/* Scenario selector */}
                 <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
-                        Election Simulation
-                      </h3>
-                      {simRunning && (
-                        <span className="font-mono text-[10px] px-2 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)]">
-                          RUNNING
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {simRunning ? (
-                        <button
-                          onClick={stopSimulation}
-                          disabled={simLoading}
-                          className="px-3 py-1.5 bg-[var(--color-red)] text-white font-mono text-[10px] font-bold disabled:opacity-50"
-                        >
-                          {simLoading ? "Stopping…" : "■ STOP"}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={startSimulation}
-                          disabled={simLoading}
-                          className="px-3 py-1.5 bg-[var(--color-green)] text-white font-mono text-[10px] font-bold disabled:opacity-50"
-                        >
-                          {simLoading ? "Starting…" : "▶ START"}
-                        </button>
-                      )}
-                    </div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
+                      2027 Election Simulation
+                    </h3>
+                    {simRunning && (
+                      <span className="font-mono text-[10px] px-2 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)] animate-pulse">
+                        RUNNING
+                      </span>
+                    )}
                   </div>
 
-                  {/* Config */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                    <div>
-                      <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1">
-                        Election Type
-                      </label>
-                      <select
-                        value={simElectionType}
-                        onChange={(e) => setSimElectionType(e.target.value as any)}
+                  {/* Scenario cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                    {[
+                      { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins by 20+ points — massive coalition victory across all regions", color: "var(--color-green-bright)" },
+                      { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region except SW — Peter Obi + Kwankwaso coalition dominance", color: "var(--color-green)" },
+                      { key: "close", name: "NDC NARROW WIN", desc: "A tight race — NDC edges APC by 2-5 points in a nail-biter", color: "var(--color-amber)" },
+                    ].map((s) => (
+                      <button
+                        key={s.key}
+                        onClick={() => setSimScenario(s.key)}
                         disabled={simRunning}
-                        className="w-full px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] text-[var(--color-text)] font-mono text-xs disabled:opacity-50"
+                        className={`text-left p-3 border transition-all disabled:opacity-50 ${
+                          simScenario === s.key
+                            ? "border-[var(--color-green)] bg-[var(--color-ink)]"
+                            : "border-[var(--color-gray-200)] hover:border-[var(--color-gray-300)]"
+                        }`}
                       >
-                        <option value="PRESIDENTIAL">Presidential & National Assembly</option>
-                        <option value="HOUSE_OF_REPS">House of Representatives</option>
-                        <option value="GOVERNORSHIP">Governorship & State Assembly</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1">
-                        Speed (results/tick)
-                      </label>
-                      <select
-                        value={simSpeed}
-                        onChange={(e) => setSimSpeed(Number(e.target.value))}
-                        disabled={simRunning}
-                        className="w-full px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] text-[var(--color-text)] font-mono text-xs disabled:opacity-50"
-                      >
-                        <option value={1}>1 — Slow</option>
-                        <option value={3}>3 — Normal</option>
-                        <option value={5}>5 — Fast</option>
-                        <option value={10}>10 — Very Fast</option>
-                        <option value={20}>20 — Burst</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1">
-                        Target States (comma-separated codes)
-                      </label>
-                      <input
-                        type="text"
-                        value={simTargetStates}
-                        onChange={(e) => setSimTargetStates(e.target.value)}
-                        disabled={simRunning}
-                        placeholder="e.g. KN, ZF, SO or leave empty for all"
-                        className="w-full px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] text-[var(--color-text)] font-mono text-xs disabled:opacity-50"
-                      />
-                    </div>
+                        <div className="font-mono text-xs font-bold" style={{ color: s.color }}>
+                          {s.name}
+                        </div>
+                        <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
+                          {s.desc}
+                        </div>
+                      </button>
+                    ))}
                   </div>
 
-                  {/* Stats */}
-                  {simConfig && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-3 border-t border-[var(--color-gray-100)]">
-                      <div>
-                        <div className="font-mono text-[10px] text-[var(--color-text-dim)]">TYPE</div>
-                        <div className="font-mono text-xs text-[var(--color-text)]">
-                          {simConfig.election_type === "PRESIDENTIAL" ? "Presidential" :
-                           simConfig.election_type === "HOUSE_OF_REPS" ? "House of Reps" : "Governorship"}
-                        </div>
+                  {/* Run button */}
+                  <button
+                    onClick={runSimulation}
+                    disabled={simRunning}
+                    className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold disabled:opacity-50 hover:bg-[var(--color-green-dim)] transition-colors"
+                  >
+                    {simRunning ? "⏳ SIMULATION RUNNING — DO NOT CLOSE THIS PAGE" : `▶ RUN ${simScenario.toUpperCase()} SIMULATION`}
+                  </button>
+
+                  {/* Progress */}
+                  {simRunning && simProgress && (
+                    <div className="mt-3 p-3 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-[var(--color-green)] animate-pulse" />
+                        <span className="font-mono text-xs text-[var(--color-text-muted)]">{simProgress}</span>
                       </div>
-                      <div>
-                        <div className="font-mono text-[10px] text-[var(--color-text-dim)]">RESULTS</div>
-                        <div className="font-mono text-xs font-bold text-[var(--color-text)]">
-                          {(simConfig.total_results_submitted || 0).toLocaleString()}
-                        </div>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {simError && (
+                    <div className="mt-3 p-3 bg-[var(--color-red)]/10 border border-[var(--color-red)]/30">
+                      <span className="font-mono text-xs text-[var(--color-red)]">Error: {simError}</span>
+                    </div>
+                  )}
+
+                  {/* Result */}
+                  {simResult && (
+                    <div className="mt-4 p-4 border border-[var(--color-green)] bg-[var(--color-green)]/5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xl">✅</span>
+                        <h4 className="font-display font-bold text-sm text-[var(--color-green-bright)]">SIMULATION COMPLETE</h4>
                       </div>
-                      <div>
-                        <div className="font-mono text-[10px] text-[var(--color-text-dim)]">INCIDENTS</div>
-                        <div className="font-mono text-xs font-bold text-[var(--color-amber)]">
-                          {(simConfig.total_incidents_submitted || 0).toLocaleString()}
-                        </div>
+                      <div className="font-mono text-xs text-[var(--color-text-muted)] mb-3">
+                        Scenario: <strong className="text-[var(--color-text)]">{simResult.scenario}</strong> — {simResult.description}
                       </div>
-                      <div>
-                        <div className="font-mono text-[10px] text-[var(--color-text-dim)]">ASSIGNMENTS</div>
-                        <div className="font-mono text-xs font-bold text-[var(--color-text)]">
-                          {(simConfig.total_assignments_created || 0).toLocaleString()}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">POLLING UNITS</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-text)]">{simResult.total_polling_units.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">RESULTS</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-text)]">{simResult.results_created.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">TOTAL VOTES</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-green-bright)]">{(simResult.total_votes / 1_000_000).toFixed(1)}M</div>
+                        </div>
+                        <div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">PARTY RESULTS</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-text)]">{simResult.party_results_created.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">NDC WINS</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-green-bright)]">YES ✓</div>
                         </div>
                       </div>
                     </div>
@@ -471,16 +447,15 @@ const AdminDashboard: React.FC = () => {
 
                 {/* How it works */}
                 <div className="border border-[var(--color-gray-100)] p-4">
-                  <h4 className="font-display font-semibold text-xs text-[var(--color-text-muted)] mb-2">
-                    How Simulation Works
-                  </h4>
+                  <h4 className="font-display font-semibold text-xs text-[var(--color-text-muted)] mb-2">How It Works</h4>
                   <ul className="space-y-1 font-mono text-[10px] text-[var(--color-text-dim)]">
-                    <li>• Each tick (5 seconds), the engine picks random polling units</li>
-                    <li>• Agents are auto-assigned to polling units that need observers</li>
-                    <li>• Results are generated with realistic vote distributions per party</li>
-                    <li>• ~5% chance of an incident per result submitted</li>
-                    <li>• The live dashboard updates in real time as data flows in</li>
-                    <li>• Stop the simulation anytime — data stays in the database</li>
+                    <li>• Generates results for ALL 188,042 polling units across 36 states + FCT</li>
+                    <li>• 9 parties compete: APC, NDC, PDP, LP, NNPP, APGA, SDP, YPP, ADC</li>
+                    <li>• NDC (Peter Obi + Kwankwaso) always wins — margin varies by scenario</li>
+                    <li>• Regional vote patterns reflect real Nigerian political geography</li>
+                    <li>• SE/SS strongly favor NDC/LP; SW strongly favors APC; North is mixed</li>
+                    <li>• Each simulation runs in 5-10 minutes and generates 100M+ votes</li>
+                    <li>• The live dashboard updates in real time once complete</li>
                   </ul>
                 </div>
               </div>
