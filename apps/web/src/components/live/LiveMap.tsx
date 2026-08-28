@@ -27,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   NO_REPORT: "#4B5563",
 };
 
-const LiveMap: React.FC = () => {
+const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const maplibreglRef = useRef<any>(null);
@@ -53,10 +53,10 @@ const LiveMap: React.FC = () => {
   useEffect(() => {
     if (mapLoaded) {
       loadPollingUnits();
-      const interval = setInterval(pollStatusUpdates, 15000);
+      const interval = setInterval(pollStatusUpdates, 5000);
       return () => clearInterval(interval);
     }
-  }, [mapLoaded]);
+  }, [mapLoaded, refreshKey]);
 
   const initMap = async () => {
     const maplibregl = await import("maplibre-gl");

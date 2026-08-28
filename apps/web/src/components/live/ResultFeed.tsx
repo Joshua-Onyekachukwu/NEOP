@@ -24,14 +24,17 @@ interface Result {
   confidence: "HIGH" | "MEDIUM" | "LOW" | "UNDER_REVIEW";
 }
 
-const ResultFeed: React.FC = () => {
+const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [results, setResults] = useState<Result[]>([]);
   const [lastUpdate, setLastUpdate] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchResults();
-    const interval = setInterval(fetchResults, 15000);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchResults, 10000);
     return () => clearInterval(interval);
   }, []);
 

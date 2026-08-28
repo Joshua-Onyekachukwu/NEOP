@@ -12,7 +12,7 @@ interface Stats {
   activeObservers: number;
 }
 
-const StatsBar: React.FC = () => {
+const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stats>({
     inecTotal: 176846,
@@ -24,7 +24,10 @@ const StatsBar: React.FC = () => {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 30000); // Refresh every 30s
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchStats, 10000);
     return () => clearInterval(interval);
   }, []);
 
