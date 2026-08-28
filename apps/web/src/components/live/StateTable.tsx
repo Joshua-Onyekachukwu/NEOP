@@ -77,17 +77,17 @@ const StateTable: React.FC = () => {
             <th className="px-[16px] md:px-[24px] py-[8px] text-left font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
               State
             </th>
-            <th className="px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+            <th className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
               PUs
             </th>
-            <th className="px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+            <th className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
               Covered
             </th>
-            <th className="px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+            <th className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
               Verified
             </th>
-            <th className="px-[16px] md:px-[24px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
-              Coverage
+            <th className="px-[8px] md:px-[16px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              Cov%
             </th>
           </tr>
         </thead>
@@ -125,18 +125,18 @@ const StateTable: React.FC = () => {
                     </div>
                   </div>
                 </td>
-                <td className="px-[12px] py-[8px] text-right font-mono text-sm text-[var(--color-text-muted)]">
+                <td className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-xs md:text-sm text-[var(--color-text-muted)]">
                   {state.total_polling_units.toLocaleString()}
                 </td>
-                <td className="px-[12px] py-[8px] text-right font-mono text-sm text-[var(--color-text-muted)]">
+                <td className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-xs md:text-sm text-[var(--color-text-muted)]">
                   {state.covered_polling_units.toLocaleString()}
                 </td>
-                <td className="px-[12px] py-[8px] text-right font-mono text-sm text-[var(--color-text-muted)]">
+                <td className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-xs md:text-sm text-[var(--color-text-muted)]">
                   {state.verified_polling_units.toLocaleString()}
                 </td>
                 <td className="px-[16px] md:px-[24px] py-[8px] text-right">
-                  <div className="flex items-center justify-end gap-[8px]">
-                    <div className="w-[60px] h-[3px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+                  <div className="flex items-center justify-end gap-[4px] md:gap-[8px]">
+                    <div className="hidden md:block w-[50px] h-[3px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-500"
                         style={{
@@ -150,8 +150,8 @@ const StateTable: React.FC = () => {
                         }}
                       />
                     </div>
-                    <span className="font-mono text-xs text-[var(--color-text-muted)] w-[40px] text-right">
-                      {state.coverage_percent.toFixed(1)}%
+                    <span className="font-mono text-xs text-[var(--color-text-muted)] min-w-[36px] text-right">
+                      {state.coverage_percent.toFixed(0)}%
                     </span>
                   </div>
                 </td>
