@@ -343,6 +343,38 @@ const AdminDashboard: React.FC = () => {
             {/* ── SIMULATION TAB ── */}
             {activeTab === "simulation" && (
               <div className="space-y-4">
+                {/* Election Type Selector */}
+                <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
+                      Active Election
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { key: "PRESIDENTIAL", label: "Presidential & National Assembly", date: "16 January 2027" },
+                      { key: "GOVERNORSHIP", label: "Governorship & State Assembly", date: "6 February 2027" },
+                    ].map((e) => (
+                      <button
+                        key={e.key}
+                        onClick={async () => {
+                          await fetch("/api/admin/config", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ election_type: e.key }),
+                          });
+                          alert(`Switched to: ${e.label}`);
+                        }}
+                        disabled={simRunning}
+                        className="text-left p-3 border border-[var(--color-gray-200)] hover:border-[var(--color-green)] transition-colors disabled:opacity-50"
+                      >
+                        <div className="font-mono text-xs font-bold text-[var(--color-text)]">{e.label}</div>
+                        <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5">{e.date}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Scenario selector */}
                 <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
                   <div className="flex items-center justify-between mb-4">
