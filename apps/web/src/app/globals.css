@@ -228,6 +228,35 @@ button {
   100% { transform: translateX(100%); }
 }
 
+/* ── Mobile improvements ── */
+@media (max-width: 640px) {
+  .big-number {
+    font-size: 48px;
+    letter-spacing: -0.02em;
+  }
+  h1, .h1 {
+    font-size: 32px;
+  }
+  h2, .h2 {
+    font-size: 22px;
+  }
+  /* Larger touch targets on mobile */
+  a, button {
+    min-height: 44px;
+  }
+  /* Prevent horizontal overflow on tables */
+  table {
+    font-size: 12px;
+  }
+}
+
+/* ── Tablet adjustments ── */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .big-number {
+    font-size: 64px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton-shimmer {
     animation: none;
