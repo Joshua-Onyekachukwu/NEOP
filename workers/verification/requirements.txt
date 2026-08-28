@@ -1,0 +1,21 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+httpx
+
+# Image processing
+opencv-python-headless
+Pillow
+numpy
+
+# Configuration
+python-dotenv
+pydantic-settings
+
+# Logging
+structlog
+
+# Testing
+pytest
+pytest-asyncio

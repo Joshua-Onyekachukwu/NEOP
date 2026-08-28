@@ -1,0 +1,235 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@custom-variant dark (&:where([class=dark], [class=dark] *));
+
+@theme {
+  /* Typography */
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  /* Type scale */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --text-3xl: 40px;
+  --text-4xl: 56px;
+  --text-5xl: 72px;
+
+  /* Newsroom palette */
+  --color-ink: #0C0F14;
+  --color-ink-light: #151920;
+  --color-ink-lighter: #1C2129;
+  --color-paper: #F5F3EE;
+  --color-paper-dark: #EAE7E0;
+
+  --color-text: #E8E6E1;
+  --color-text-muted: #8A8680;
+  --color-text-dim: #5A5752;
+
+  --color-green: #1B6B3A;
+  --color-green-bright: #27AE60;
+  --color-green-dim: #1B6B3A33;
+  --color-green-bg: #1B6B3A1A;
+
+  --color-amber: #D4A017;
+  --color-amber-dim: #D4A01733;
+  --color-amber-bg: #D4A0171A;
+
+  --color-red: #C0392B;
+  --color-red-bright: #E74C3C;
+  --color-red-dim: #C0392B33;
+
+  --color-blue: #2980B9;
+  --color-blue-dim: #2980B933;
+
+  --color-gray-100: #2A2E36;
+  --color-gray-200: #353A44;
+  --color-gray-300: #4A5060;
+  --color-gray-400: #6B7280;
+  --color-gray-500: #8A8680;
+  --color-gray-600: #A09D98;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-glow: 0 0 20px rgba(27,107,58,0.15);
+}
+
+/** Body — newsroom dark as default */
+body {
+  @apply font-body text-sm md:text-base leading-normal;
+  background: var(--color-ink);
+  color: var(--color-text);
+  touch-action: manipulation;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/** Paragraph */
+p {
+  @apply mb-[15px] leading-[1.7];
+
+  &:last-child {
+    @apply mb-0;
+  }
+}
+
+/** Headings — Space Grotesk display */
+h1, .h1 {
+  @apply font-display font-bold;
+  font-size: var(--text-4xl);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+h2, .h2 {
+  @apply font-display font-bold;
+  font-size: var(--text-2xl);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+h3, .h3 {
+  @apply font-display font-bold;
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+
+h4, .h4 {
+  @apply font-display font-semibold;
+  font-size: var(--text-lg);
+}
+
+h5, .h5 {
+  @apply font-display font-semibold;
+  font-size: var(--text-md);
+}
+
+h6, .h6 {
+  @apply font-display font-medium;
+  font-size: var(--text-base);
+}
+
+/** Monospace data */
+.font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/** Button base */
+button {
+  @apply cursor-pointer;
+}
+
+/** Big number — the signature element */
+.big-number {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-5xl);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  .big-number {
+    font-size: 96px;
+  }
+}
+
+/** Stat label — small caps style */
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/** Live indicator */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-green-bright);
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/** Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/** Scrollbar styling for dark mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-ink);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-gray-300);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gray-400);
+}
+
+/** Focus visible — accessible focus rings */
+*:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 2px;
+}
+
+/** Selection */
+::selection {
+  background: var(--color-green-dim);
+  color: var(--color-text);
+}
+
+/** Skeleton shimmer */
+.skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 60%,
+    transparent 100%
+  );
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+  }
+}
