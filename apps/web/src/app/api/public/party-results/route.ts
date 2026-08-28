@@ -32,17 +32,28 @@ export async function GET(_request: NextRequest) {
     );
 
     if (!rpcError && rpcData && rpcData.length > 0) {
-      const grandTotal = rpcData.reduce(
+      // Deduplicate by abbreviation — keep highest vote count per party
+      const deduped: Record<string, any> = {};
+      for (const p of rpcData) {
+        const abbr = p.party_abbreviation;
+        if (!deduped[abbr] || Number(p.total_votes) > Number(deduped[abbr].total_votes)) {
+          deduped[abbr] = p;
+        }
+      }
+      const parties = Object.values(deduped).sort(
+        (a, b) => Number(b.total_votes) - Number(a.total_votes)
+      );
+      const grandTotal = parties.reduce(
         (s: number, r: any) => s + Number(r.total_votes),
         0
       );
       const result = {
-        parties: rpcData.map((p: any) => ({
+        parties: parties.map((p: any) => ({
           name: p.party_name,
           abbreviation: p.party_abbreviation,
           color: p.party_color,
           total_votes: Number(p.total_votes),
-          percentage: Number(p.percentage),
+          percentage: grandTotal > 0 ? Number(((Number(p.total_votes) / grandTotal) * 100).toFixed(1)) : 0,
         })),
         grand_total: grandTotal,
         last_updated: new Date().toISOString(),
