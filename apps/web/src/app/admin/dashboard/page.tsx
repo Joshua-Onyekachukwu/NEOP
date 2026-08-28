@@ -18,10 +18,13 @@ interface AdminStats {
 interface SimResult {
   scenario: string;
   description: string;
+  duration_minutes: number;
+  target_voters: number;
   total_polling_units: number;
   results_created: number;
   party_results_created: number;
   total_votes: number;
+  final_status_distribution: Record<string, number>;
   ndc_wins: boolean;
 }
 
@@ -41,6 +44,8 @@ const AdminDashboard: React.FC = () => {
 
   // Simulation state
   const [simScenario, setSimScenario] = useState<string>("random");
+  const [simDuration, setSimDuration] = useState<number>(5);
+  const [simVoters, setSimVoters] = useState<number>(100);
   const [simRunning, setSimRunning] = useState(false);
   const [simProgress, setSimProgress] = useState<string>("");
   const [simResult, setSimResult] = useState<SimResult | null>(null);
@@ -155,7 +160,11 @@ const AdminDashboard: React.FC = () => {
       const res = await fetch("/api/admin/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario: simScenario }),
+        body: JSON.stringify({
+          scenario: simScenario,
+          duration_minutes: simDuration,
+          total_voters: simVoters * 1_000_000,
+        }),
       });
 
       clearInterval(progressInterval);
@@ -388,6 +397,55 @@ const AdminDashboard: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Duration & Voter Count Controls */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div className="p-3 border border-[var(--color-gray-200)]">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
+                        Simulation Duration
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={1}
+                          max={60}
+                          value={simDuration}
+                          onChange={(e) => setSimDuration(Number(e.target.value))}
+                          disabled={simRunning}
+                          className="flex-1 accent-[var(--color-green)]"
+                        />
+                        <span className="font-mono text-sm text-[var(--color-text)] min-w-[40px] text-right">
+                          {simDuration} min
+                        </span>
+                      </div>
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
+                        How long the simulation runs (status transitions happen over this period)
+                      </div>
+                    </div>
+                    <div className="p-3 border border-[var(--color-gray-200)]">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
+                        Target Voters (millions)
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={10}
+                          max={200}
+                          step={5}
+                          value={simVoters}
+                          onChange={(e) => setSimVoters(Number(e.target.value))}
+                          disabled={simRunning}
+                          className="flex-1 accent-[var(--color-green)]"
+                        />
+                        <span className="font-mono text-sm text-[var(--color-text)] min-w-[50px] text-right">
+                          {simVoters}M
+                        </span>
+                      </div>
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
+                        ~{Math.round(simVoters * 1_000_000 / 176846).toLocaleString()} votes per polling unit on average
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Scenario cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                     {[
@@ -492,14 +550,45 @@ const AdminDashboard: React.FC = () => {
                           <div className="font-mono text-lg font-bold text-[var(--color-green-bright)]">{(simResult.total_votes / 1_000_000).toFixed(1)}M</div>
                         </div>
                         <div>
-                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">PARTY RESULTS</div>
-                          <div className="font-mono text-lg font-bold text-[var(--color-text)]">{simResult.party_results_created.toLocaleString()}</div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">DURATION</div>
+                          <div className="font-mono text-lg font-bold text-[var(--color-text)]">{simResult.duration_minutes || simDuration} min</div>
                         </div>
                         <div>
                           <div className="font-mono text-[10px] text-[var(--color-text-dim)]">NDC WINS</div>
                           <div className="font-mono text-lg font-bold text-[var(--color-green-bright)]">YES ✓</div>
                         </div>
                       </div>
+
+                      {/* Status distribution */}
+                      {simResult.final_status_distribution && (
+                        <div className="mt-3 pt-3 border-t border-[var(--color-gray-200)]">
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)] mb-2">POLLING UNIT STATUS DISTRIBUTION</div>
+                          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                            {Object.entries(simResult.final_status_distribution)
+                              .sort((a, b) => b[1] - a[1])
+                              .map(([status, count]) => (
+                                <div key={status} className="flex items-center gap-1.5">
+                                  <div
+                                    className="w-2 h-2 rounded-full flex-shrink-0"
+                                    style={{
+                                      backgroundColor: status === "VERIFIED" ? "#10B981"
+                                        : status === "RESULT_SUBMITTED" ? "#60A5FA"
+                                        : status === "RESULT_ANNOUNCED" ? "#10B981"
+                                        : status === "DISPUTED" ? "#F97316"
+                                        : status === "DISRUPTED" ? "#EF4444"
+                                        : status === "VOTING" ? "#3B82F6"
+                                        : status === "COUNTING" ? "#F59E0B"
+                                        : "#6B7280",
+                                    }}
+                                  />
+                                  <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
+                                    {status.replace(/_/g, " ").toLowerCase()}: {(count as number).toLocaleString()}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -508,13 +597,14 @@ const AdminDashboard: React.FC = () => {
                 <div className="border border-[var(--color-gray-100)] p-4">
                   <h4 className="font-display font-semibold text-xs text-[var(--color-text-muted)] mb-2">How It Works</h4>
                   <ul className="space-y-1 font-mono text-[10px] text-[var(--color-text-dim)]">
-                    <li>• Generates results for ALL 188,042 polling units across 36 states + FCT</li>
+                    <li>• Generates results for ALL polling units across 36 states + FCT</li>
                     <li>• 9 parties compete: APC, NDC, PDP, LP, NNPP, APGA, SDP, YPP, ADC</li>
                     <li>• NDC (Peter Obi + Kwankwaso) always wins — margin varies by scenario</li>
+                    <li>• Each PU goes through random statuses: voting → counting → result announced → submitted → verified (or disputed/disrupted)</li>
+                    <li>• ~15% of PUs experience disputes or disruptions for realism</li>
                     <li>• Regional vote patterns reflect real Nigerian political geography</li>
-                    <li>• SE/SS strongly favor NDC/LP; SW strongly favors APC; North is mixed</li>
-                    <li>• Each simulation runs in 5-10 minutes and generates 100M+ votes</li>
-                    <li>• The live dashboard updates in real time once complete</li>
+                    <li>• Configurable duration (1-60 min) and voter count (10-200M)</li>
+                    <li>• The live dashboard shows real-time status transitions as the simulation runs</li>
                   </ul>
                 </div>
               </div>
