@@ -14,13 +14,16 @@ interface StateData {
   verification_percent: number;
 }
 
-const StateTable: React.FC = () => {
+const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [states, setStates] = useState<StateData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStateData();
-    const interval = setInterval(fetchStateData, 30000);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchStateData, 10000);
     return () => clearInterval(interval);
   }, []);
 

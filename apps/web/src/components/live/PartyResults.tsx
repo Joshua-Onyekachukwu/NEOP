@@ -25,13 +25,16 @@ const RANK_STYLES: Record<number, { badge: string; bar: string }> = {
   2: { badge: "bg-[var(--color-ink-lighter)] text-[var(--color-text-muted)]", bar: "h-[3px]" },
 };
 
-const PartyResults: React.FC = () => {
+const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [data, setData] = useState<PartyResultsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchPartyResults();
-    const interval = setInterval(fetchPartyResults, 30000);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchPartyResults, 10000);
     return () => clearInterval(interval);
   }, []);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import StatsBar from "@/components/live/StatsBar";
 import ResultFeed from "@/components/live/ResultFeed";
 import StateTable from "@/components/live/StateTable";
@@ -56,10 +56,21 @@ const HomePage: React.FC = () => {
     total_results: 0,
   });
 
+  // Refresh key — bumped whenever data changes, children refetch when this changes
+  const [refreshKey, setRefreshKey] = useState(0);
+  const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const isSimulation = config.display_status === "SIMULATION";
+
+  // Adaptive polling: fast during simulation, slow when idle
   useEffect(() => {
     fetchConfig();
-    const interval = setInterval(fetchConfig, 30000); // refresh every 30s
+    const interval = setInterval(fetchConfig, isSimulation ? 5000 : 30000);
+    return () => clearInterval(interval);
+  }, [isSimulation]);
 
+  // Clock
+  useEffect(() => {
     const updateTime = () => {
       setCurrentTime(
         new Date().toLocaleTimeString("en-NG", {
@@ -71,21 +82,37 @@ const HomePage: React.FC = () => {
       );
     };
     updateTime();
-    const timeInterval = setInterval(updateTime, 1000);
+    const t = setInterval(updateTime, 1000);
+    return () => clearInterval(t);
+  }, []);
 
+  // Supabase Realtime — subscribe to table changes for instant updates
+  useEffect(() => {
     const channel = supabase
-      .channel("health-check")
-      .on("presence", { event: "sync" }, () => setIsLive(true))
-      .subscribe(async (status) => {
+      .channel("live-results")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "result_submissions" },
+        () => bumpRefresh()
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "polling_units" },
+        () => bumpRefresh()
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "party_results" },
+        () => bumpRefresh()
+      )
+      .subscribe((status) => {
         if (status === "SUBSCRIBED") setIsLive(true);
       });
 
     return () => {
-      clearInterval(interval);
-      clearInterval(timeInterval);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [bumpRefresh]);
 
   const fetchConfig = async () => {
     try {
@@ -107,7 +134,7 @@ const HomePage: React.FC = () => {
       {/* Disclaimer */}
       <Disclaimer />
 
-      {/* Hero — the thesis: one big number */}
+      {/* Hero */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[48px]">
           <div className="flex flex-col md:flex-row items-end justify-between gap-[24px]">
@@ -120,9 +147,8 @@ const HomePage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-end gap-[8px] pb-[8px]">
-              {/* Status badge */}
               <div className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg}`}>
-                <div className={`w-2 h-2 rounded-full ${statusStyle.dot} ${config.display_status === "SIMULATION" ? "animate-pulse" : ""}`} />
+                <div className={`w-2 h-2 rounded-full ${statusStyle.dot} ${isSimulation ? "animate-pulse" : ""}`} />
                 <span className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}>
                   {statusStyle.label}
                 </span>
@@ -152,7 +178,7 @@ const HomePage: React.FC = () => {
       {/* Stats row */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
-          <StatsBar />
+          <StatsBar refreshKey={refreshKey} />
         </div>
       </section>
 
@@ -166,10 +192,10 @@ const HomePage: React.FC = () => {
                   NATIONAL MAP
                 </h3>
               </div>
-              <LiveMap />
+              <LiveMap refreshKey={refreshKey} />
             </div>
             <div>
-              <ResultFeed />
+              <ResultFeed refreshKey={refreshKey} />
             </div>
           </div>
         </div>
@@ -180,10 +206,10 @@ const HomePage: React.FC = () => {
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2">
             <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
-              <StateTable />
+              <StateTable refreshKey={refreshKey} />
             </div>
             <div className="max-h-[600px] overflow-y-auto">
-              <PartyResults />
+              <PartyResults refreshKey={refreshKey} />
             </div>
           </div>
         </div>
