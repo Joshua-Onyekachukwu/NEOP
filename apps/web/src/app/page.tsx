@@ -160,7 +160,7 @@ const HomePage: React.FC = () => {
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2">
-            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)]">
+            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
               <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
                 <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
                   NATIONAL MAP
@@ -179,7 +179,7 @@ const HomePage: React.FC = () => {
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2">
-            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-y-auto">
+            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
               <StateTable />
             </div>
             <div className="max-h-[600px] overflow-y-auto">

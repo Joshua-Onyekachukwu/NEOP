@@ -1,8 +1,7 @@
 /**
  * GET /api/public/polling-units
  * Returns GeoJSON of all polling units.
- * Tries SQL RPC function first (single query, no 1000-row limit).
- * Falls back to paginated Supabase fetch.
+ * Uses RPC function that returns rows (bypasses 1000-row REST limit).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,30 +15,47 @@ export const revalidate = 0;
 
 let cachedGeoJSON: any = null;
 let cacheTime = 0;
-const CACHE_TTL = 60_000;
+const CACHE_TTL = 300_000; // 5 minutes
 
 export async function GET(_request: NextRequest) {
   try {
     const now = Date.now();
     if (cachedGeoJSON && now - cacheTime < CACHE_TTL) {
       return NextResponse.json(cachedGeoJSON, {
-        headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
+        headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
       });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ── Try RPC function (single query, no 1000-row limit) ──
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
-      "get_polling_units_geojson"
+    // ── Try RPC function that returns rows (fast, no 1000-row limit) ──
+    const { data: rows, error: rpcError } = await supabase.rpc(
+      "get_polling_unit_rows"
     );
 
-    if (!rpcError && rpcData && rpcData.features) {
-      console.log(`[polling-units] RPC returned ${rpcData.features.length} features`);
-      cachedGeoJSON = rpcData;
+    if (!rpcError && rows && Array.isArray(rows) && rows.length > 0) {
+      console.log(`[polling-units] RPC returned ${rows.length} rows`);
+      const geojson = {
+        type: "FeatureCollection",
+        features: rows.map((pu: any) => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [pu.longitude, pu.latitude],
+          },
+          properties: {
+            id: pu.id,
+            official_code: pu.official_code,
+            name: pu.name,
+            status: pu.status,
+            state_name: pu.state_name || "Unknown",
+          },
+        })),
+      };
+      cachedGeoJSON = geojson;
       cacheTime = now;
-      return NextResponse.json(rpcData, {
-        headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
+      return NextResponse.json(geojson, {
+        headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
       });
     }
 
@@ -87,7 +103,7 @@ export async function GET(_request: NextRequest) {
     cachedGeoJSON = geojson;
     cacheTime = now;
     return NextResponse.json(geojson, {
-      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
     });
   } catch (error) {
     console.error("Error in polling-units API:", error);
