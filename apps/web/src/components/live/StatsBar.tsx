@@ -49,13 +49,15 @@ const StatsBar: React.FC = () => {
 
   if (loading) return <StatsBarSkeleton />;
 
-  const coveragePercent = stats.inecTotal > 0
-    ? ((stats.coveredPollingUnits / stats.inecTotal) * 100).toFixed(1)
-    : "0.0";
+  const rawCoverage = stats.inecTotal > 0
+    ? (stats.coveredPollingUnits / stats.inecTotal) * 100
+    : 0;
+  const coveragePercent = Math.min(rawCoverage, 100).toFixed(1);
 
-  const verificationPercent = stats.inecTotal > 0
-    ? ((stats.verifiedPollingUnits / stats.inecTotal) * 100).toFixed(1)
-    : "0.0";
+  const rawVerification = stats.inecTotal > 0
+    ? (stats.verifiedPollingUnits / stats.inecTotal) * 100
+    : 0;
+  const verificationPercent = Math.min(rawVerification, 100).toFixed(1);
 
   return (      <div className="flex flex-wrap items-stretch divide-x divide-[var(--color-gray-100)]" role="region" aria-label="Key statistics">
       {/* Coverage */}
