@@ -415,14 +415,38 @@ const AdminDashboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Run button */}
-                  <button
-                    onClick={runSimulation}
-                    disabled={simRunning}
-                    className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold disabled:opacity-50 hover:bg-[var(--color-green-dim)] transition-colors"
-                  >
-                    {simRunning ? "⏳ SIMULATION RUNNING — DO NOT CLOSE THIS PAGE" : `▶ RUN ${simScenario.toUpperCase()} SIMULATION`}
-                  </button>
+                  {/* Run / View Live buttons */}
+                  {simRunning ? (
+                    <button
+                      disabled
+                      className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold opacity-70 cursor-not-allowed"
+                    >
+                      ⏳ SIMULATION RUNNING — DO NOT CLOSE THIS PAGE
+                    </button>
+                  ) : simResult ? (
+                    <div className="flex gap-3">
+                      <a
+                        href="/"
+                        target="_blank"
+                        className="flex-1 py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold text-center hover:bg-[var(--color-green-dim)] transition-colors"
+                      >
+                        📊 VIEW LIVE DASHBOARD →
+                      </a>
+                      <button
+                        onClick={runSimulation}
+                        className="flex-1 py-3 border border-[var(--color-gray-200)] text-[var(--color-text-muted)] font-mono text-sm font-bold hover:border-[var(--color-green)] hover:text-[var(--color-green)] transition-colors"
+                      >
+                        ▶ RUN AGAIN
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={runSimulation}
+                      className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold hover:bg-[var(--color-green-dim)] transition-colors"
+                    >
+                      ▶ RUN {simScenario.toUpperCase()} SIMULATION
+                    </button>
+                  )}
 
                   {/* Progress */}
                   {simRunning && simProgress && (
@@ -450,6 +474,9 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       <div className="font-mono text-xs text-[var(--color-text-muted)] mb-3">
                         Scenario: <strong className="text-[var(--color-text)]">{simResult.scenario}</strong> — {simResult.description}
+                      </div>
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] mb-3">
+                        Data is now fixed in the database. The live dashboard shows these results permanently until you run a new simulation.
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div>
