@@ -16,7 +16,31 @@ interface ElectionConfig {
   subtitle: string;
   date: string;
   total_polling_units: number;
+  display_status: string;
+  status_label: string;
+  total_results: number;
 }
+
+const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string; label: string }> = {
+  LIVE: {
+    bg: "bg-[var(--color-green)]/10 border-[var(--color-green)]/30",
+    text: "text-[var(--color-green-bright)]",
+    dot: "bg-[var(--color-green-bright)]",
+    label: "LIVE ELECTION DATA",
+  },
+  SIMULATION: {
+    bg: "bg-[var(--color-amber)]/10 border-[var(--color-amber)]/30",
+    text: "text-[var(--color-amber)]",
+    dot: "bg-[var(--color-amber)]",
+    label: "SIMULATION RUNNING",
+  },
+  WAITING: {
+    bg: "bg-[var(--color-gray-400)]/10 border-[var(--color-gray-400)]/30",
+    text: "text-[var(--color-text-dim)]",
+    dot: "bg-[var(--color-gray-400)]",
+    label: "AWAITING DATA",
+  },
+};
 
 const HomePage: React.FC = () => {
   const [currentTime, setCurrentTime] = useState("");
@@ -27,13 +51,15 @@ const HomePage: React.FC = () => {
     subtitle: "16 January 2027",
     date: "2027-01-16",
     total_polling_units: 176846,
+    display_status: "WAITING",
+    status_label: "Awaiting data",
+    total_results: 0,
   });
 
   useEffect(() => {
-    // Fetch election config
     fetchConfig();
+    const interval = setInterval(fetchConfig, 30000); // refresh every 30s
 
-    // Update time
     const updateTime = () => {
       setCurrentTime(
         new Date().toLocaleTimeString("en-NG", {
@@ -47,7 +73,6 @@ const HomePage: React.FC = () => {
     updateTime();
     const timeInterval = setInterval(updateTime, 1000);
 
-    // Supabase realtime health check
     const channel = supabase
       .channel("health-check")
       .on("presence", { event: "sync" }, () => setIsLive(true))
@@ -56,6 +81,7 @@ const HomePage: React.FC = () => {
       });
 
     return () => {
+      clearInterval(interval);
       clearInterval(timeInterval);
       supabase.removeChannel(channel);
     };
@@ -73,6 +99,8 @@ const HomePage: React.FC = () => {
     }
   };
 
+  const statusStyle = STATUS_STYLES[config.display_status] || STATUS_STYLES.WAITING;
+
   return (
     <div className="min-h-screen pt-[56px]">
       <main id="main-content">
@@ -88,36 +116,50 @@ const HomePage: React.FC = () => {
                 {config.title} — {config.subtitle}
               </div>
               <h1 className="big-number">{config.total_polling_units.toLocaleString()}</h1>
-              <div className="stat-label mt-[8px]">polling units across Nigeria</div>
+              <div className="stat-label mt-[8px]">polling units across Nigeria (INEC 2026)</div>
             </div>
 
-            <div className="flex items-center gap-[16px] pb-[8px]">
-              <div className="flex items-center gap-[8px]">
-                <div className={isLive ? "live-dot" : "w-2 h-2 rounded-full bg-[var(--color-gray-400)]"} />
-                <span className="font-mono text-[var(--color-text-muted)] text-sm">
-                  {isLive ? "LIVE" : "CONNECTING"}
+            <div className="flex flex-col items-end gap-[8px] pb-[8px]">
+              {/* Status badge */}
+              <div className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg}`}>
+                <div className={`w-2 h-2 rounded-full ${statusStyle.dot} ${config.display_status === "SIMULATION" ? "animate-pulse" : ""}`} />
+                <span className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}>
+                  {statusStyle.label}
+                </span>
+                {config.total_results > 0 && (
+                  <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                    • {config.total_results.toLocaleString()} results
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-[16px]">
+                <div className="flex items-center gap-[8px]">
+                  <div className={isLive ? "live-dot" : "w-2 h-2 rounded-full bg-[var(--color-gray-400)]"} />
+                  <span className="font-mono text-[var(--color-text-muted)] text-sm">
+                    {isLive ? "CONNECTED" : "CONNECTING"}
+                  </span>
+                </div>
+                <span className="font-mono text-[var(--color-text-dim)] text-sm">
+                  {currentTime} WAT
                 </span>
               </div>
-              <span className="font-mono text-[var(--color-text-dim)] text-sm">
-                {currentTime} WAT
-              </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Stats row — tight, data-dense */}
+      {/* Stats row */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
           <StatsBar />
         </div>
       </section>
 
-      {/* Map + Feed — side by side, no card wrappers */}
+      {/* Map + Feed */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2">
-            {/* Map */}
             <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)]">
               <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
                 <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
@@ -126,8 +168,6 @@ const HomePage: React.FC = () => {
               </div>
               <LiveMap />
             </div>
-
-            {/* Result Feed */}
             <div>
               <ResultFeed />
             </div>
@@ -135,15 +175,13 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* State Breakdown + Party Results — side by side, equal height */}
+      {/* State Breakdown + Party Results */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2">
-            {/* State Breakdown */}
             <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-y-auto">
               <StateTable />
             </div>
-            {/* Party Results — leaderboard */}
             <div className="max-h-[600px] overflow-y-auto">
               <PartyResults />
             </div>
@@ -151,14 +189,14 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* Incidents — compact strip */}
+      {/* Incidents */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
           <IncidentBar />
         </div>
       </section>
 
-      {/* Methodology — numbered, tight */}
+      {/* Methodology */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
           <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[24px]">
@@ -166,37 +204,15 @@ const HomePage: React.FC = () => {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-[24px]">
             {[
-              {
-                step: "01",
-                title: "Recruit & Verify",
-                desc: "Volunteers register, verify their identity, and are confirmed as qualified observers.",
-              },
-              {
-                step: "02",
-                title: "Train & Assign",
-                desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit.",
-              },
-              {
-                step: "03",
-                title: "Observe & Report",
-                desc: "Observers submit structured field reports with photographic evidence where permitted.",
-              },
-              {
-                step: "04",
-                title: "Verify & Publish",
-                desc: "Results are cross-checked using two-observer comparison, OCR, and mathematical validation.",
-              },
+              { step: "01", title: "Recruit & Verify", desc: "Volunteers register, verify their identity, and are confirmed as qualified observers." },
+              { step: "02", title: "Train & Assign", desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit." },
+              { step: "03", title: "Observe & Report", desc: "Observers submit structured field reports with photographic evidence where permitted." },
+              { step: "04", title: "Verify & Publish", desc: "Results are cross-checked using two-observer comparison, OCR, and mathematical validation." },
             ].map((item) => (
               <div key={item.step}>
-                <div className="font-mono text-xs text-[var(--color-green)] mb-[8px]">
-                  {item.step}
-                </div>
-                <h3 className="font-display font-semibold text-base text-[var(--color-text)] mb-[6px]">
-                  {item.title}
-                </h3>
-                <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
-                  {item.desc}
-                </p>
+                <div className="font-mono text-xs text-[var(--color-green)] mb-[8px]">{item.step}</div>
+                <h3 className="font-display font-semibold text-base text-[var(--color-text)] mb-[6px]">{item.title}</h3>
+                <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
