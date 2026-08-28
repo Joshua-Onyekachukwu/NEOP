@@ -18,7 +18,7 @@ export interface AdminAuthContext extends AuthContext {
 export async function getSession(request: NextRequest): Promise<AuthContext | null> {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
@@ -44,7 +44,7 @@ export async function getSession(request: NextRequest): Promise<AuthContext | nu
 export async function getVolunteer(auth: AuthContext): Promise<{ id: string } | null> {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
@@ -72,7 +72,7 @@ export async function getVolunteer(auth: AuthContext): Promise<{ id: string } | 
 export async function getAdmin(auth: AuthContext): Promise<AdminAuthContext | null> {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
