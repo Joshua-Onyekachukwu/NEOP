@@ -49,7 +49,9 @@ export async function GET(_request: NextRequest) {
           .select("*", { count: "exact", head: true }),
       ]);
 
-    const totalCount = totalPU.count || 176846;
+    // INEC official count for 2026
+    const INEC_TOTAL = 176846;
+    const totalCount = totalPU.count || INEC_TOTAL;
     const coveredCount = coveredRes.count || 0;
     const verifiedCount = verifiedRes.count || 0;
     const activeCount = activeRes.count || 0;
@@ -137,6 +139,7 @@ export async function GET(_request: NextRequest) {
     }
 
     const result = {
+      inec_total_polling_units: INEC_TOTAL,
       total_polling_units: totalCount,
       covered_polling_units: coveredCount,
       verified_polling_units: verifiedCount,
