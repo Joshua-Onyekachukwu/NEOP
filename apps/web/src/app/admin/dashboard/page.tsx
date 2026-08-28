@@ -36,7 +36,8 @@ const AdminDashboard: React.FC = () => {
     pendingVerification: 0, totalIncidents: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "verification" | "volunteers" | "incidents" | "simulation">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "verification" | "volunteers" | "locations" | "incidents" | "simulation">("overview");
+  const [agentLocations, setAgentLocations] = useState<any[]>([]);
   const [results, setResults] = useState<any[]>([]);
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [incidents, setIncidents] = useState<any[]>([]);
@@ -186,7 +187,17 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const tabs = ["overview", "verification", "volunteers", "incidents", "simulation"] as const;
+  const tabs = ["overview", "verification", "volunteers", "locations", "incidents", "simulation"] as const;
+
+  const fetchAgentLocations = async () => {
+    try {
+      const res = await fetch("/api/admin/agent-locations");
+      if (res.ok) {
+        const data = await res.json();
+        setAgentLocations(data.agents || []);
+      }
+    } catch {}
+  };
 
   return (
     <div className="min-h-screen">
@@ -346,6 +357,96 @@ const AdminDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* ── AGENT LOCATIONS TAB ── */}
+            {activeTab === "locations" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
+                    Agent GPS Check-ins
+                  </h3>
+                  <button
+                    onClick={fetchAgentLocations}
+                    className="font-mono text-[10px] px-3 py-1 border border-[var(--color-gray-200)] text-[var(--color-text-muted)] hover:border-[var(--color-green)] hover:text-[var(--color-green)] transition-colors"
+                  >
+                    REFRESH
+                  </button>
+                </div>
+
+                {agentLocations.length === 0 ? (
+                  <div className="border border-[var(--color-gray-100)] p-8 text-center">
+                    <div className="font-mono text-sm text-[var(--color-text-dim)] mb-1">No agents checked in</div>
+                    <div className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                      Agents will appear here when they check in with GPS at their polling unit
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-[var(--color-gray-100)] overflow-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[var(--color-gray-100)]">
+                          {["Agent", "Polling Unit", "State", "Distance", "Status", "Time"].map((h) => (
+                            <th key={h} className="px-3 py-2 text-left font-mono text-[10px] text-[var(--color-text-dim)] uppercase">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agentLocations.map((a: any) => (
+                          <tr key={a.assignment_id} className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink-light)]">
+                            <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{a.volunteer_name}</td>
+                            <td className="px-3 py-2">
+                              <div className="font-mono text-xs text-[var(--color-text)]">{a.polling_unit_code}</div>
+                              <div className="font-mono text-[10px] text-[var(--color-text-dim)]">{a.polling_unit_name}</div>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{a.state_name}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-mono text-xs ${
+                                  a.location_verified ? "text-[var(--color-green-bright)]" : "text-[var(--color-amber)]"
+                                }`}>
+                                  {a.distance_from_pu ? `${a.distance_from_pu.toLocaleString()}m` : "—"}
+                                </span>
+                                {a.location_verified ? (
+                                  <span className="font-mono text-[10px] px-1.5 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)]">VERIFIED</span>
+                                ) : (
+                                  <span className="font-mono text-[10px] px-1.5 py-0.5 bg-[var(--color-amber-dim)] text-[var(--color-amber)]">FAR</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[10px]">
+                              <span className={a.location_verified ? "text-[var(--color-green-bright)]" : "text-[var(--color-amber)]"}>
+                                {a.location_verified ? "✓ AT LOCATION" : "⚠ NOT AT PU"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)]">
+                              {a.checked_in_at ? new Date(a.checked_in_at).toLocaleTimeString() : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Summary */}
+                {agentLocations.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="border border-[var(--color-gray-100)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)]">TOTAL CHECKED IN</div>
+                      <div className="font-mono text-lg font-bold text-[var(--color-text)]">{agentLocations.length}</div>
+                    </div>
+                    <div className="border border-[var(--color-gray-100)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)]">VERIFIED AT PU</div>
+                      <div className="font-mono text-lg font-bold text-[var(--color-green-bright)]">{agentLocations.filter((a: any) => a.location_verified).length}</div>
+                    </div>
+                    <div className="border border-[var(--color-gray-100)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)]">FAR FROM PU</div>
+                      <div className="font-mono text-lg font-bold text-[var(--color-amber)]">{agentLocations.filter((a: any) => !a.location_verified).length}</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

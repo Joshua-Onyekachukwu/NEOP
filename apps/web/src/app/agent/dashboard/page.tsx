@@ -80,13 +80,62 @@ const AgentDashboard: React.FC = () => {
     setLoading(false);
   };
 
+  const [gpsStatus, setGpsStatus] = useState<string>("");
+  const [gpsError, setGpsError] = useState<string>("");
+
   const handleCheckIn = async () => {
     if (!assignment) return;
-    const { error } = await supabase
-      .from("agent_assignments")
-      .update({ status: "CHECKED_IN", checked_in_at: new Date().toISOString() })
-      .eq("id", assignment.id);
-    if (!error) setAssignment({ ...assignment, status: "CHECKED_IN" });
+    setGpsStatus("Acquiring GPS location...");
+    setGpsError("");
+
+    if (!navigator.geolocation) {
+      setGpsError("GPS not available on this device");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        setGpsStatus(`GPS acquired (±${Math.round(accuracy)}m). Verifying location...`);
+
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) return;
+
+          const res = await fetch("/api/me/check-in", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              assignment_id: assignment.id,
+              latitude,
+              longitude,
+              accuracy,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            setGpsError(data.error || "Check-in failed");
+            setGpsStatus("");
+            return;
+          }
+
+          setAssignment({ ...assignment, status: "CHECKED_IN" });
+          setGpsStatus(data.message);
+        } catch (e: any) {
+          setGpsError(e.message || "Network error");
+          setGpsStatus("");
+        }
+      },
+      (err) => {
+        setGpsError(`GPS error: ${err.message}. Please enable location access.`);
+        setGpsStatus("");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   };
 
   const handleCheckOut = async () => {
@@ -173,9 +222,21 @@ const AgentDashboard: React.FC = () => {
             {/* Actions */}
             <div className="space-y-2">
               {assignment.status !== "CHECKED_IN" ? (
-                <button onClick={handleCheckIn} className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold hover:bg-[var(--color-green)]/90 transition-colors">
-                  CHECK IN
-                </button>
+                <>
+                  <button onClick={handleCheckIn} disabled={!!gpsStatus} className="w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold hover:bg-[var(--color-green)]/90 transition-colors disabled:opacity-50">
+                    {gpsStatus || "📍 CHECK IN WITH GPS"}
+                  </button>
+                  {gpsStatus && (
+                    <div className="p-2 bg-[var(--color-green-dim)] border border-[var(--color-green)]/30">
+                      <span className="font-mono text-[10px] text-[var(--color-green-bright)] animate-pulse">{gpsStatus}</span>
+                    </div>
+                  )}
+                  {gpsError && (
+                    <div className="p-2 bg-[var(--color-red)]/10 border border-[var(--color-red)]/30">
+                      <span className="font-mono text-[10px] text-[var(--color-red-bright)]">{gpsError}</span>
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <Link href="/agent/submit-result" className="block w-full py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold hover:bg-[var(--color-green)]/90 transition-colors text-center">
