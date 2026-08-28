@@ -24,12 +24,26 @@ const AdminLogin: React.FC = () => {
       return;
     }
 
-    // Check admin role
+    // Check admin role — try client-side first, then server-side fallback
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setError("Session error"); setLoading(false); return; }
 
-    const { data: admin } = await supabase
+    // Try client-side RLS query first
+    let { data: admin } = await supabase
       .from("admin_users").select("id").eq("user_id", session.user.id).eq("is_active", true).single();
+
+    // Fallback to server-side check (bypasses RLS)
+    if (!admin) {
+      try {
+        const checkRes = await fetch("/api/admin/check-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: session.user.id }),
+        });
+        const checkData = await checkRes.json();
+        if (checkData.isAdmin) admin = { id: "server-verified" };
+      } catch { /* server check failed */ }
+    }
 
     if (!admin) {
       await supabase.auth.signOut();
