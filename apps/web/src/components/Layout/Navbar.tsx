@@ -15,6 +15,11 @@ const Navbar: React.FC = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const links = [
     { href: "/", label: "Home" },
     { href: "/#dashboard", label: "Dashboard" },
@@ -25,9 +30,9 @@ const Navbar: React.FC = () => {
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all ${
-        isSticky
-          ? "bg-[var(--color-ink)]/95 backdrop-blur-md border-b border-[var(--color-gray-100)]"
-          : "bg-transparent"
+        isSticky || mobileOpen
+          ? "bg-[var(--color-ink)] border-b border-[var(--color-gray-100)]"
+          : "bg-[var(--color-ink)]/90 backdrop-blur-sm"
       }`}
     >
       <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
@@ -74,15 +79,15 @@ const Navbar: React.FC = () => {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden pb-[16px] border-t border-[var(--color-gray-100)]">
+          <div className="md:hidden pb-[16px] border-t border-[var(--color-gray-100)] bg-[var(--color-ink)]">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`block py-[10px] font-mono text-xs ${
+                className={`block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 ${
                   pathname === link.href
                     ? "text-[var(--color-green)]"
-                    : "text-[var(--color-text-muted)]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 }`}
                 onClick={() => setMobileOpen(false)}
               >

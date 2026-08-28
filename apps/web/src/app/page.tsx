@@ -197,22 +197,34 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Methodology */}
-      <section className="border-b border-[var(--color-gray-100)]">
+      <section id="methodology" className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
           <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[24px]">
             How We Collect Data
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-[24px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[16px]">
             {[
-              { step: "01", title: "Recruit & Verify", desc: "Volunteers register, verify their identity, and are confirmed as qualified observers." },
-              { step: "02", title: "Train & Assign", desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit." },
-              { step: "03", title: "Observe & Report", desc: "Observers submit structured field reports with photographic evidence where permitted." },
-              { step: "04", title: "Verify & Publish", desc: "Results are cross-checked using two-observer comparison, OCR, and mathematical validation." },
+              { step: "01", title: "Recruit & Verify", desc: "Volunteers register, verify their identity, and are confirmed as qualified observers.", icon: "📋" },
+              { step: "02", title: "Train & Assign", desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit.", icon: "🎓" },
+              { step: "03", title: "Observe & Report", desc: "Observers submit structured field reports with photographic evidence where permitted.", icon: "📝" },
+              { step: "04", title: "Verify & Publish", desc: "Results are cross-checked using two-observer comparison, OCR, and mathematical validation.", icon: "✅" },
             ].map((item) => (
-              <div key={item.step}>
-                <div className="font-mono text-xs text-[var(--color-green)] mb-[8px]">{item.step}</div>
-                <h3 className="font-display font-semibold text-base text-[var(--color-text)] mb-[6px]">{item.title}</h3>
-                <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
+              <div
+                key={item.step}
+                className="border border-[var(--color-gray-100)] p-[20px] hover:border-[var(--color-green)]/30 transition-colors"
+              >
+                <div className="flex items-center gap-[12px] mb-[12px]">
+                  <span className="text-xl" aria-hidden="true">{item.icon}</span>
+                  <div className="font-mono text-[10px] font-bold text-[var(--color-green)] uppercase tracking-wider">
+                    Step {item.step}
+                  </div>
+                </div>
+                <h3 className="font-display font-semibold text-sm text-[var(--color-text)] mb-[8px]">
+                  {item.title}
+                </h3>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                  {item.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -220,26 +232,22 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Limitations */}
-      <section>
+      <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
           <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[16px]">
             Our Limitations
           </h2>
-          <div className="space-y-[12px] text-sm text-[var(--color-text-muted)] max-w-[800px]">
-            <p>
-              We cannot guarantee coverage of every polling unit. Some areas may
-              be inaccessible due to security concerns, logistical challenges,
-              or other factors.
-            </p>
-            <p>
-              We do not determine official results. Official election results are
-              declared by INEC. Our platform provides independent, parallel
-              observation to complement — not replace — the official process.
-            </p>
-            <p>
-              Anomaly detection flags unusual patterns for human review. An
-              anomaly is not automatically evidence of fraud or irregularity.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-[16px]">
+            {[
+              { title: "Coverage Gaps", desc: "We cannot guarantee coverage of every polling unit. Some areas may be inaccessible due to security concerns, logistical challenges, or other factors." },
+              { title: "Not Official Results", desc: "We do not determine official results. Official election results are declared by INEC. Our platform provides independent, parallel observation to complement — not replace — the official process." },
+              { title: "Anomaly Flags", desc: "Anomaly detection flags unusual patterns for human review. An anomaly is not automatically evidence of fraud or irregularity." },
+            ].map((item) => (
+              <div key={item.title} className="border border-[var(--color-gray-100)] p-[20px]">
+                <h3 className="font-display font-semibold text-sm text-[var(--color-text)] mb-[8px]">{item.title}</h3>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
