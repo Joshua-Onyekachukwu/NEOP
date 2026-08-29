@@ -87,6 +87,10 @@ const Onboarding: React.FC = () => {
     }
   };
 
+  const [assignmentStatus, setAssignmentStatus] = useState<"" | "assigning" | "assigned" | "full" | "error">("");
+  const [assignmentMessage, setAssignmentMessage] = useState("");
+  const [assignmentDetails, setAssignmentDetails] = useState<any>(null);
+
   const handleFinishTraining = async () => {
     setIsCompleting(true);
 
@@ -97,6 +101,7 @@ const Onboarding: React.FC = () => {
         return;
       }
 
+      // 1. Mark training as complete
       const { data: volunteer } = await supabase
         .from("volunteers")
         .select("id")
@@ -113,9 +118,41 @@ const Onboarding: React.FC = () => {
           .eq("id", volunteer.id);
       }
 
-      router.push("/agent/dashboard");
+      // 2. Auto-assign to polling unit
+      setAssignmentStatus("assigning");
+      setAssignmentMessage("Assigning you to your polling unit...");
+
+      const assignRes = await fetch("/api/me/auto-assign", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const assignData = await assignRes.json();
+
+      if (assignData.success) {
+        setAssignmentStatus("assigned");
+        setAssignmentMessage(assignData.message);
+        setAssignmentDetails(assignData);
+        // Redirect to dashboard after 3 seconds
+        setTimeout(() => router.push("/agent/dashboard"), 3000);
+      } else if (assignData.pu_full) {
+        setAssignmentStatus("full");
+        setAssignmentMessage(assignData.message);
+        setAssignmentDetails(assignData);
+      } else {
+        setAssignmentStatus("error");
+        setAssignmentMessage(assignData.message || "Assignment will be handled by admin");
+        // Still go to dashboard
+        setTimeout(() => router.push("/agent/dashboard"), 3000);
+      }
     } catch (err) {
       console.error("Error completing training:", err);
+      setAssignmentStatus("error");
+      setAssignmentMessage("Training saved. Assignment will be handled by admin.");
+      setTimeout(() => router.push("/agent/dashboard"), 3000);
     } finally {
       setIsCompleting(false);
     }
@@ -209,15 +246,99 @@ const Onboarding: React.FC = () => {
         </div>
 
         {/* Finish button */}
-        {completedModules.length === TRAINING_MODULES.length && (
+        {completedModules.length === TRAINING_MODULES.length && !assignmentStatus && (
           <div className="mt-[20px]">
             <button
               onClick={handleFinishTraining}
               disabled={isCompleting}
               className="w-full px-[20px] py-[15px] bg-green-600 text-white rounded-[10px] font-bold hover:bg-green-700 transition-colors disabled:opacity-50"
             >
-              {isCompleting ? "Saving..." : "✓ Complete Training & Go to Dashboard"}
+              {isCompleting ? "Saving..." : "✓ Complete Training & Get Assignment"}
             </button>
+          </div>
+        )}
+
+        {/* Assignment status */}
+        {assignmentStatus && (
+          <div className="mt-[20px] space-y-3">
+            <div className={`p-4 rounded-[10px] border text-center ${
+              assignmentStatus === "assigning"
+                ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                : assignmentStatus === "assigned"
+                ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800"
+                : assignmentStatus === "full"
+                ? "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800"
+                : "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800"
+            }`}>
+              <div className="text-3xl mb-2">
+                {assignmentStatus === "assigning" && "⏳"}
+                {assignmentStatus === "assigned" && "✅"}
+                {assignmentStatus === "full" && "⚠️"}
+                {assignmentStatus === "error" && "❌"}
+              </div>
+              <div className="font-bold text-sm text-[#06201B] dark:text-white">
+                {assignmentStatus === "assigning" && "Assigning..."}
+                {assignmentStatus === "assigned" && "ASSIGNED!"}
+                {assignmentStatus === "full" && "PU FULL"}
+                {assignmentStatus === "error" && "Pending Assignment"}
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                {assignmentMessage}
+              </div>
+            </div>
+
+            {/* Assignment details */}
+            {assignmentDetails && assignmentStatus === "assigned" && (
+              <div className="p-4 bg-white dark:bg-[#1c1c1c] rounded-[10px] border border-gray-200 dark:border-[#202c4b]">
+                <div className="font-mono text-[10px] text-gray-500 uppercase tracking-wider mb-2">Your Assignment</div>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Polling Unit</span>
+                    <span className="font-mono font-bold">{assignmentDetails.polling_unit?.code}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Name</span>
+                    <span className="text-right max-w-[60%]">{assignmentDetails.polling_unit?.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Observer #</span>
+                    <span className="font-mono">#{assignmentDetails.observer_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Election</span>
+                    <span className="text-right max-w-[60%]">{assignmentDetails.election}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PU full alternatives */}
+            {assignmentDetails && assignmentStatus === "full" && assignmentDetails.alternatives && (
+              <div className="p-4 bg-white dark:bg-[#1c1c1c] rounded-[10px] border border-gray-200 dark:border-[#202c4b]">
+                <div className="font-mono text-[10px] text-gray-500 uppercase tracking-wider mb-2">Available Alternatives</div>
+                <div className="space-y-2">
+                  {assignmentDetails.alternatives.map((alt: any) => (
+                    <div key={alt.id} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-[#202c4b] last:border-0">
+                      <div>
+                        <div className="font-mono text-sm font-bold">{alt.official_code}</div>
+                        <div className="text-xs text-gray-500">{alt.name}</div>
+                      </div>
+                      <div className="text-xs text-green-600 font-mono">{alt.spots} spot(s)</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 text-xs text-gray-500 text-center">
+                  Contact admin to be reassigned to an alternative PU
+                </div>
+              </div>
+            )}
+
+            {/* Redirecting message */}
+            {assignmentStatus === "assigned" && (
+              <div className="text-center text-xs text-gray-500 font-mono animate-pulse">
+                Redirecting to dashboard in 3 seconds...
+              </div>
+            )}
           </div>
         )}
       </div>
