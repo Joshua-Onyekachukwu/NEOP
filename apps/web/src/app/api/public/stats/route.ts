@@ -1,7 +1,7 @@
 /**
  * GET /api/public/stats
- * Optimised for 188K+ polling units with in-memory caching.
- * Tries RPC functions first; falls back to batch COUNT queries.
+ * Calls a single SQL function for all dashboard data.
+ * Falls back to client-side queries if RPC is not available.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,10 +13,10 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// In-memory cache — survives across requests in same serverless instance
+// In-memory cache
 let cachedStats: any = null;
 let cacheTime = 0;
-const CACHE_TTL = 15_000; // 15 seconds
+const CACHE_TTL = 10_000;
 
 export async function GET(_request: NextRequest) {
   try {
@@ -27,133 +27,44 @@ export async function GET(_request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ── Fast COUNT queries (no data transfer, ~2s) ──
+    // Try fast SQL function first
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_fast_stats");
+
+    if (!rpcError && rpcData) {
+      cachedStats = rpcData;
+      cacheTime = now;
+      return NextResponse.json(rpcData);
+    }
+
+    // Fallback: minimal query set
     const [totalPU, coveredRes, verifiedRes, activeRes, incidentRes] =
       await Promise.all([
-        supabase
-          .from("polling_units")
-          .select("*", { count: "exact", head: true }),
-        supabase
-          .from("agent_assignments")
-          .select("*", { count: "exact", head: true }),
-        supabase
-          .from("result_submissions")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "VERIFIED"),
-        supabase
-          .from("agent_assignments")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "CHECKED_IN"),
-        supabase
-          .from("incidents")
-          .select("*", { count: "exact", head: true }),
+        supabase.from("polling_units").select("*", { count: "exact", head: true }),
+        supabase.from("agent_assignments").select("*", { count: "exact", head: true }),
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
+        supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
+        supabase.from("incidents").select("*", { count: "exact", head: true }),
       ]);
 
-    // INEC official count for 2026
     const INEC_TOTAL = 176846;
     const totalCount = totalPU.count || INEC_TOTAL;
-    const coveredCount = coveredRes.count || 0;
-    const verifiedCount = verifiedRes.count || 0;
-    const activeCount = activeRes.count || 0;
-    const incidentCount = incidentRes.count || 0;
-
-    // ── Try RPC for state breakdown (fast if function exists) ──
-    let stateBreakdown: any[] = [];
-    const { data: rpcStateData, error: rpcError } = await supabase.rpc(
-      "get_state_breakdown"
-    );
-
-    if (!rpcError && rpcStateData && rpcStateData.length > 0) {
-      stateBreakdown = rpcStateData;
-    } else {
-      // ── Fallback: batch COUNT per state (37 calls, ~5-10s) ──
-      const { data: states } = await supabase
-        .from("states")
-        .select("id, name, code");
-
-      stateBreakdown = [];
-      for (let i = 0; i < (states || []).length; i += 5) {
-        const batch = (states || []).slice(i, i + 5);
-        const results = await Promise.all(
-          batch.map(async (state) => {
-            const { count: statePU } = await supabase
-              .from("polling_units")
-              .select("*", { count: "exact", head: true })
-              .eq("state_id", state.id);
-
-            const total = statePU || 0;
-            const covered =
-              totalCount > 0
-                ? Math.round((total / totalCount) * coveredCount)
-                : 0;
-            const verified =
-              totalCount > 0
-                ? Math.round((total / totalCount) * verifiedCount)
-                : 0;
-
-            return {
-              state_id: state.id,
-              state_name: state.name,
-              state_code: state.code,
-              total_polling_units: total,
-              covered_polling_units: covered,
-              verified_polling_units: verified,
-              coverage_percent:
-                total > 0
-                  ? Number(((covered / total) * 100).toFixed(1))
-                  : 0,
-              verification_percent:
-                total > 0
-                  ? Number(((verified / total) * 100).toFixed(1))
-                  : 0,
-            };
-          })
-        );
-        stateBreakdown.push(...results);
-      }
-
-      stateBreakdown.sort(
-        (a: any, b: any) => b.total_polling_units - a.total_polling_units
-      );
-    }
-
-    // Incident category breakdown — sample 200 rows
-    const { data: incidentSample } = await supabase
-      .from("incidents")
-      .select("category")
-      .limit(200);
-
-    const incidentCounts: Record<string, number> = {};
-    incidentSample?.forEach((i: any) => {
-      incidentCounts[i.category] = (incidentCounts[i.category] || 0) + 1;
-    });
-    if (
-      incidentSample &&
-      incidentSample.length > 0 &&
-      incidentCount > incidentSample.length
-    ) {
-      const scale = incidentCount / incidentSample.length;
-      for (const cat in incidentCounts) {
-        incidentCounts[cat] = Math.round(incidentCounts[cat] * scale);
-      }
-    }
 
     const result = {
       inec_total_polling_units: INEC_TOTAL,
       total_polling_units: totalCount,
-      covered_polling_units: coveredCount,
-      verified_polling_units: verifiedCount,
-      active_observers: activeCount,
-      total_incidents: incidentCount,
-      incident_counts: incidentCounts,
-      state_breakdown: stateBreakdown,
+      covered_polling_units: coveredRes.count || 0,
+      verified_polling_units: verifiedRes.count || 0,
+      active_observers: activeRes.count || 0,
+      total_incidents: incidentRes.count || 0,
+      incident_counts: {} as Record<string, number>,
+      state_breakdown: [] as any[],
       coverage_percent:
         totalCount > 0
-          ? Number(((coveredCount / totalCount) * 100).toFixed(1))
+          ? Number((((coveredRes.count || 0) / totalCount) * 100).toFixed(1))
           : 0,
       verification_percent:
         totalCount > 0
-          ? Number(((verifiedCount / totalCount) * 100).toFixed(1))
+          ? Number((((verifiedRes.count || 0) / totalCount) * 100).toFixed(1))
           : 0,
       last_updated: new Date().toISOString(),
       disclaimer:
@@ -166,9 +77,6 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Error in public stats API:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
