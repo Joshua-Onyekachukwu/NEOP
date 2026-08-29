@@ -15,10 +15,10 @@
     "@types/pg": "^8.23.1",
     "maplibre-gl": "^4.7.0",
     "material-symbols": "^0.31.3",
-    "next": "15.3.2",
+    "next": "^15.3.6",
     "pg": "^8.23.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.1.2",
+    "react-dom": "^19.1.2",
     "remixicon": "^4.6.0",
     "swiper": "^11.2.8",
     "uuid": "^14.0.2"
