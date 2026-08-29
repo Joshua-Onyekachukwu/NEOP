@@ -24,12 +24,10 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   useEffect(() => {
     fetchStats();
-  }, [refreshKey]);
-
-  useEffect(() => {
+    // Only poll on interval — refreshKey triggers refetch from parent
     const interval = setInterval(fetchStats, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshKey]);
 
   const fetchStats = async () => {
     try {

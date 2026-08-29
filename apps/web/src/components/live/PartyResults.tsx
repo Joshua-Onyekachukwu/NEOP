@@ -31,12 +31,9 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   useEffect(() => {
     fetchPartyResults();
-  }, [refreshKey]);
-
-  useEffect(() => {
     const interval = setInterval(fetchPartyResults, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshKey]);
 
   const fetchPartyResults = async () => {
     try {

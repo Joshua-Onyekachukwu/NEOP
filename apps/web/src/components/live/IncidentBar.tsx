@@ -31,25 +31,32 @@ const IncidentBar: React.FC = () => {
   }, []);
 
   const fetchIncidentCounts = async () => {
-    const { data } = await supabase.from("incidents").select("category");
-    if (!data) return;
-
-    const c: IncidentCounts = {
+    // Count per category without loading all rows into memory
+    const categories = ["VIOLENCE", "INTIMIDATION", "DISRUPTION", "ELECTION_NOT_HELD", "MATERIAL_SHORTAGE"];
+    const counts: IncidentCounts = {
       violence: 0, intimidation: 0, disruption: 0,
-      election_not_held: 0, material_shortage: 0, other: 0, total: data.length,
+      election_not_held: 0, material_shortage: 0, other: 0, total: 0,
     };
 
-    for (const i of data) {
-      switch (i.category) {
-        case "VIOLENCE": c.violence++; break;
-        case "INTIMIDATION": c.intimidation++; break;
-        case "DISRUPTION": c.disruption++; break;
-        case "ELECTION_NOT_HELD": c.election_not_held++; break;
-        case "MATERIAL_SHORTAGE": c.material_shortage++; break;
-        default: c.other++;
-      }
-    }
-    setCounts(c);
+    const results = await Promise.all(
+      categories.map(cat =>
+        supabase.from("incidents").select("id", { count: "exact", head: true }).eq("category", cat)
+      )
+    );
+
+    counts.violence = results[0].count || 0;
+    counts.intimidation = results[1].count || 0;
+    counts.disruption = results[2].count || 0;
+    counts.election_not_held = results[3].count || 0;
+    counts.material_shortage = results[4].count || 0;
+    counts.total = results.reduce((sum, r) => sum + (r.count || 0), 0);
+
+    // Get "other" count (total minus the 5 known categories)
+    const { count: totalAll } = await supabase.from("incidents").select("id", { count: "exact", head: true });
+    counts.other = Math.max(0, (totalAll || 0) - counts.total);
+    counts.total = totalAll || 0;
+
+    setCounts(counts);
   };
 
   const items = [

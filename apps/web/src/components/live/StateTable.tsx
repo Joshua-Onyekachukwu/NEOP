@@ -20,12 +20,9 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   useEffect(() => {
     fetchStateData();
-  }, [refreshKey]);
-
-  useEffect(() => {
     const interval = setInterval(fetchStateData, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshKey]);
 
   const fetchStateData = async () => {
     try {
