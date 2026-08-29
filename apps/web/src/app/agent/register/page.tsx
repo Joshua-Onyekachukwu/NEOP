@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase-browser";
 interface StateOption { id: string; name: string; code: string; }
 interface LgaOption { id: string; name: string; }
 interface WardOption { id: string; name: string; code: string; }
-interface PuOption { id: string; official_code: string; name: string; }
+interface PuOption { id: string; official_code: string; name: string; registered_voters?: number; address?: string; capacity?: number; }
 interface PuAvailability {
   available: boolean;
   assigned_count: number;
@@ -77,7 +77,7 @@ const AgentRegister: React.FC = () => {
   // Load PUs when ward changes
   useEffect(() => {
     if (!selectedWard) { setPus([]); return; }
-    supabase.from("polling_units").select("id, official_code, name").eq("ward_id", selectedWard).order("official_code").then(({ data }) => {
+    supabase.from("polling_units").select("id, official_code, name, registered_voters, address, capacity").eq("ward_id", selectedWard).order("official_code").then(({ data }) => {
       if (data) setPus(data);
     });
   }, [selectedWard]);
@@ -310,6 +310,39 @@ const AgentRegister: React.FC = () => {
                 ))}
               </select>
             </div>
+
+            {/* PU Details Card */}
+            {selectedPu && selectedPuInfo && (
+              <div className="p-3 border border-[var(--color-gray-200)] bg-[var(--color-ink-light)]">
+                <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">Polling Unit Details</div>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-dim)]">Code</span>
+                    <span className="font-mono text-[var(--color-text)]">{selectedPuInfo.official_code}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-dim)]">Name</span>
+                    <span className="font-mono text-[var(--color-text-muted)] text-right max-w-[60%]">{selectedPuInfo.name}</span>
+                  </div>
+                  {selectedPuInfo.registered_voters && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--color-text-dim)]">Registered Voters</span>
+                      <span className="font-mono text-[var(--color-text)]">{selectedPuInfo.registered_voters.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedPuInfo.address && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--color-text-dim)]">Address</span>
+                      <span className="font-mono text-[var(--color-text-muted)] text-right max-w-[60%]">{selectedPuInfo.address}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-dim)]">Max Observers</span>
+                    <span className="font-mono text-[var(--color-text)]">{selectedPuInfo.capacity || 2}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* PU Availability Warning */}
             {puAvailability && selectedPu && (
