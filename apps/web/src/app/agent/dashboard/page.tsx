@@ -198,7 +198,11 @@ const AgentDashboard: React.FC = () => {
             </span>
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">AGENT</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <a href="/" target="_self" className="flex items-center gap-1 font-mono text-[10px] text-[var(--color-green-bright)] hover:text-[var(--color-green)] transition-colors">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
+              LIVE
+            </a>
             <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-[var(--color-green-bright)]" : "bg-[var(--color-red)]"}`} />
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
               {isOnline ? "ONLINE" : "OFFLINE"}

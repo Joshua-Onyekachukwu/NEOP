@@ -15,17 +15,12 @@ const Navbar: React.FC = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  const links = [
-    { href: "/", label: "Home" },
-    { href: "/#dashboard", label: "Dashboard" },
-    { href: "/#map", label: "Map" },
-    { href: "/#methodology", label: "Methodology" },
-  ];
+  const isAdmin = pathname?.startsWith("/admin") ?? false;
+  const isAgent = pathname?.startsWith("/agent") ?? false;
 
   return (
     <nav
@@ -42,26 +37,79 @@ const Navbar: React.FC = () => {
             <span className="font-display font-bold text-base text-[var(--color-text)]">
               NG<span className="text-[var(--color-green)]">EO</span>
             </span>
-            <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider">
-              Election Observation
-            </span>
+            {!isAdmin && !isAgent && (
+              <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider">
+                Live Election Data
+              </span>
+            )}
+            {isAdmin && (
+              <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-amber)] uppercase tracking-wider">
+                Admin
+              </span>
+            )}
+            {isAgent && (
+              <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-blue)] uppercase tracking-wider">
+                Agent
+              </span>
+            )}
           </Link>
 
-          {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-[24px]">
-            {links.map((link) => (
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-[20px]">
+            {/* Live page link — always visible */}
+            <Link
+              href="/"
+              className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors flex items-center gap-[6px]"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
+              LIVE
+            </Link>
+
+            {/* Public page: show Agent + Admin links */}
+            {!isAdmin && !isAgent && (
+              <>
+                <Link
+                  href="/agent/login"
+                  className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                >
+                  Agent
+                </Link>
+                <Link
+                  href="/admin/login"
+                  className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                >
+                  Admin
+                </Link>
+              </>
+            )}
+
+            {/* Admin page: show Dashboard + Agent links */}
+            {isAdmin && (
               <Link
-                key={link.href}
-                href={link.href}
+                href="/admin/dashboard"
                 className={`font-mono text-xs transition-colors ${
-                  pathname === link.href
-                    ? "text-[var(--color-green)]"
+                  pathname === "/admin/dashboard"
+                    ? "text-[var(--color-amber)]"
                     : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 }`}
               >
-                {link.label}
+                Dashboard
               </Link>
-            ))}
+            )}
+
+            {/* Agent page: show Dashboard link */}
+            {isAgent && (
+              <Link
+                href="/agent/dashboard"
+                className={`font-mono text-xs transition-colors ${
+                  pathname === "/agent/dashboard"
+                    ? "text-[var(--color-blue)]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                }`}
+              >
+                Dashboard
+              </Link>
+            )}
           </div>
 
           {/* Mobile toggle */}
@@ -80,20 +128,54 @@ const Navbar: React.FC = () => {
         {/* Mobile menu */}
         {mobileOpen && (
           <div className="md:hidden pb-[16px] border-t border-[var(--color-gray-100)] bg-[var(--color-ink)]">
-            {links.map((link) => (
+            {/* Live link — always first */}
+            <Link
+              href="/"
+              className="flex items-center gap-[8px] py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] text-[var(--color-green-bright)]"
+              onClick={() => setMobileOpen(false)}
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
+              LIVE
+            </Link>
+
+            {!isAdmin && !isAgent && (
+              <>
+                <Link
+                  href="/agent/login"
+                  className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Agent Portal
+                </Link>
+                <Link
+                  href="/admin/login"
+                  className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Admin Portal
+                </Link>
+              </>
+            )}
+
+            {isAdmin && (
               <Link
-                key={link.href}
-                href={link.href}
-                className={`block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 ${
-                  pathname === link.href
-                    ? "text-[var(--color-green)]"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
+                href="/admin/dashboard"
+                className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 onClick={() => setMobileOpen(false)}
               >
-                {link.label}
+                Admin Dashboard
               </Link>
-            ))}
+            )}
+
+            {isAgent && (
+              <Link
+                href="/agent/dashboard"
+                className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                onClick={() => setMobileOpen(false)}
+              >
+                Agent Dashboard
+              </Link>
+            )}
           </div>
         )}
       </div>
