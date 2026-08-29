@@ -1,125 +1,60 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+/**
+ * Shared auth helper for client-side pages.
+ * Handles session persistence with retries for localStorage hydration delays.
+ */
 
-export interface AuthContext {
-  userId: string;
-  accessToken: string;
-}
+import { supabase } from "@/lib/supabase-browser";
+import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
-export interface AdminAuthContext extends AuthContext {
-  adminId: string;
-  role: string;
+/**
+ * Wait for a valid session with retries for localStorage hydration.
+ * Returns the session or null after all retries exhausted.
+ */
+export async function waitForSession(maxRetries = 5, delayMs = 600): Promise<any> {
+  for (let i = 0; i < maxRetries; i++) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return session;
+    if (i < maxRetries - 1) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return null;
 }
 
 /**
- * Extract and verify the Supabase session from a request.
- * Returns null if not authenticated.
+ * Check auth and redirect if no session found.
+ * Uses retries to handle localStorage hydration delays.
  */
-export async function getSession(request: NextRequest): Promise<AuthContext | null> {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-      },
+export async function requireAuth(
+  router: AppRouterInstance,
+  redirectPath: string
+): Promise<false | { user: any }> {
+  const session = await waitForSession();
+  if (!session) {
+    router.push(redirectPath);
+    return false;
+  }
+  return { user: session.user };
+}
+
+/**
+ * Subscribe to auth state changes.
+ * Only redirects on explicit SIGNED_OUT, not on initial null session.
+ */
+export function onAuthChanged(
+  onSession: () => void,
+  onSignedOut: () => void
+) {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event, session) => {
+      if (event === "SIGNED_OUT") {
+        onSignedOut();
+        return;
+      }
+      if (session && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION")) {
+        onSession();
+      }
     }
   );
-
-  const { data: { session }, error } = await supabase.auth.getSession();
-  if (error || !session) return null;
-
-  return {
-    userId: session.user.id,
-    accessToken: session.access_token,
-  };
-}
-
-/**
- * Get the volunteer record for the authenticated user.
- * Returns null if the user is not a registered volunteer.
- */
-export async function getVolunteer(auth: AuthContext): Promise<{ id: string } | null> {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return [];
-        },
-      },
-      global: {
-        headers: { Authorization: `Bearer ${auth.accessToken}` },
-      },
-    }
-  );
-
-  const { data } = await supabase
-    .from("volunteers")
-    .select("id")
-    .eq("user_id", auth.userId)
-    .single();
-
-  return data ? { id: data.id } : null;
-}
-
-/**
- * Verify the user is an active admin. Returns admin record or null.
- */
-export async function getAdmin(auth: AuthContext): Promise<AdminAuthContext | null> {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return [];
-        },
-      },
-      global: {
-        headers: { Authorization: `Bearer ${auth.accessToken}` },
-      },
-    }
-  );
-
-  const { data: admin } = await supabase
-    .from("admin_users")
-    .select("id, role")
-    .eq("user_id", auth.userId)
-    .eq("is_active", true)
-    .single();
-
-  if (!admin) return null;
-
-  return {
-    ...auth,
-    adminId: admin.id,
-    role: admin.role,
-  };
-}
-
-/**
- * Create a typed response helpers for consistent API error handling.
- */
-export function unauthorized(message = "Authentication required") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-export function forbidden(message = "Insufficient permissions") {
-  return NextResponse.json({ error: message }, { status: 403 });
-}
-
-export function badRequest(message: string) {
-  return NextResponse.json({ error: message }, { status: 400 });
-}
-
-export function serverError(message = "Internal server error") {
-  return NextResponse.json({ error: message }, { status: 500 });
-}
-
-export function success<T>(data: T, status = 200) {
-  return NextResponse.json(data, { status });
+  return subscription;
 }
