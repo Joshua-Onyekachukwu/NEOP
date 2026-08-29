@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-browser";
+import { waitForSession, onAuthChanged } from "@/lib/auth-helpers";
 
 interface Assignment {
   id: string;
@@ -25,29 +26,22 @@ const AgentDashboard: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
-    // Use onAuthStateChange for reliable session persistence
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "SIGNED_OUT" || !session) {
-          router.push("/agent/login");
-          return;
-        }
-        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
-          fetchAssignment();
-        }
-      }
-    );
-
-    // Also check immediately in case we already have a session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Wait for session with retries for localStorage hydration
+    const init = async () => {
+      const session = await waitForSession();
       if (!session) {
-        // Session might be refreshing — wait a bit
-        setTimeout(async () => {
-          const { data: { session: retrySession } } = await supabase.auth.getSession();
-          if (!retrySession) router.push("/agent/login");
-        }, 1500);
+        router.push("/agent/login");
+        return;
       }
-    });
+      fetchAssignment();
+    };
+    init();
+
+    // Subscribe to auth changes — only redirect on explicit sign-out
+    const subscription = onAuthChanged(
+      () => fetchAssignment(),
+      () => router.push("/agent/login")
+    );
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);

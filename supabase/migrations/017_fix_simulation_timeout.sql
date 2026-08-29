@@ -74,17 +74,17 @@ BEGIN
 
   -- ── Step 4: Ensure election exists ──
   IF p_election_type = 'GOVERNORSHIP' THEN
-    INSERT INTO elections (name, election_type, election_date)
-    VALUES ('Governorship Election 2027', 'GOVERNORSHIP', '2027-02-06')
+    INSERT INTO elections (name, type)
+    VALUES ('Governorship Election 2027', 'GOVERNORSHIP'::election_type)
     ON CONFLICT DO NOTHING;
     SELECT id INTO v_election_id FROM elections
-    WHERE election_type = 'GOVERNORSHIP' LIMIT 1;
+    WHERE type = 'GOVERNORSHIP' LIMIT 1;
   ELSE
-    INSERT INTO elections (name, election_type, election_date)
-    VALUES ('Presidential Election 2027', 'PRESIDENTIAL', '2027-01-16')
+    INSERT INTO elections (name, type)
+    VALUES ('Presidential Election 2027', 'PRESIDENTIAL'::election_type)
     ON CONFLICT DO NOTHING;
     SELECT id INTO v_election_id FROM elections
-    WHERE election_type = 'PRESIDENTIAL' LIMIT 1;
+    WHERE type = 'PRESIDENTIAL' LIMIT 1;
   END IF;
 
   -- ── Step 5: Bulk insert result submissions + party results ──

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
+import { waitForSession } from "@/lib/auth-helpers";
 
 interface AdminStats {
   totalVolunteers: number;
@@ -54,17 +55,25 @@ const AdminDashboard: React.FC = () => {
   const [simError, setSimError] = useState<string>("");
 
   useEffect(() => {
-    checkAuth();
-    fetchStats();
-    // Fetch current election type from config
-    supabase
-      .from("simulation_config")
-      .select("election_type")
-      .eq("id", "00000000-0000-0000-0000-000000000001")
-      .single()
-      .then(({ data }) => {
-        if (data?.election_type) setSimElectionType(data.election_type);
-      });
+    const init = async () => {
+      const session = await waitForSession();
+      if (!session) { router.push("/admin/login"); return; }
+      const { data: admin } = await supabase
+        .from("admin_users").select("id")
+        .eq("user_id", session.user.id)
+        .eq("is_active", true).single();
+      if (!admin) { router.push("/admin/login"); return; }
+      fetchStats();
+      supabase
+        .from("simulation_config")
+        .select("election_type")
+        .eq("id", "00000000-0000-0000-0000-000000000001")
+        .single()
+        .then(({ data }) => {
+          if (data?.election_type) setSimElectionType(data.election_type);
+        });
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -72,13 +81,6 @@ const AdminDashboard: React.FC = () => {
     if (activeTab === "volunteers") fetchVolunteers();
     if (activeTab === "incidents") fetchIncidents();
   }, [activeTab]);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { router.push("/admin/login"); return; }
-    const { data: admin } = await supabase.from("admin_users").select("id").eq("user_id", session.user.id).eq("is_active", true).single();
-    if (!admin) router.push("/admin/login");
-  };
 
   const fetchStats = async () => {
     try {
