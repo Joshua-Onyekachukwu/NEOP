@@ -64,13 +64,38 @@ const AgentDashboard: React.FC = () => {
       .single();
 
     if (a) {
+      // Try to get full PU details including state/lga/ward
+      const pu = a.polling_units as any;
+      let stateName = "—";
+      let lgaName = "—";
+      let wardName = "—";
+
+      // If we have nested data from the join
+      if (pu?.states?.name) stateName = pu.states.name;
+      if (pu?.lgas?.name) lgaName = pu.lgas.name;
+      if (pu?.wards?.name) wardName = pu.wards.name;
+
+      // Otherwise fetch from the PU directly
+      if (stateName === "—" && pu?.id) {
+        const { data: puDetail } = await supabase
+          .from("polling_units")
+          .select("states(name), lgas(name), wards(name)")
+          .eq("id", pu.id)
+          .single();
+        if (puDetail) {
+          stateName = (puDetail as any)?.states?.name || "—";
+          lgaName = (puDetail as any)?.lgas?.name || "—";
+          wardName = (puDetail as any)?.wards?.name || "—";
+        }
+      }
+
       setAssignment({
         id: a.id,
-        polling_unit_name: (a.polling_units as any)?.name || "—",
-        polling_unit_code: (a.polling_units as any)?.official_code || "—",
-        state_name: "—",
-        lga_name: "—",
-        ward_name: "—",
+        polling_unit_name: pu?.name || "—",
+        polling_unit_code: pu?.official_code || "—",
+        state_name: stateName,
+        lga_name: lgaName,
+        ward_name: wardName,
         election_name: (a.elections as any)?.name || "—",
         observer_number: a.observer_number,
         status: a.status,
@@ -209,8 +234,11 @@ const AgentDashboard: React.FC = () => {
                 {([
                   ["Election", assignment.election_name],
                   ["Observer", `#${assignment.observer_number}`],
+                  ["Ward", assignment.ward_name],
+                  ["LGA", assignment.lga_name],
+                  ["State", assignment.state_name],
                   assignment.checked_in_at ? ["Checked in", new Date(assignment.checked_in_at).toLocaleTimeString()] : null,
-                ] as [string, string][]).filter((item): item is [string, string] => item !== null).map(([label, value]) => (
+                ] as [string, string][]).filter((item): item is [string, string] => item !== null && item[1] !== "—").map(([label, value]) => (
                   <div key={label} className="flex justify-between">
                     <span className="text-[var(--color-text-dim)]">{label}</span>
                     <span className="font-mono text-[var(--color-text-muted)]">{value}</span>
