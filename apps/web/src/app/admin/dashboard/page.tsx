@@ -213,10 +213,10 @@ const AdminDashboard: React.FC = () => {
       </header>
 
       {/* Tabs */}
-      <nav className="border-b border-[var(--color-gray-100)] px-4">
-        <div className="max-w-6xl mx-auto flex gap-4">
+      <nav className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-6xl mx-auto flex overflow-x-auto scrollbar-hide">
           {tabs.map((t) => (
-            <button key={t} onClick={() => setActiveTab(t)} className={`py-2 font-mono text-xs border-b-2 transition-colors ${
+            <button key={t} onClick={() => setActiveTab(t)} className={`flex-shrink-0 px-3 py-2.5 font-mono text-[11px] border-b-2 transition-colors whitespace-nowrap ${
               activeTab === t ? "border-[var(--color-green)] text-[var(--color-green-bright)]" : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]"
             }`}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
