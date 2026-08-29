@@ -58,55 +58,33 @@ const AgentDashboard: React.FC = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
-    const { data: volunteer } = await supabase
-      .from("volunteers").select("id").eq("user_id", session.user.id).single();
-
-    if (!volunteer) { setLoading(false); return; }
-
+    // Single query with full nested joins — no fallback needed
     const { data: a } = await supabase
       .from("agent_assignments")
       .select(`
         id, status, observer_number, assigned_at, checked_in_at,
-        polling_units ( name, official_code ),
+        polling_units (
+          name, official_code,
+          states ( name ),
+          lgas ( name ),
+          wards ( name )
+        ),
         elections ( name )
       `)
-      .eq("volunteer_id", volunteer.id)
       .in("status", ["ASSIGNED", "ACTIVATED", "CHECKED_IN"])
+      .order("assigned_at", { ascending: false })
+      .limit(1)
       .single();
 
     if (a) {
-      // Try to get full PU details including state/lga/ward
       const pu = a.polling_units as any;
-      let stateName = "—";
-      let lgaName = "—";
-      let wardName = "—";
-
-      // If we have nested data from the join
-      if (pu?.states?.name) stateName = pu.states.name;
-      if (pu?.lgas?.name) lgaName = pu.lgas.name;
-      if (pu?.wards?.name) wardName = pu.wards.name;
-
-      // Otherwise fetch from the PU directly
-      if (stateName === "—" && pu?.id) {
-        const { data: puDetail } = await supabase
-          .from("polling_units")
-          .select("states(name), lgas(name), wards(name)")
-          .eq("id", pu.id)
-          .single();
-        if (puDetail) {
-          stateName = (puDetail as any)?.states?.name || "—";
-          lgaName = (puDetail as any)?.lgas?.name || "—";
-          wardName = (puDetail as any)?.wards?.name || "—";
-        }
-      }
-
       setAssignment({
         id: a.id,
         polling_unit_name: pu?.name || "—",
         polling_unit_code: pu?.official_code || "—",
-        state_name: stateName,
-        lga_name: lgaName,
-        ward_name: wardName,
+        state_name: pu?.states?.name || "—",
+        lga_name: pu?.lgas?.name || "—",
+        ward_name: pu?.wards?.name || "—",
         election_name: (a.elections as any)?.name || "—",
         observer_number: a.observer_number,
         status: a.status,
@@ -185,8 +163,31 @@ const AgentDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="font-mono text-sm text-[var(--color-text-dim)]">Loading…</div>
+      <div className="min-h-screen">
+        <header className="border-b border-[var(--color-gray-100)] px-4 py-3">
+          <div className="max-w-lg mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-display font-bold text-sm">NG<span className="text-[var(--color-green)]">EO</span></span>
+              <span className="font-mono text-[10px] text-[var(--color-text-dim)]">AGENT</span>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+          <div className="border border-[var(--color-gray-100)] p-4 animate-pulse">
+            <div className="h-5 w-24 bg-[var(--color-gray-200)] rounded mb-3" />
+            <div className="h-3 w-40 bg-[var(--color-gray-100)] rounded mb-2" />
+            <div className="space-y-2 mt-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex justify-between">
+                  <div className="h-2 w-16 bg-[var(--color-gray-100)] rounded" />
+                  <div className="h-2 w-24 bg-[var(--color-gray-200)] rounded" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="h-12 bg-[var(--color-gray-100)] rounded animate-pulse" />
+          <div className="font-mono text-[10px] text-[var(--color-text-dim)] text-center">Loading assignment…</div>
+        </div>
       </div>
     );
   }
