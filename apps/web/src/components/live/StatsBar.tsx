@@ -15,8 +15,8 @@ interface Stats {
 const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stats>({
-    inecTotal: 176846,
-    dbTotal: 176846,
+    inecTotal: 188042,
+    dbTotal: 188042,
     coveredPollingUnits: 0,
     verifiedPollingUnits: 0,
     activeObservers: 0,
@@ -37,8 +37,8 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       if (!res.ok) return;
       const data = await res.json();
       setStats({
-        inecTotal: data.inec_total_polling_units || 176846,
-        dbTotal: data.total_polling_units || 176846,
+        inecTotal: data.inec_total_polling_units || 188042,
+        dbTotal: data.total_polling_units || 188042,
         coveredPollingUnits: data.covered_polling_units || 0,
         verifiedPollingUnits: data.verified_polling_units || 0,
         activeObservers: data.active_observers || 0,

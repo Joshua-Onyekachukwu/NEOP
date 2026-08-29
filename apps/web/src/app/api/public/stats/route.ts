@@ -46,8 +46,8 @@ export async function GET(_request: NextRequest) {
         supabase.from("incidents").select("*", { count: "exact", head: true }),
       ]);
 
-    const INEC_TOTAL = 176846;
-    const totalCount = totalPU.count || INEC_TOTAL;
+    const INEC_TOTAL = totalPU.count || 188042;
+    const totalCount = INEC_TOTAL;
 
     const result = {
       inec_total_polling_units: INEC_TOTAL,
