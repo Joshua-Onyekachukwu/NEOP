@@ -7,15 +7,6 @@ const Footer: React.FC = () => {
   return (
     <footer className="border-t border-[var(--color-gray-100)]">
       <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
-        {/* Disclaimer */}
-        <div className="mb-[32px] p-[16px] bg-[var(--color-amber-bg)] rounded-[4px] border border-[var(--color-amber-dim)]">
-          <p className="text-center font-mono text-xs text-[var(--color-amber)]">
-            <strong>Independent Platform:</strong> Not affiliated with INEC.
-            All data is independently collected by citizen observers.
-            Not official INEC election results.
-          </p>
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[24px] mb-[32px]">
           {/* About */}
           <div>

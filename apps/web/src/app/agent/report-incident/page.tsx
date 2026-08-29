@@ -25,6 +25,7 @@ const AgentReportIncident: React.FC = () => {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,9 +43,15 @@ const AgentReportIncident: React.FC = () => {
       .from("agent_assignments").select("id, polling_unit_id, election_id")
       .eq("volunteer_id", volunteer.id).in("status", ["CHECKED_IN", "ACTIVATED"]).single();
 
+    if (!assignment) {
+      setError("You must be checked in at a polling unit to report an incident.");
+      setLoading(false);
+      return;
+    }
+
     await supabase.from("incidents").insert({
-      election_id: assignment?.election_id || "00000000-0000-0000-0000-000000000000",
-      polling_unit_id: assignment?.polling_unit_id || "00000000-0000-0000-0000-000000000000",
+      election_id: assignment.election_id,
+      polling_unit_id: assignment.polling_unit_id,
       volunteer_id: volunteer.id,
       assignment_id: assignment?.id,
       category,
@@ -69,6 +76,11 @@ const AgentReportIncident: React.FC = () => {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-6">
+        {error && (
+          <div className="mb-4 p-3 bg-[var(--color-red-dim)] border border-[var(--color-red)] text-[var(--color-red-bright)] text-xs font-mono" role="alert">
+            {error}
+          </div>
+        )}
         {submitted ? (
           <div className="text-center py-16">
             <div className="font-display font-bold text-lg text-[var(--color-green-bright)] mb-2">Reported</div>

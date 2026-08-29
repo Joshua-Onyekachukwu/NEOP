@@ -31,12 +31,9 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   useEffect(() => {
     fetchResults();
-  }, [refreshKey]);
-
-  useEffect(() => {
     const interval = setInterval(fetchResults, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshKey]);
 
   const fetchResults = async () => {
     try {

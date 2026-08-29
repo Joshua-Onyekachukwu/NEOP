@@ -21,30 +21,25 @@ const Navbar: React.FC = () => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Check auth state
+  // Check auth state — lightweight, no DB queries
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { setAuthState("none"); return; }
 
-      // Check if admin
-      const { data: adminUser } = await supabase
-        .from("admin_users")
-        .select("id")
-        .eq("user_id", session.user.id)
-        .eq("is_active", true)
-        .single();
+      // Use email heuristic — admins have admin emails, agents use Google
+      // This avoids 2 DB queries on every page load
+      const email = session.user.email || "";
+      const provider = session.user.app_metadata?.providers?.[0];
 
-      if (adminUser) { setAuthState("admin"); return; }
+      // If signed in via email/password (admin login), show admin link
+      if (provider === "email" || session.user.app_metadata?.provider === "email") {
+        setAuthState("admin");
+        return;
+      }
 
-      // Check if agent/volunteer
-      const { data: volunteer } = await supabase
-        .from("volunteers")
-        .select("id")
-        .eq("user_id", session.user.id)
-        .single();
-
-      setAuthState(volunteer ? "agent" : "none");
+      // Google OAuth users are agents
+      setAuthState("agent");
     };
 
     checkAuth();

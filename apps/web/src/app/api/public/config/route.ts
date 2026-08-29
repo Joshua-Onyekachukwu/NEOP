@@ -16,6 +16,11 @@ let cachedConfig: any = null;
 let cacheTime = 0;
 const CACHE_TTL = 3_000;
 
+// Cache PU count separately (expensive query, changes rarely)
+let cachedPUCount: number | null = null;
+let puCountTime = 0;
+const PU_COUNT_TTL = 60_000; // 1 minute
+
 export async function GET(_request: NextRequest) {
   try {
     const now = Date.now();
@@ -58,10 +63,18 @@ export async function GET(_request: NextRequest) {
     const isRunning = status === "RUNNING";
     const isLive = status === "COMPLETED" && hasResults;
 
-    // Get actual PU count from database
-    const { count: puCount } = await supabase
-      .from("polling_units")
-      .select("*", { count: "exact", head: true });
+    // Get actual PU count from database (cached for 1 minute)
+    let puCount = cachedPUCount;
+    if (!puCount || Date.now() - puCountTime > PU_COUNT_TTL) {
+      const { count } = await supabase
+        .from("polling_units")
+        .select("*", { count: "exact", head: true });
+      if (count) {
+        puCount = count;
+        cachedPUCount = count;
+        puCountTime = Date.now();
+      }
+    }
 
     const result = {
       status,
