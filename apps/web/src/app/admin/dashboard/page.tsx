@@ -208,7 +208,13 @@ const AdminDashboard: React.FC = () => {
             <span className="font-display font-bold text-sm text-[var(--color-text)]">NG<span className="text-[var(--color-green)]">EO</span></span>
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">ADMIN</span>
           </div>
-          <button onClick={handleLogout} className="font-mono text-[10px] text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]">Sign out</button>
+          <div className="flex items-center gap-3">
+            <a href="/" target="_self" className="flex items-center gap-1 font-mono text-[10px] text-[var(--color-green-bright)] hover:text-[var(--color-green)] transition-colors">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
+              LIVE
+            </a>
+            <button onClick={handleLogout} className="font-mono text-[10px] text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]">Sign out</button>
+          </div>
         </div>
       </header>
 
