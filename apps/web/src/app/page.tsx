@@ -140,8 +140,16 @@ const HomePage: React.FC = () => {
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[48px]">
           <div className="flex flex-col md:flex-row items-end justify-between gap-[24px]">
             <div>
-              <div className="stat-label mb-[8px]">
-                {config.title} — {config.subtitle}
+              <div className="flex items-center gap-[10px] mb-[8px]">
+                <div className={`stat-label`}>                    {config.title} — {config.subtitle}
+                </div>
+                <div className={`flex-shrink-0 px-2 py-0.5 border font-mono text-[9px] font-bold uppercase tracking-wider ${
+                  config.election_type === "GOVERNORSHIP"
+                    ? "border-[var(--color-blue)]/40 text-[var(--color-blue)] bg-[var(--color-blue)]/10"
+                    : "border-[var(--color-green)]/40 text-[var(--color-green-bright)] bg-[var(--color-green)]/10"
+                }`}>
+                  {config.election_type === "GOVERNORSHIP" ? "GOVERNORSHIP" : "PRESIDENTIAL"}
+                </div>
               </div>
               <h1 className="big-number">{config.total_polling_units.toLocaleString()}</h1>
               <div className="stat-label mt-[8px]">polling units across Nigeria (INEC 2026)</div>

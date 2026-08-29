@@ -48,11 +48,24 @@ const AdminDashboard: React.FC = () => {
   const [simDuration, setSimDuration] = useState<number>(5);
   const [simVoters, setSimVoters] = useState<number>(100);
   const [simRunning, setSimRunning] = useState(false);
+  const [simElectionType, setSimElectionType] = useState<string>("PRESIDENTIAL");
   const [simProgress, setSimProgress] = useState<string>("");
   const [simResult, setSimResult] = useState<SimResult | null>(null);
   const [simError, setSimError] = useState<string>("");
 
-  useEffect(() => { checkAuth(); fetchStats(); }, []);
+  useEffect(() => {
+    checkAuth();
+    fetchStats();
+    // Fetch current election type from config
+    supabase
+      .from("simulation_config")
+      .select("election_type")
+      .eq("id", "00000000-0000-0000-0000-000000000001")
+      .single()
+      .then(({ data }) => {
+        if (data?.election_type) setSimElectionType(data.election_type);
+      });
+  }, []);
 
   useEffect(() => {
     if (activeTab === "verification") fetchResults();
@@ -468,26 +481,50 @@ const AdminDashboard: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { key: "PRESIDENTIAL", label: "Presidential & National Assembly", date: "16 January 2027" },
-                      { key: "GOVERNORSHIP", label: "Governorship & State Assembly", date: "6 February 2027" },
-                    ].map((e) => (
-                      <button
-                        key={e.key}
-                        onClick={async () => {
+                      { key: "PRESIDENTIAL", label: "Presidential & National Assembly", date: "16 January 2027", color: "green" },
+                      { key: "GOVERNORSHIP", label: "Governorship & State Assembly", date: "6 February 2027", color: "blue" },
+                    ].map((e) => {
+                      const isActive = simElectionType === e.key;
+                      return (
+                        <button
+                          key={e.key}
+                          onClick={async () => {
                           await fetch("/api/admin/config", {
                             method: "PUT",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ election_type: e.key }),
                           });
+                          setSimElectionType(e.key);
                           alert(`Switched to: ${e.label}`);
-                        }}
-                        disabled={simRunning}
-                        className="text-left p-3 border border-[var(--color-gray-200)] hover:border-[var(--color-green)] transition-colors disabled:opacity-50"
-                      >
-                        <div className="font-mono text-xs font-bold text-[var(--color-text)]">{e.label}</div>
-                        <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5">{e.date}</div>
-                      </button>
-                    ))}
+                          }}
+                          disabled={simRunning}
+                          className={`text-left p-3 border transition-all disabled:opacity-50 ${
+                            isActive
+                              ? e.color === "blue"
+                                ? "border-[var(--color-blue)] bg-[var(--color-blue)]/10 ring-1 ring-[var(--color-blue)]/30"
+                                : "border-[var(--color-green)] bg-[var(--color-green)]/10 ring-1 ring-[var(--color-green)]/30"
+                              : "border-[var(--color-gray-200)] hover:border-[var(--color-green)]/50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-mono text-xs font-bold text-[var(--color-text)]">{e.label}</div>
+                            {isActive && (
+                              <div className={`w-2 h-2 rounded-full ${
+                                e.color === "blue" ? "bg-[var(--color-blue)]" : "bg-[var(--color-green-bright)]"
+                              }`} />
+                            )}
+                          </div>
+                          <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5">{e.date}</div>
+                          {isActive && (
+                            <div className={`mt-2 font-mono text-[9px] font-bold uppercase tracking-wider ${
+                              e.color === "blue" ? "text-[var(--color-blue)]" : "text-[var(--color-green-bright)]"
+                            }`}>
+                              ACTIVE
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

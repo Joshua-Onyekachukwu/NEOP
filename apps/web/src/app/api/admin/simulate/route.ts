@@ -9,6 +9,7 @@
  *   scenario?: "landslide" | "close" | "sweep" | "random",
  *   duration_minutes?: number,
  *   total_voters?: number,
+ *   election_type?: "PRESIDENTIAL" | "GOVERNORSHIP",
  * }
  */
 
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
       scenario: scenarioKey,
       duration_minutes,
       total_voters,
+      election_type,
     } = body;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[sim] Starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}`
+      `[sim] Starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
     );
 
     // Call the fast SQL function — this runs everything in Postgres
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
       p_scenario: scenarioKey || "random",
       p_duration_minutes: duration_minutes || 5,
       p_total_voters: total_voters || 100_000_000,
+      p_election_type: election_type || "PRESIDENTIAL",
     });
 
     if (error) {
