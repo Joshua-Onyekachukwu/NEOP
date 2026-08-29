@@ -50,7 +50,7 @@ const HomePage: React.FC = () => {
     title: "Presidential & National Assembly Election",
     subtitle: "16 January 2027",
     date: "2027-01-16",
-    total_polling_units: 176846,
+    total_polling_units: 0,
     display_status: "WAITING",
     status_label: "Awaiting data",
     total_results: 0,

@@ -587,7 +587,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-                        ~{Math.round(simVoters * 1_000_000 / 176846).toLocaleString()} votes per polling unit on average
+                        ~{Math.round(simVoters * 1_000_000 / 188042).toLocaleString()} votes per polling unit on average
                       </div>
                     </div>
                   </div>

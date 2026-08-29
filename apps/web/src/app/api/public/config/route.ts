@@ -58,6 +58,11 @@ export async function GET(_request: NextRequest) {
     const isRunning = status === "RUNNING";
     const isLive = status === "COMPLETED" && hasResults;
 
+    // Get actual PU count from database
+    const { count: puCount } = await supabase
+      .from("polling_units")
+      .select("*", { count: "exact", head: true });
+
     const result = {
       status,
       election_type: config?.election_type || "PRESIDENTIAL",
@@ -68,7 +73,7 @@ export async function GET(_request: NextRequest) {
         ? "Simulation complete — reviewing results"
         : "Awaiting election data — observers will report from polling units",
       date: "2027-01-16",
-      total_polling_units: 176846,
+      total_polling_units: puCount || 188042,
       total_results: config?.total_results_submitted || 0,
       display_status: isRunning ? "SIMULATION" : isLive ? "LIVE" : "WAITING",
       status_label: isRunning
@@ -91,7 +96,7 @@ export async function GET(_request: NextRequest) {
         title: "Presidential & National Assembly Election",
         subtitle: "Awaiting election data",
         date: "2027-01-16",
-        total_polling_units: 176846,
+        total_polling_units: 188042,
         total_results: 0,
         display_status: "IDLE",
         status_label: "AWAITING DATA",
