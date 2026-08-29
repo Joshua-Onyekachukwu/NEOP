@@ -64,7 +64,8 @@ BEGIN
     WHEN random() < 0.30 THEN 'COUNTING'
     WHEN random() < 0.40 THEN 'VOTING'
     ELSE 'NOT_STARTED'
-  END;
+  END
+  WHERE id IS NOT NULL;
 
   -- ── Step 4: Ensure election exists ──
   INSERT INTO elections (name, election_type, election_date)

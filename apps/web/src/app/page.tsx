@@ -127,6 +127,7 @@ const HomePage: React.FC = () => {
   };
 
   const statusStyle = STATUS_STYLES[config.display_status] || STATUS_STYLES.WAITING;
+  const glowClass = config.display_status === "LIVE" ? "glow-live" : config.display_status === "SIMULATION" ? "glow-simulation" : "glow-waiting";
 
   return (
     <div className="min-h-screen pt-[56px]">
@@ -147,7 +148,7 @@ const HomePage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-end gap-[8px] pb-[8px]">
-              <div className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg}`}>
+              <div className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg} ${glowClass}`}>
                 <div className={`w-2 h-2 rounded-full ${statusStyle.dot} ${isSimulation ? "animate-pulse" : ""}`} />
                 <span className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}>
                   {statusStyle.label}

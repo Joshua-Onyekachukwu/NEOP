@@ -263,6 +263,30 @@ button {
   }
 }
 
+/* ── Election card glow effect ── */
+@keyframes glow-live {
+  0%, 100% { box-shadow: 0 0 8px rgba(39, 174, 96, 0.3), 0 0 20px rgba(39, 174, 96, 0.15); }
+  50% { box-shadow: 0 0 16px rgba(39, 174, 96, 0.5), 0 0 40px rgba(39, 174, 96, 0.25); }
+}
+@keyframes glow-simulation {
+  0%, 100% { box-shadow: 0 0 8px rgba(212, 160, 23, 0.3), 0 0 20px rgba(212, 160, 23, 0.15); }
+  50% { box-shadow: 0 0 16px rgba(212, 160, 23, 0.5), 0 0 40px rgba(212, 160, 23, 0.25); }
+}
+@keyframes glow-waiting {
+  0%, 100% { box-shadow: 0 0 4px rgba(107, 114, 128, 0.2); }
+  50% { box-shadow: 0 0 8px rgba(107, 114, 128, 0.3); }
+}
+
+.glow-live { animation: glow-live 2s ease-in-out infinite; }
+.glow-simulation { animation: glow-simulation 1.5s ease-in-out infinite; }
+.glow-waiting { animation: glow-waiting 3s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-live, .glow-simulation, .glow-waiting {
+    animation: none;
+  }
+}
+
 /* ── Hide scrollbar for tab navigation ── */
 .scrollbar-hide {
   -ms-overflow-style: none;
