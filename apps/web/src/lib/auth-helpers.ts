@@ -10,13 +10,16 @@ import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.share
  * Wait for a valid session with retries for localStorage hydration.
  * Returns the session or null after all retries exhausted.
  */
-export async function waitForSession(maxRetries = 5, delayMs = 600): Promise<any> {
+export async function waitForSession(maxRetries = 3, delayMs = 200): Promise<any> {
+  // First check is instant — no delay
+  const { data: { session: first } } = await supabase.auth.getSession();
+  if (first) return first;
+
+  // Only retry once with short delay for localStorage hydration
   for (let i = 0; i < maxRetries; i++) {
+    await new Promise(r => setTimeout(r, delayMs));
     const { data: { session } } = await supabase.auth.getSession();
     if (session) return session;
-    if (i < maxRetries - 1) {
-      await new Promise(r => setTimeout(r, delayMs));
-    }
   }
   return null;
 }

@@ -58,20 +58,19 @@ const AdminDashboard: React.FC = () => {
     const init = async () => {
       const session = await waitForSession();
       if (!session) { router.push("/admin/login"); return; }
-      const { data: admin } = await supabase
-        .from("admin_users").select("id")
-        .eq("user_id", session.user.id)
-        .eq("is_active", true).single();
-      if (!admin) { router.push("/admin/login"); return; }
+      // Check admin role — use parallel queries
+      const [adminCheck, configCheck] = await Promise.all([
+        supabase.from("admin_users").select("id")
+          .eq("user_id", session.user.id)
+          .eq("is_active", true).single(),
+        supabase.from("simulation_config")
+          .select("election_type")
+          .eq("id", "00000000-0000-0000-0000-000000000001")
+          .single(),
+      ]);
+      if (!adminCheck.data) { router.push("/admin/login"); return; }
+      if (configCheck.data?.election_type) setSimElectionType(configCheck.data.election_type);
       fetchStats();
-      supabase
-        .from("simulation_config")
-        .select("election_type")
-        .eq("id", "00000000-0000-0000-0000-000000000001")
-        .single()
-        .then(({ data }) => {
-          if (data?.election_type) setSimElectionType(data.election_type);
-        });
     };
     init();
   }, []);
@@ -84,22 +83,38 @@ const AdminDashboard: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      const [tv, av, ta, ci, tr, vr, pv, ti] = await Promise.all([
-        supabase.from("volunteers").select("*", { count: "exact", head: true }),
-        supabase.from("volunteers").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"),
-        supabase.from("agent_assignments").select("*", { count: "exact", head: true }),
-        supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "UNVERIFIED"),
-        supabase.from("incidents").select("*", { count: "exact", head: true }),
-      ]);
-      setStats({
-        totalVolunteers: tv.count || 0, activeVolunteers: av.count || 0,
-        totalAssignments: ta.count || 0, checkedInAssignments: ci.count || 0,
-        totalResults: tr.count || 0, verifiedResults: vr.count || 0,
-        pendingVerification: pv.count || 0, totalIncidents: ti.count || 0,
-      });
+      // Single RPC call replaces 8 separate COUNT queries
+      const { data, error } = await supabase.rpc("get_admin_stats");
+      if (data) {
+        setStats({
+          totalVolunteers: data.total_volunteers || 0,
+          activeVolunteers: data.active_volunteers || 0,
+          totalAssignments: data.total_assignments || 0,
+          checkedInAssignments: data.checked_in_assignments || 0,
+          totalResults: data.total_results || 0,
+          verifiedResults: data.verified_results || 0,
+          pendingVerification: data.pending_verification || 0,
+          totalIncidents: data.total_incidents || 0,
+        });
+      } else {
+        // Fallback: parallel individual queries if RPC not available
+        const [tv, av, ta, ci, tr, vr, pv, ti] = await Promise.all([
+          supabase.from("volunteers").select("*", { count: "exact", head: true }),
+          supabase.from("volunteers").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"),
+          supabase.from("agent_assignments").select("*", { count: "exact", head: true }),
+          supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
+          supabase.from("result_submissions").select("*", { count: "exact", head: true }),
+          supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
+          supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "UNVERIFIED"),
+          supabase.from("incidents").select("*", { count: "exact", head: true }),
+        ]);
+        setStats({
+          totalVolunteers: tv.count || 0, activeVolunteers: av.count || 0,
+          totalAssignments: ta.count || 0, checkedInAssignments: ci.count || 0,
+          totalResults: tr.count || 0, verifiedResults: vr.count || 0,
+          pendingVerification: pv.count || 0, totalIncidents: ti.count || 0,
+        });
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -248,7 +263,19 @@ const AdminDashboard: React.FC = () => {
 
       <div className="max-w-6xl mx-auto px-4 py-6">
         {loading ? (
-          <div className="font-mono text-sm text-[var(--color-text-dim)] text-center py-16">Loading…</div>
+          <div className="space-y-4">
+            {/* Skeleton stats grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3 animate-pulse">
+                  <div className="h-2 w-16 bg-[var(--color-gray-200)] rounded mb-2" />
+                  <div className="h-7 w-12 bg-[var(--color-gray-200)] rounded" />
+                  <div className="h-2 w-20 bg-[var(--color-gray-100)] rounded mt-1" />
+                </div>
+              ))}
+            </div>
+            <div className="font-mono text-[10px] text-[var(--color-text-dim)] text-center">Loading dashboard…</div>
+          </div>
         ) : (
           <>
             {/* Overview */}
