@@ -279,7 +279,10 @@ $$;
 GRANT EXECUTE ON FUNCTION simulation_tick() TO service_role;
 GRANT EXECUTE ON FUNCTION simulation_tick() TO anon;
 
-RAISE NOTICE '=== All fixes applied ===';
-RAISE NOTICE '1. election_type column added to elections table';
-RAISE NOTICE '2. Polling unit ward_ids redistributed';
-RAISE NOTICE '3. Simulation functions updated with 300s timeout';
+DO $$
+BEGIN
+  RAISE NOTICE '=== All fixes applied ===';
+  RAISE NOTICE '1. election_type column added to elections table';
+  RAISE NOTICE '2. Polling unit ward_ids redistributed';
+  RAISE NOTICE '3. Simulation functions updated with 300s timeout';
+END $$;
