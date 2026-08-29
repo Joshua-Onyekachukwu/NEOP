@@ -25,23 +25,40 @@ const AgentDashboard: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
-    checkAuth();
-    fetchAssignment();
+    // Use onAuthStateChange for reliable session persistence
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === "SIGNED_OUT" || !session) {
+          router.push("/agent/login");
+          return;
+        }
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+          fetchAssignment();
+        }
+      }
+    );
+
+    // Also check immediately in case we already have a session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        // Session might be refreshing — wait a bit
+        setTimeout(async () => {
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (!retrySession) router.push("/agent/login");
+        }, 1500);
+      }
+    });
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
+      subscription.unsubscribe();
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) router.push("/agent/login");
-  };
 
   const fetchAssignment = async () => {
     const { data: { session } } = await supabase.auth.getSession();

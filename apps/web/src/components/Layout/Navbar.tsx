@@ -3,11 +3,13 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
 
 const Navbar: React.FC = () => {
   const pathname = usePathname();
   const [isSticky, setIsSticky] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authState, setAuthState] = useState<"loading" | "none" | "agent" | "admin">("loading");
 
   useEffect(() => {
     const handleScroll = () => setIsSticky(window.scrollY > 80);
@@ -19,8 +21,45 @@ const Navbar: React.FC = () => {
     setMobileOpen(false);
   }, [pathname]);
 
+  // Check auth state
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setAuthState("none"); return; }
+
+      // Check if admin
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("id")
+        .eq("user_id", session.user.id)
+        .eq("is_active", true)
+        .single();
+
+      if (adminUser) { setAuthState("admin"); return; }
+
+      // Check if agent/volunteer
+      const { data: volunteer } = await supabase
+        .from("volunteers")
+        .select("id")
+        .eq("user_id", session.user.id)
+        .single();
+
+      setAuthState(volunteer ? "agent" : "none");
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setAuthState("none");
+      else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") checkAuth();
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   const isAdmin = pathname?.startsWith("/admin") ?? false;
   const isAgent = pathname?.startsWith("/agent") ?? false;
+  const isPublic = !isAdmin && !isAgent;
 
   return (
     <nav
@@ -37,11 +76,6 @@ const Navbar: React.FC = () => {
             <span className="font-display font-bold text-base text-[var(--color-text)]">
               NG<span className="text-[var(--color-green)]">EO</span>
             </span>
-            {!isAdmin && !isAgent && (
-              <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider">
-                Live Election Data
-              </span>
-            )}
             {isAdmin && (
               <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-amber)] uppercase tracking-wider">
                 Admin
@@ -65,25 +99,31 @@ const Navbar: React.FC = () => {
               LIVE
             </Link>
 
-            {/* Public page: show Agent + Admin links */}
-            {!isAdmin && !isAgent && (
+            {/* Public page: context-aware links */}
+            {isPublic && authState !== "loading" && (
               <>
-                <Link
-                  href="/agent/login"
-                  className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-                >
-                  Agent
-                </Link>
-                <Link
-                  href="/admin/login"
-                  className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-                >
-                  Admin
-                </Link>
+                {authState === "agent" ? (
+                  <Link href="/agent/dashboard" className="font-mono text-xs text-[var(--color-blue)] hover:text-[var(--color-text)] transition-colors">
+                    Dashboard
+                  </Link>
+                ) : authState === "admin" ? (
+                  <Link href="/admin/dashboard" className="font-mono text-xs text-[var(--color-amber)] hover:text-[var(--color-text)] transition-colors">
+                    Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link href="/agent/login" className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors">
+                      Agent
+                    </Link>
+                    <Link href="/admin/login" className="font-mono text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors">
+                      Admin
+                    </Link>
+                  </>
+                )}
               </>
             )}
 
-            {/* Admin page: show Dashboard + Agent links */}
+            {/* Admin page: show Dashboard link */}
             {isAdmin && (
               <Link
                 href="/admin/dashboard"
@@ -138,41 +178,36 @@ const Navbar: React.FC = () => {
               LIVE
             </Link>
 
-            {!isAdmin && !isAgent && (
+            {/* Context-aware mobile links */}
+            {isPublic && authState === "agent" && (
+              <Link href="/agent/dashboard" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-blue)]" onClick={() => setMobileOpen(false)}>
+                Dashboard
+              </Link>
+            )}
+            {isPublic && authState === "admin" && (
+              <Link href="/admin/dashboard" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-amber)]" onClick={() => setMobileOpen(false)}>
+                Dashboard
+              </Link>
+            )}
+            {isPublic && authState === "none" && (
               <>
-                <Link
-                  href="/agent/login"
-                  className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                  onClick={() => setMobileOpen(false)}
-                >
+                <Link href="/agent/login" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]" onClick={() => setMobileOpen(false)}>
                   Agent Portal
                 </Link>
-                <Link
-                  href="/admin/login"
-                  className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                  onClick={() => setMobileOpen(false)}
-                >
+                <Link href="/admin/login" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" onClick={() => setMobileOpen(false)}>
                   Admin Portal
                 </Link>
               </>
             )}
 
             {isAdmin && (
-              <Link
-                href="/admin/dashboard"
-                className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                onClick={() => setMobileOpen(false)}
-              >
+              <Link href="/admin/dashboard" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" onClick={() => setMobileOpen(false)}>
                 Admin Dashboard
               </Link>
             )}
 
             {isAgent && (
-              <Link
-                href="/agent/dashboard"
-                className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                onClick={() => setMobileOpen(false)}
-              >
+              <Link href="/agent/dashboard" className="block py-[12px] font-mono text-sm border-b border-[var(--color-gray-100)] last:border-b-0 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" onClick={() => setMobileOpen(false)}>
                 Agent Dashboard
               </Link>
             )}

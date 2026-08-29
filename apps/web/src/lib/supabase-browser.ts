@@ -10,6 +10,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 /**
  * Browser Supabase client.
  * Uses the anon key — RLS policies enforce access control.
- * Supports realtime subscriptions.
+ * Sessions persist in localStorage automatically.
+ * autoRefreshToken keeps the session alive across navigation.
  */
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
