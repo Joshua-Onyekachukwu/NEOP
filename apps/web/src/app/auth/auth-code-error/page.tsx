@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-const AuthCodeError: React.FC = () => {
+const AuthCodeErrorContent: React.FC = () => {
   const searchParams = useSearchParams();
   const error = searchParams?.get("error") || "Unknown error";
 
@@ -29,6 +29,18 @@ const AuthCodeError: React.FC = () => {
         </Link>
       </div>
     </div>
+  );
+};
+
+const AuthCodeError: React.FC = () => {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[var(--color-ink)] flex items-center justify-center">
+        <div className="font-mono text-sm text-[var(--color-text-dim)]">Loading…</div>
+      </div>
+    }>
+      <AuthCodeErrorContent />
+    </Suspense>
   );
 };
 
