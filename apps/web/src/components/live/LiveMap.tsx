@@ -265,10 +265,93 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         bounds.extend([pu.longitude, pu.latitude]);
       });
       map.current.fitBounds(bounds, { padding: 50 });
+
+      // ── Load disruption markers ──
+      loadDisruptions();
     } catch (err) {
       console.error("Error loading polling units:", err);
     } finally {
       fetchingRef.current = false;
+    }
+  };
+
+  const loadDisruptions = async () => {
+    if (!map.current || !maplibreglRef.current) return;
+    try {
+      const res = await fetch("/api/public/disruptions?limit=500");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.map_markers || data.map_markers.length === 0) return;
+
+      // Build GeoJSON for disruptions
+      const disruptionGeoJSON = {
+        type: "FeatureCollection" as const,
+        features: data.map_markers.map((m: any) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: [m.longitude, m.latitude] },
+          properties: {
+            id: m.id,
+            code: m.code,
+            name: m.name,
+            state: m.state,
+            category: m.category,
+            severity: m.severity,
+            color: m.color,
+          },
+        })),
+      };
+
+      // Add disruption source
+      if (map.current.getSource("disruptions")) {
+        (map.current.getSource("disruptions") as any).setData(disruptionGeoJSON);
+      } else {
+        map.current.addSource("disruptions", {
+          type: "geojson",
+          data: disruptionGeoJSON,
+        });
+
+        // Disruption markers — larger, pulsing rings
+        map.current.addLayer({
+          id: "disruption-pulse",
+          type: "circle",
+          source: "disruptions",
+          paint: {
+            "circle-color": ["get", "color"],
+            "circle-radius": 12,
+            "circle-opacity": 0.3,
+          },
+        });
+
+        map.current.addLayer({
+          id: "disruption-point",
+          type: "circle",
+          source: "disruptions",
+          paint: {
+            "circle-color": ["get", "color"],
+            "circle-radius": 6,
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#FFFFFF",
+          },
+        });
+
+        // Click handler for disruption points
+        map.current.on("click", "disruption-point", (e: any) => {
+          if (!e.features || e.features.length === 0) return;
+          const props = e.features[0].properties;
+          const coords = e.features[0].geometry.coordinates.slice();
+          setSelectedPU({
+            id: props.id,
+            official_code: props.code,
+            name: props.name + " [" + props.category + "]",
+            latitude: coords[1],
+            longitude: coords[0],
+            status: props.severity,
+            state_name: props.state || "Unknown",
+          });
+        });
+      }
+    } catch {
+      // silently fail
     }
   };
 

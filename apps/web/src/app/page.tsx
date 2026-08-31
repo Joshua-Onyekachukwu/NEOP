@@ -9,6 +9,7 @@ import IncidentBar from "@/components/live/IncidentBar";
 import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
 import ExportPanel from "@/components/live/ExportPanel";
+import DisruptionFeed from "@/components/live/DisruptionFeed";
 import { supabase } from "@/lib/supabase-browser";
 
 interface ElectionConfig {
@@ -225,10 +226,10 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* Incidents */}
+      {/* Disruptions & Incidents Feed */}
       <section className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
-          <IncidentBar />
+        <div className="max-w-[1400px] mx-auto">
+          <DisruptionFeed refreshKey={refreshKey} />
         </div>
       </section>
 
