@@ -41,29 +41,25 @@ export async function GET(_request: NextRequest) {
       });
     }
 
-    // Fallback
-    const allActive: any[] = [];
-    let offset = 0;
-    const pageSize = 1000;
+    // Fallback: count active PUs (lightweight — no need to fetch all 188K)
+    const { count: activeCount } = await supabase
+      .from("polling_units")
+      .select("id", { count: "exact", head: true })
+      .neq("status", "NOT_STARTED");
 
-    while (true) {
-      const { data, error } = await supabase
-        .from("polling_units")
-        .select("id, status, latitude, longitude")
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
-        .neq("status", "NOT_STARTED")
-        .range(offset, offset + pageSize - 1);
-
-      if (error || !data || data.length === 0) break;
-      allActive.push(...data);
-      if (data.length < pageSize) break;
-      offset += pageSize;
-    }
+    // Only fetch PUs that changed status in the last hour (recent activity)
+    const { data: recentChanges } = await supabase
+      .from("polling_units")
+      .select("id, status, latitude, longitude")
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .neq("status", "NOT_STARTED")
+      .order("updated_at", { ascending: false })
+      .limit(500);
 
     const result = {
-      active: allActive,
-      count: allActive.length,
+      active: recentChanges || [],
+      count: activeCount || 0,
       timestamp: Date.now(),
     };
 

@@ -71,6 +71,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (!results || results.length === 0) {
+      if (format === "json") {
+        return NextResponse.json({
+          summary: { total_results: 0, total_votes: 0, winner: "N/A", margin: 0, leaderboard: [], filters: { state: stateFilter, lga: lgaFilter, ward: wardFilter, status: statusFilter, pu: puFilter }, exported_at: new Date().toISOString(), disclaimer: "No results match the given filters." },
+          leaderboard: [],
+          results: [],
+        });
+      }
       return new NextResponse("No results found with the given filters.", {
         headers: { "Content-Type": "text/plain" },
       });
@@ -109,6 +116,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (filtered.length === 0) {
+      if (format === "json") {
+        return NextResponse.json({
+          summary: { total_results: 0, total_votes: 0, winner: "N/A", margin: 0, leaderboard: [], filters: { state: stateFilter, lga: lgaFilter, ward: wardFilter, status: statusFilter, pu: puFilter }, exported_at: new Date().toISOString(), disclaimer: "No results match the given filters." },
+          leaderboard: [],
+          results: [],
+        });
+      }
       return new NextResponse("No results found with the given filters.", {
         headers: { "Content-Type": "text/plain" },
       });
