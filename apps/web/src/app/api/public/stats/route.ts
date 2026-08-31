@@ -30,26 +30,25 @@ export async function GET(_request: NextRequest) {
     // Try fast SQL functions first
     let result: any = null;
 
-    // Attempt 1: Use get_state_breakdown_from_results (fast, uses result_submissions directly)
+    // Attempt 1: Use get_state_breakdown_from_results RPC (fast, aggregated in Postgres)
     try {
       const { data: sbData, error: sbError } = await supabase.rpc(
         "get_state_breakdown_from_results"
       );
 
       if (!sbError && sbData && sbData.length > 0) {
-        // Build stats from the state breakdown
+        // The RPC returns columns: state_name, state_id, total_pus, verified, submitted, disputed, disrupted
+        // (from migration 030). Handle both old and new column names.
         let totalCovered = 0;
         let totalVerified = 0;
-        let totalPU = 0;
         for (const row of sbData) {
-          totalPU += Number(row.total_polling_units || 0);
-          totalCovered += Number(row.covered_polling_units || 0);
-          totalVerified += Number(row.verified_polling_units || 0);
+          totalCovered += Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0);
+          totalVerified += Number(row.verified || row.verified_polling_units || 0);
         }
 
         result = {
           inec_total_polling_units: 188042,
-          total_polling_units: totalPU || 188042,
+          total_polling_units: 188042,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
           active_observers: 0,
@@ -57,22 +56,22 @@ export async function GET(_request: NextRequest) {
           incident_counts: {},
           state_breakdown: sbData.map((row: any) => ({
             state_id: row.state_id,
-            state_name: row.state_name || row.state_name,
+            state_name: row.state_name,
             name: row.state_name,
-            state_code: row.state_code,
-            total_pus: Number(row.total_polling_units || 0),
-            covered: Number(row.covered_polling_units || 0),
-            verified: Number(row.verified_polling_units || 0),
+            state_code: row.state_code || "",
+            total_pus: Number(row.total_pus || row.total_polling_units || 0),
+            covered: Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0),
+            verified: Number(row.verified || row.verified_polling_units || 0),
             coverage_percent: Number(row.coverage_percent || 0),
             verification_percent: Number(row.verification_percent || 0),
           })),
           coverage_percent:
-            totalPU > 0
-              ? Number(((totalCovered / totalPU) * 100).toFixed(1))
+            188042 > 0
+              ? Number(((totalCovered / 188042) * 100).toFixed(1))
               : 0,
           verification_percent:
-            totalPU > 0
-              ? Number(((totalVerified / totalPU) * 100).toFixed(1))
+            188042 > 0
+              ? Number(((totalVerified / 188042) * 100).toFixed(1))
               : 0,
           last_updated: new Date().toISOString(),
           disclaimer:
