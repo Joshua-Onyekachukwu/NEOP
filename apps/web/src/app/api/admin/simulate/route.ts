@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { invalidateAllCaches } from "@/lib/api-cache";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -88,6 +89,14 @@ export async function POST(request: NextRequest) {
       }
 
       console.log("[sim] Simulation complete:", JSON.stringify(data).slice(0, 500));
+
+      // Invalidate all CDN/serverless caches so the live dashboard shows fresh data
+      try {
+        invalidateAllCaches();
+        console.log("[sim] All caches invalidated");
+      } catch (e) {
+        console.error("[sim] Cache invalidation failed (non-fatal):", e);
+      }
 
       return NextResponse.json(data);
     } finally {

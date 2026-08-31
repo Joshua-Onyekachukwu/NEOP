@@ -128,6 +128,12 @@ export async function GET(request: NextRequest) {
       },
       disclaimer:
         "These are independently collected field observations and are not official INEC election results.",
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
+        "Surrogate-Control": "max-age=10, stale-if-error=120",
+        "X-Content-Type-Options": "nosniff",
+      },
     });
   } catch (error) {
     console.error("Error in public results API:", error);

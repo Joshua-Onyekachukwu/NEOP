@@ -1,7 +1,9 @@
 /**
  * GET /api/public/config
+ *
  * Returns election config and simulation status.
- * Uses SQL function for speed.
+ * Uses shared api-cache for 5-minute serverless cache.
+ * CDN serves from edge for 5 minutes.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,25 +14,26 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export const dynamic = "force-dynamic";
 
+// In-memory cache with stale detection
 let cachedConfig: any = null;
 let cacheTime = 0;
-const CACHE_TTL = 3_000;
-
-// Cache PU count separately (expensive query, changes rarely)
-let cachedPUCount: number | null = null;
-let puCountTime = 0;
-const PU_COUNT_TTL = 60_000; // 1 minute
+const CACHE_TTL = 5_000; // 5 seconds serverless-level cache
 
 export async function GET(_request: NextRequest) {
   try {
     const now = Date.now();
     if (cachedConfig && now - cacheTime < CACHE_TTL) {
-      return NextResponse.json(cachedConfig);
+      return NextResponse.json(cachedConfig, {
+        headers: {
+          "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
+          "Surrogate-Control": "max-age=300, stale-if-error=3600",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Direct query — check staleness
     const { data: config } = await supabase
       .from("simulation_config")
       .select("*")
@@ -42,10 +45,9 @@ export async function GET(_request: NextRequest) {
     // Detect stale simulations — if RUNNING but no tick in 60s, mark completed
     if (status === "RUNNING" && config?.last_tick_at) {
       const lastTick = new Date(config.last_tick_at).getTime();
-      const staleThreshold = 60 * 1000; // 60 seconds
-      if (Date.now() - lastTick > staleThreshold) {
+      if (Date.now() - lastTick > 60_000) {
         status = "COMPLETED";
-        // Auto-reset in background (fire and forget)
+        // Auto-reset in background
         supabase
           .from("simulation_config")
           .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
@@ -54,39 +56,25 @@ export async function GET(_request: NextRequest) {
       }
     }
 
-    // If there are no results, always show IDLE regardless of config status
     const hasResults = (config?.total_results_submitted || 0) > 0;
-    if (!hasResults && status === "COMPLETED") {
-      status = "IDLE";
-    }
+    if (!hasResults && status === "COMPLETED") status = "IDLE";
 
     const isRunning = status === "RUNNING";
     const isLive = status === "COMPLETED" && hasResults;
 
-    // Get actual PU count from database (cached for 1 minute)
-    let puCount = cachedPUCount;
-    if (!puCount || Date.now() - puCountTime > PU_COUNT_TTL) {
-      const { count } = await supabase
-        .from("polling_units")
-        .select("*", { count: "exact", head: true });
-      if (count) {
-        puCount = count;
-        cachedPUCount = count;
-        puCountTime = Date.now();
-      }
-    }
-
     const result = {
       status,
       election_type: config?.election_type || "PRESIDENTIAL",
-      title: "Presidential & National Assembly Election",
+      title: config?.election_type === "GOVERNORSHIP"
+        ? "Governorship & State Assembly Election"
+        : "Presidential & National Assembly Election",
       subtitle: isRunning
         ? "Simulation in progress — data updating live"
         : isLive
         ? "Simulation complete — reviewing results"
         : "Awaiting election data — observers will report from polling units",
-      date: "2027-01-16",
-      total_polling_units: puCount || 188042,
+      date: config?.election_type === "GOVERNORSHIP" ? "2027-02-06" : "2027-01-16",
+      total_polling_units: 188042,
       total_results: config?.total_results_submitted || 0,
       display_status: isRunning ? "SIMULATION" : isLive ? "LIVE" : "WAITING",
       status_label: isRunning
@@ -99,7 +87,13 @@ export async function GET(_request: NextRequest) {
     cachedConfig = result;
     cacheTime = now;
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
+        "Surrogate-Control": "max-age=300, stale-if-error=3600",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error) {
     console.error("Error in config API:", error);
     return NextResponse.json(
@@ -114,7 +108,13 @@ export async function GET(_request: NextRequest) {
         display_status: "IDLE",
         status_label: "AWAITING DATA",
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
+          "Surrogate-Control": "max-age=300, stale-if-error=3600",
+        },
+      }
     );
   }
 }
