@@ -46,7 +46,6 @@ DELETE FROM volunteers WHERE user_id IN (
   SELECT id FROM user_accounts WHERE email LIKE 'sim-%'
 );
 DELETE FROM user_accounts WHERE email LIKE 'sim-%';
-RAISE NOTICE 'Cleanup complete';
 
 -- STEP 4: Ensure all 9 parties exist
 INSERT INTO parties (official_name, abbreviation, color) VALUES
@@ -62,7 +61,6 @@ INSERT INTO parties (official_name, abbreviation, color) VALUES
 ON CONFLICT (abbreviation) DO UPDATE SET
   official_name = EXCLUDED.official_name,
   color = EXCLUDED.color;
-RAISE NOTICE 'All 9 parties ensured';
 
 -- STEP 5: Create indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_rs_status ON result_submissions(status);
@@ -72,7 +70,6 @@ CREATE INDEX IF NOT EXISTS idx_pr_submission ON party_results(result_submission_
 CREATE INDEX IF NOT EXISTS idx_pr_party ON party_results(party_id);
 CREATE INDEX IF NOT EXISTS idx_pu_state ON polling_units(state_id);
 CREATE INDEX IF NOT EXISTS idx_pu_status ON polling_units(status);
-RAISE NOTICE 'Indexes created';
 
 -- STEP 6: State breakdown function (correct column names)
 DROP FUNCTION IF EXISTS get_state_breakdown_from_results();
@@ -103,7 +100,6 @@ AS $$
   ORDER BY COUNT(*) DESC;
 $$;
 GRANT EXECUTE ON FUNCTION get_state_breakdown_from_results() TO anon, service_role;
-RAISE NOTICE 'get_state_breakdown_from_results created';
 
 -- STEP 7: Simulation function with TRUNCATE (fixes lock timeout) + all 9 parties
 DROP FUNCTION IF EXISTS run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT);
@@ -265,7 +261,6 @@ $$;
 
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO anon;
-RAISE NOTICE 'run_fast_simulation created with TRUNCATE + all 9 parties';
 
 -- DONE
 SELECT '=== Migration 099 Complete ===' AS status,
