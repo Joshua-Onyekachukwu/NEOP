@@ -104,11 +104,17 @@ export async function GET(_request: NextRequest) {
     const coveredCount = submittedRes.count || 0;
     const verifiedCount = verifiedRes.count || 0;
 
-    // Build state breakdown (always fresh)
+    // Build state breakdown — try fast SQL function first, fall back to pagination
     let stateBreakdown: any[] = [];
     if (coveredCount > 0) {
       try {
-        stateBreakdown = await fetchStateBreakdown(supabase);
+        const { data: sbRpc, error: sbErr } = await supabase.rpc("get_state_breakdown_from_results");
+        if (!sbErr && sbRpc && sbRpc.length > 0) {
+          stateBreakdown = sbRpc;
+        } else {
+          // Fallback to client-side pagination
+          stateBreakdown = await fetchStateBreakdown(supabase);
+        }
       } catch (e) {
         console.error("State breakdown fetch failed:", e);
         stateBreakdown = [];
