@@ -54,6 +54,8 @@ const AdminDashboard: React.FC = () => {
   const [simProgress, setSimProgress] = useState<string>("");
   const [simResult, setSimResult] = useState<SimResult | null>(null);
   const [simError, setSimError] = useState<string>("");
+  const [convexSyncing, setConvexSyncing] = useState(false);
+  const [convexSyncResult, setConvexSyncResult] = useState<string>("");
 
   useEffect(() => {
     const init = async () => {
@@ -665,14 +667,44 @@ const AdminDashboard: React.FC = () => {
                       ⏳ SIMULATION RUNNING — DO NOT CLOSE THIS PAGE
                     </button>
                   ) : simResult ? (
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 flex-wrap">
                       <a
                         href="/"
                         target="_blank"
                         className="flex-1 py-3 bg-[var(--color-green)] text-white font-mono text-sm font-bold text-center hover:bg-[var(--color-green-dim)] transition-colors"
                       >
-                        📊 VIEW LIVE DASHBOARD →
+                        📊 VIEW LIVE DASHBOARD
                       </a>
+                      <button
+                        onClick={async () => {
+                          setConvexSyncing(true);
+                          setConvexSyncResult("");
+                          try {
+                            const { data: { session } } = await supabase.auth.getSession();
+                            const res = await fetch("/api/admin/sync-convex", {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                                ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+                              },
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              setConvexSyncResult(`Synced ${data.mutations_succeeded}/${data.mutations_sent} to Convex`);
+                            } else {
+                              setConvexSyncResult(`Error: ${data.error}`);
+                            }
+                          } catch (e: any) {
+                            setConvexSyncResult(`Error: ${e.message}`);
+                          } finally {
+                            setConvexSyncing(false);
+                          }
+                        }}
+                        disabled={convexSyncing}
+                        className="flex-1 py-3 border border-[var(--color-green)]/30 text-[var(--color-green-bright)] font-mono text-sm font-bold hover:bg-[var(--color-green)]/10 transition-colors disabled:opacity-50"
+                      >
+                        {convexSyncing ? "⏳ SYNCING..." : "⚡ SYNC TO CONVEX"}
+                      </button>
                       <button
                         onClick={runSimulation}
                         className="flex-1 py-3 border border-[var(--color-gray-200)] text-[var(--color-text-muted)] font-mono text-sm font-bold hover:border-[var(--color-green)] hover:text-[var(--color-green)] transition-colors"
@@ -687,6 +719,13 @@ const AdminDashboard: React.FC = () => {
                     >
                       ▶ RUN {simScenario.toUpperCase()} SIMULATION
                     </button>
+                  )}
+
+                  {/* Convex sync result */}
+                  {convexSyncResult && (
+                    <div className="mt-2 p-2 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
+                      <span className="font-mono text-[10px] text-[var(--color-text-muted)]">{convexSyncResult}</span>
+                    </div>
                   )}
 
                   {/* Progress */}
