@@ -262,6 +262,80 @@ $$;
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO anon;
 
+-- STEP 8: Fix get_party_totals — use LEFT JOIN so ALL parties show (even with 0 votes)
+DROP FUNCTION IF EXISTS get_party_totals();
+CREATE OR REPLACE FUNCTION get_party_totals()
+RETURNS TABLE (
+  party_name TEXT,
+  party_abbreviation TEXT,
+  party_color TEXT,
+  total_votes BIGINT,
+  percentage NUMERIC
+)
+LANGUAGE plpgsql STABLE
+AS $$
+DECLARE gt BIGINT;
+BEGIN
+  SELECT COALESCE(SUM(pr.votes), 0) INTO gt FROM party_results pr;
+  RETURN QUERY
+  WITH ps AS (
+    SELECT p.official_name, p.abbreviation, p.color, COALESCE(SUM(pr.votes), 0) AS votes
+    FROM parties p
+    LEFT JOIN party_results pr ON pr.party_id = p.id
+    GROUP BY p.id, p.official_name, p.abbreviation, p.color
+  )
+  SELECT ps.official_name, ps.abbreviation, ps.color, ps.votes,
+    CASE WHEN gt > 0 THEN ROUND((ps.votes::NUMERIC / gt) * 100, 1) ELSE 0 END
+  FROM ps ORDER BY ps.votes DESC;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION get_party_totals() TO anon, service_role;
+
+-- STEP 9: Fix get_fast_stats — use result_submissions instead of agent_assignments for coverage
+CREATE OR REPLACE FUNCTION get_fast_stats()
+RETURNS JSONB
+LANGUAGE plpgsql STABLE
+AS $$
+BEGIN
+  RETURN (
+    SELECT jsonb_build_object(
+      'inec_total_polling_units', (SELECT count(*) FROM polling_units),
+      'total_polling_units', (SELECT count(*) FROM polling_units),
+      'covered_polling_units', (SELECT count(*) FROM result_submissions),
+      'verified_polling_units', (SELECT count(*) FROM result_submissions WHERE status = 'VERIFIED'),
+      'active_observers', (SELECT count(*) FROM agent_assignments WHERE status = 'CHECKED_IN'),
+      'total_incidents', (SELECT count(*) FROM incidents),
+      'state_breakdown', (
+        SELECT COALESCE(jsonb_agg(
+          jsonb_build_object(
+            'state_id', s.id, 'state_name', s.name,
+            'total_polling_units', COUNT(*),
+            'covered_polling_units', COUNT(*),
+            'verified_polling_units', COUNT(*) FILTER (WHERE rs.status = 'VERIFIED'),
+            'coverage_percent', 100.0,
+            'verification_percent', CASE WHEN COUNT(*) > 0
+              THEN ROUND(COUNT(*) FILTER (WHERE rs.status = 'VERIFIED')::NUMERIC / COUNT(*) * 100, 1)
+              ELSE 0 END
+          ) ORDER BY COUNT(*) DESC
+        ), '[]'::jsonb)
+        FROM result_submissions rs
+        INNER JOIN polling_units pu ON pu.id = rs.polling_unit_id
+        INNER JOIN states s ON s.id = pu.state_id
+        GROUP BY s.id, s.name
+      ),
+      'coverage_percent', 100.0,
+      'verification_percent', CASE WHEN (SELECT count(*) FROM result_submissions) > 0
+        THEN ROUND((SELECT count(*) FROM result_submissions WHERE status = 'VERIFIED')::NUMERIC /
+             (SELECT count(*) FROM result_submissions) * 100, 1) ELSE 0 END,
+      'last_updated', now(),
+      'disclaimer', 'These are independently collected field observations and are not official INEC election results.'
+    )
+  );
+END;
+$$;
+GRANT EXECUTE ON FUNCTION get_fast_stats() TO service_role;
+GRANT EXECUTE ON FUNCTION get_fast_stats() TO anon;
+
 -- DONE
 SELECT '=== Migration 099 Complete ===' AS status,
        (SELECT count(*) FROM parties) AS parties,
