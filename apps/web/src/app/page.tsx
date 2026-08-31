@@ -10,6 +10,7 @@ import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
 import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
+import SimulationTicker from "@/components/live/SimulationTicker";
 import { supabase } from "@/lib/supabase-browser";
 
 interface ElectionConfig {
@@ -136,6 +137,9 @@ const HomePage: React.FC = () => {
       <main id="main-content">
       {/* Disclaimer */}
       <Disclaimer />
+
+      {/* Live Simulation Ticker — shows during simulation */}
+      <SimulationTicker />
 
       {/* Hero */}
       <section className="border-b border-[var(--color-gray-100)]">
