@@ -100,8 +100,14 @@ const SimulationTicker: React.FC = () => {
             });
           }
         } else {
-          // Simulation completed — show completion message briefly then hide
+          // Simulation completed — play sound and show brief completion message
           if (visible) {
+            // Play completion sound
+            try {
+              const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczIjiNw9+3dE05bpy02Lt5UD5wl7DVvX5bRHeSrdLAhGVNe4ikyr2Ia1B9h57Ev4ptVIGBlL7FjXNagH2OucqUe2F+d4ivyZyBZXZ0h7LJm4VsfXOFscmbhW1/c4SxyZuFbYB0hLHJm4VtgHSDsMmbhW2AdIOwyZuFbYB0g7DJm4VtgHSDsMmbhW2AdIOwyZuFbYB0g7DJm4VtgHQ=");
+              audio.volume = 0.3;
+              audio.play().catch(() => {});
+            } catch {}
             setVisible(false);
             setProgress(null);
           }
