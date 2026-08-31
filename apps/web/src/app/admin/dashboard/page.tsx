@@ -56,6 +56,15 @@ const AdminDashboard: React.FC = () => {
   const [simError, setSimError] = useState<string>("");
   const [convexSyncing, setConvexSyncing] = useState(false);
   const [convexSyncResult, setConvexSyncResult] = useState<string>("");
+  // Live simulation progress
+  const [liveProgress, setLiveProgress] = useState<{
+    progress_percent: number;
+    total_results: number;
+    total_votes: number;
+    elapsed_seconds: number;
+    status_distribution: Record<string, number>;
+    is_running: boolean;
+  } | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -75,8 +84,34 @@ const AdminDashboard: React.FC = () => {
       if (configCheck.data?.election_type) setSimElectionType(configCheck.data.election_type);
       fetchStats();
     };
-    init();
-  }, []);
+    init();  }, []);
+
+  // Poll live progress every 5 seconds while simulation is running
+  useEffect(() => {
+    if (!simRunning) { setLiveProgress(null); return; }
+
+    let active = true;
+    let interval: NodeJS.Timeout;
+
+    const fetchProgress = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch("/api/admin/simulate/progress", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setLiveProgress(data);
+        }
+      } catch {}
+    };
+
+    fetchProgress();
+    interval = setInterval(fetchProgress, 5000);
+
+    return () => { active = false; clearInterval(interval); };
+  }, [simRunning]);
 
   useEffect(() => {
     if (activeTab === "verification") fetchResults();
@@ -728,13 +763,77 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Progress */}
-                  {simRunning && simProgress && (
-                    <div className="mt-3 p-3 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[var(--color-green)] animate-pulse" />
-                        <span className="font-mono text-xs text-[var(--color-text-muted)]">{simProgress}</span>
+                  {/* Live Progress Bar */}
+                  {simRunning && (
+                    <div className="mt-4 p-4 bg-[var(--color-ink)] border border-[var(--color-green)]/30 space-y-3">
+                      {/* Progress header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="relative">
+                            <div className="w-3 h-3 rounded-full bg-[var(--color-green)] animate-pulse" />
+                            <div className="absolute inset-0 w-3 h-3 rounded-full bg-[var(--color-green)] animate-ping opacity-30" />
+                          </div>
+                          <span className="font-mono text-xs font-bold text-[var(--color-green-bright)] uppercase">Simulating</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                            {liveProgress ? `${liveProgress.total_results.toLocaleString()} / 188,042 PUs` : simProgress || "Starting..."}
+                          </span>
+                          {liveProgress && liveProgress.elapsed_seconds > 0 && (
+                            <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                              {Math.floor(liveProgress.elapsed_seconds / 60)}:{String(liveProgress.elapsed_seconds % 60).padStart(2, "0")}
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Progress bar */}
+                      <div className="relative h-[8px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[var(--color-green)] to-[var(--color-green-bright)] rounded-full transition-all duration-500 ease-out"
+                          style={{ width: `${liveProgress?.progress_percent || 0}%` }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer_2s_ease-in-out_infinite]" />
+                      </div>
+
+                      {/* Percentage */}
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-lg font-bold text-[var(--color-green-bright)]">
+                          {liveProgress?.progress_percent || 0}%
+                        </span>
+                        <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                          {liveProgress?.total_votes ? `${(liveProgress.total_votes / 1_000_000).toFixed(1)}M votes` : ""}
+                        </span>
+                      </div>
+
+                      {/* Status distribution chips */}
+                      {liveProgress && Object.keys(liveProgress.status_distribution).length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(liveProgress.status_distribution)
+                            .filter(([key]) => key !== "NOT_STARTED")
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([status, count]) => {
+                              const colors: Record<string, string> = {
+                                VOTING: "#3B82F6",
+                                COUNTING: "#FBBF24",
+                                RESULT_ANNOUNCED: "#06B6D4",
+                                RESULT_SUBMITTED: "#8B5CF6",
+                                VERIFIED: "#22C55E",
+                                DISPUTED: "#F97316",
+                                DISRUPTED: "#EF4444",
+                                VERIFICATION_PENDING: "#F472B6",
+                              };
+                              return (
+                                <div key={status} className="flex items-center gap-1.5 px-2 py-1 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)]">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors[status] || "#6B7280" }} />
+                                  <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
+                                    {status.replace(/_/g, " ").toLowerCase()}: {count.toLocaleString()}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
                     </div>
                   )}
 
