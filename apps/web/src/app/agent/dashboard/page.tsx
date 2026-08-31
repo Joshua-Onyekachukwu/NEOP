@@ -289,6 +289,50 @@ const AgentDashboard: React.FC = () => {
                   <Link href="/agent/report-incident" className="block w-full py-3 border border-[var(--color-amber)] text-[var(--color-amber)] font-mono text-sm font-bold hover:bg-[var(--color-amber-dim)] transition-colors text-center">
                     REPORT INCIDENT
                   </Link>
+
+                  {/* Quick disruption report buttons */}
+                  <div className="p-3 border border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
+                    <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
+                      Quick Report — Election Problem
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { cat: "ELECTION_NOT_HELD", label: "⛔ Election Not Held", sev: "CRITICAL" },
+                        { cat: "VIOLENCE", label: "🔴 Violence / Threats", sev: "CRITICAL" },
+                        { cat: "MATERIAL_SHORTAGE", label: "📦 Materials Missing", sev: "HIGH" },
+                        { cat: "DISRUPTION", label: "🟡 Process Disrupted", sev: "MEDIUM" },
+                        { cat: "ACCESS_PROBLEM", label: "🚫 Can't Access PU", sev: "MEDIUM" },
+                        { cat: "SECURITY_INCIDENT", label: "🚨 Security Issue", sev: "HIGH" },
+                      ].map((item) => (
+                        <button
+                          key={item.cat}
+                          onClick={async () => {
+                            if (!window.confirm(`Report: ${item.label}?`)) return;
+                            const { data: { session } } = await supabase.auth.getSession();
+                            if (!session) return;
+                            const { data: vol } = await supabase.from("volunteers").select("id").eq("user_id", session.user.id).single();
+                            if (!vol) return;
+                            await fetch("/api/me/incident", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                              body: JSON.stringify({
+                                assignment_id: assignment.id,
+                                category: item.cat,
+                                severity: item.sev,
+                                what_observed: `Quick report: ${item.label} at ${assignment.polling_unit_code}`,
+                                agent_safe: true,
+                              }),
+                            });
+                            alert("Report submitted.");
+                          }}
+                          className="py-2 px-2 border border-[var(--color-gray-200)] text-[var(--color-text-dim)] font-mono text-[10px] hover:border-[var(--color-amber)] hover:text-[var(--color-amber)] hover:bg-[var(--color-amber-dim)] transition-colors text-left"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <button onClick={handleCheckOut} className="w-full py-2.5 border border-[var(--color-gray-200)] text-[var(--color-text-muted)] font-mono text-xs hover:bg-[var(--color-ink-light)] transition-colors">
                     CHECK OUT
                   </button>
