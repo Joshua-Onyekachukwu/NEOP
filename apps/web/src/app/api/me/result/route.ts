@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (valid_votes + rejected_votes !== valid_votes + rejected_votes) {
-      return NextResponse.json({ error: 'Invalid vote totals' }, { status: 400 });
+    if (valid_votes < 0 || rejected_votes < 0) {
+      return NextResponse.json({ error: 'Vote counts cannot be negative' }, { status: 400 });
     }
 
     // Get volunteer
