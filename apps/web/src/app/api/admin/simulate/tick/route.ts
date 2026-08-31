@@ -3,16 +3,22 @@
  *
  * Executes one simulation tick via SQL function.
  * Called by admin dashboard every 5 seconds while simulation is running.
+ * Admin-only — requires authenticated admin.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin, isAdminSuccess } from "@/lib/admin-auth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
+    // Verify admin auth
+    const auth = await requireAdmin(request);
+    if (!isAdminSuccess(auth)) return auth.error;
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check if simulation is running
