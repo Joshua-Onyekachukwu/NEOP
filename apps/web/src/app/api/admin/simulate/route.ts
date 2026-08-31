@@ -19,6 +19,8 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 export const dynamic = "force-dynamic";
+// Allow up to 4 minutes — simulation processes 188K PUs in Postgres
+export const maxDuration = 240;
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +32,15 @@ export async function POST(request: NextRequest) {
       election_type,
     } = body;
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Create a client with longer timeout for simulation
+    const customFetch = (url: string, init: RequestInit) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 240000);
+      return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+    };
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      global: { fetch: customFetch as any },
+    });
 
     // Verify admin — require auth header
     const authHeader = request.headers.get("Authorization");
@@ -56,7 +66,7 @@ export async function POST(request: NextRequest) {
       `[sim] Starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
     );
 
-    // Call the fast SQL function — this runs everything in Postgres
+    // Call the fast SQL function — runs entirely in Postgres (1-3 min for 188K PUs)
     const { data, error } = await supabase.rpc("run_fast_simulation", {
       p_scenario: scenarioKey || "random",
       p_duration_minutes: duration_minutes || 5,
