@@ -108,8 +108,45 @@ export const getCachedPartyResults = unstable_cache(
   async () => {
     const supabase = getServiceClient();
 
-    // Primary: fetch ALL parties and LEFT JOIN with party_results
-    // This guarantees all 9 parties appear even if RPC is outdated
+    // Primary: use the get_party_totals RPC (LEFT JOIN — returns all 9 parties)
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_party_totals");
+
+    if (!rpcError && rpcData && rpcData.length > 0) {
+      const deduped: Record<string, any> = {};
+      for (const p of rpcData) {
+        const abbr = p.party_abbreviation;
+        if (!deduped[abbr] || Number(p.total_votes) > Number(deduped[abbr].total_votes)) {
+          deduped[abbr] = p;
+        }
+      }
+      const parties = Object.values(deduped).sort(
+        (a, b) => Number(b.total_votes) - Number(a.total_votes)
+      );
+      const grandTotal = parties.reduce(
+        (s: number, r: any) => s + Number(r.total_votes), 0
+      );
+
+      const [totalRes, verifiedRes] = await Promise.all([
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }),
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
+      ]);
+
+      return {
+        parties: parties.map((p: any) => ({
+          name: p.party_name,
+          abbreviation: p.party_abbreviation,
+          color: p.party_color,
+          total_votes: Number(p.total_votes),
+          percentage: grandTotal > 0 ? Number(((Number(p.total_votes) / grandTotal) * 100).toFixed(1)) : 0,
+        })),
+        grand_total: grandTotal,
+        total_results: totalRes.count || 0,
+        verified_results: verifiedRes.count || 0,
+        last_updated: new Date().toISOString(),
+      };
+    }
+
+    // Fallback: fetch parties from table (guaranteed to return all 9)
     const { data: allParties } = await supabase
       .from("parties")
       .select("id, official_name, abbreviation, color")
@@ -119,7 +156,6 @@ export const getCachedPartyResults = unstable_cache(
       return { parties: [], grand_total: 0, total_results: 0, verified_results: 0, last_updated: new Date().toISOString() };
     }
 
-    // Build id→party map
     const partyMap: Record<string, { name: string; abbreviation: string; color: string; total_votes: number }> = {};
     const idToAbbr: Record<string, string> = {};
     const seen = new Set<string>();
@@ -137,23 +173,26 @@ export const getCachedPartyResults = unstable_cache(
       idToAbbr[p.id] = p.abbreviation;
     }
 
-    // Sum all votes in one query — override Supabase default limit of 1000
-    const { data: allPr } = await supabase
-      .from("party_results")
-      .select("votes, party_id")
-      .limit(500000);
-
-    if (allPr) {
-      for (const pr of allPr) {
+    // Fetch party_results in batches (Supabase caps at 1000 rows)
+    let offset = 0;
+    const pageSize = 1000;
+    while (offset < 500000) {
+      const { data: batch } = await supabase
+        .from("party_results")
+        .select("votes, party_id")
+        .range(offset, offset + pageSize - 1);
+      if (!batch || batch.length === 0) break;
+      for (const pr of batch) {
         const abbr = idToAbbr[pr.party_id];
         if (abbr && partyMap[abbr]) partyMap[abbr].total_votes += pr.votes;
       }
+      if (batch.length < pageSize) break;
+      offset += pageSize;
     }
 
     const sorted = Object.values(partyMap).sort((a, b) => b.total_votes - a.total_votes);
     const grandTotal = sorted.reduce((sum, p) => sum + p.total_votes, 0);
 
-    // Get total results and verified count
     const [totalRes, verifiedRes] = await Promise.all([
       supabase.from("result_submissions").select("*", { count: "exact", head: true }),
       supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
@@ -170,7 +209,7 @@ export const getCachedPartyResults = unstable_cache(
       last_updated: new Date().toISOString(),
     };
   },
-  ["party-results-v2"],
+  ["party-results-v3"],
   {
     revalidate: 30,
     tags: ["party-results"],
