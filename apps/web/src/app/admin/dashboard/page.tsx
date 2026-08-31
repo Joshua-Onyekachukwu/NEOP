@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { waitForSession } from "@/lib/auth-helpers";
 import ExportPanel from "@/components/live/ExportPanel";
+import SimulationHistory from "@/components/admin/SimulationHistory";
 
 interface AdminStats {
   totalVolunteers: number;
@@ -914,6 +915,9 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Simulation History */}
+                <SimulationHistory />
 
                 {/* How it works */}
                 <div className="border border-[var(--color-gray-100)] p-4">
