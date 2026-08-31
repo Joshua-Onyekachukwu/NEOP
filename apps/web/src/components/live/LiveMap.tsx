@@ -449,8 +449,8 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </div>
       )}
 
-      {/* Legend */}
-      <div className="absolute top-3 left-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-3 z-10">
+      {/* Legend — hidden on mobile, shown on md+ */}
+      <div className="hidden md:block absolute top-3 left-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-3 z-10">
         <div className="font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
           Status
         </div>
@@ -464,6 +464,22 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
                   style={{ backgroundColor: color }}
                 />
                 <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
+                  {key.replace(/_/g, " ").toLowerCase()}
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* Mobile legend — compact horizontal strip at bottom */}
+      <div className="md:hidden absolute bottom-12 left-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1.5 z-10">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {Object.entries(STATUS_COLORS)
+            .filter(([key]) => !["NOT_STARTED", "ELECTION_NOT_HELD", "NO_REPORT"].includes(key))
+            .map(([key, color]) => (
+              <div key={key} className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                <span className="font-mono text-[8px] text-[var(--color-text-muted)]">
                   {key.replace(/_/g, " ").toLowerCase()}
                 </span>
               </div>

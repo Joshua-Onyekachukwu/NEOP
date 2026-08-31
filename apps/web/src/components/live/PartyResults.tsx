@@ -72,19 +72,21 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   return (
     <div>
       {/* Header — sticky */}
-      <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] sticky top-0 bg-[var(--color-ink)] z-10 flex items-center justify-between">
-        <div>
-          <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
-            PARTY RESULTS
-          </h3>
-          <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5">
-            Accumulated votes across {data.total_results?.toLocaleString() ?? '—'} submissions
+      <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] sticky top-0 bg-[var(--color-ink)] z-10">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
+              PARTY RESULTS
+            </h3>
+            <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5 truncate">
+              {data.total_results?.toLocaleString() ?? '—'} submissions
+            </div>
           </div>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-[10px] text-[var(--color-text-dim)]">GRAND TOTAL</div>
-          <div className="font-display font-bold text-lg text-[var(--color-text)]">
-            {data.grand_total.toLocaleString()}
+          <div className="text-right flex-shrink-0">
+            <div className="font-mono text-[10px] text-[var(--color-text-dim)]">TOTAL</div>
+            <div className="font-display font-bold text-base md:text-lg text-[var(--color-text)]">
+              {data.grand_total.toLocaleString()}
+            </div>
           </div>
         </div>
       </div>

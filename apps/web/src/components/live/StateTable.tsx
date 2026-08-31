@@ -71,7 +71,8 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Table */}
-      <table className="w-full">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[320px]">
         <thead>
           <tr className="border-b border-[var(--color-gray-100)]">
             <th className="px-[16px] md:px-[24px] py-[8px] text-left font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
@@ -160,6 +161,7 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };

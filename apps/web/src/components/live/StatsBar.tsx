@@ -60,9 +60,9 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     : 0;
   const verificationPercent = Math.min(rawVerification, 100).toFixed(1);
 
-  return (      <div className="flex flex-wrap items-stretch divide-x divide-[var(--color-gray-100)]" role="region" aria-label="Key statistics">
+  return (      <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[var(--color-gray-100)]" role="region" aria-label="Key statistics">
       {/* Coverage */}
-      <div className="flex-1 min-w-[140px] py-[16px] pr-[16px]">
+      <div className="py-[12px] md:py-[16px] px-[12px] md:px-[16px]">
         <div className="stat-label mb-[4px]">Coverage</div>
         <div className="font-display font-bold text-2xl md:text-3xl text-[var(--color-green-bright)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {coveragePercent}%
@@ -73,7 +73,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Verified */}
-      <div className="flex-1 min-w-[140px] py-[16px] px-[16px]">
+      <div className="py-[12px] md:py-[16px] px-[12px] md:px-[16px]">
         <div className="stat-label mb-[4px]">Verified</div>
         <div className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {verificationPercent}%
@@ -84,7 +84,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Active Observers */}
-      <div className="flex-1 min-w-[140px] py-[16px] px-[16px]">
+      <div className="py-[12px] md:py-[16px] px-[12px] md:px-[16px]">
         <div className="stat-label mb-[4px]">Active Observers</div>
         <div className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {stats.activeObservers.toLocaleString()}
@@ -95,7 +95,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Total PUs */}
-      <div className="flex-1 min-w-[140px] py-[16px] pl-[16px]">
+      <div className="py-[12px] md:py-[16px] px-[12px] md:px-[16px]">
         <div className="stat-label mb-[4px]">Total PUs</div>
         <div className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]" style={{ fontVariantNumeric: 'tabular-nums' }}>
           {stats.inecTotal.toLocaleString()}

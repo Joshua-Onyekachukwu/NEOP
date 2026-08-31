@@ -257,9 +257,9 @@ const AdminDashboard: React.FC = () => {
 
       {/* Tabs */}
       <nav className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-6xl mx-auto flex overflow-x-auto scrollbar-hide">
+        <div className="max-w-6xl mx-auto flex overflow-x-auto scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
           {tabs.map((t) => (
-            <button key={t} onClick={() => setActiveTab(t)} className={`flex-shrink-0 px-3 py-2.5 font-mono text-[11px] border-b-2 transition-colors whitespace-nowrap ${
+            <button key={t} onClick={() => setActiveTab(t)} className={`flex-shrink-0 px-3 py-3 font-mono text-[11px] border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${
               activeTab === t ? "border-[var(--color-green)] text-[var(--color-green-bright)]" : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]"
             }`}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -583,7 +583,7 @@ const AdminDashboard: React.FC = () => {
                   </div>
 
                   {/* Duration & Voter Count Controls */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                     <div className="p-3 border border-[var(--color-gray-200)]">
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
                         Simulation Duration
@@ -632,7 +632,7 @@ const AdminDashboard: React.FC = () => {
                   </div>
 
                   {/* Scenario cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     {[
                       { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins by 20+ points — massive coalition victory across all regions", color: "var(--color-green-bright)" },
                       { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region except SW — Peter Obi + Kwankwaso coalition dominance", color: "var(--color-green)" },
@@ -785,7 +785,7 @@ const AdminDashboard: React.FC = () => {
                       {simResult.final_status_distribution && (
                         <div className="mt-3 pt-3 border-t border-[var(--color-gray-200)]">
                           <div className="font-mono text-[10px] text-[var(--color-text-dim)] mb-2">POLLING UNIT STATUS DISTRIBUTION</div>
-                          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                             {Object.entries(simResult.final_status_distribution)
                               .sort((a, b) => b[1] - a[1])
                               .map(([status, count]) => (
