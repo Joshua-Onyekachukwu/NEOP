@@ -12,18 +12,27 @@ DO $$
 DECLARE
   v_deleted BIGINT;
 BEGIN
-  -- Delete simulation-generated users (pattern: sim-XXXX@test.ng)
+  -- Delete in correct foreign key order:
+  -- 1. agent_assignments (references volunteers)
+  -- 2. volunteers (references user_accounts)
+  -- 3. user_accounts
+  DELETE FROM agent_assignments WHERE volunteer_id IN (
+    SELECT id FROM volunteers WHERE user_id IN (
+      SELECT id FROM user_accounts WHERE email LIKE 'sim-%'
+    )
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'Deleted % agent_assignments for sim users', v_deleted;
+
+  DELETE FROM volunteers WHERE user_id IN (
+    SELECT id FROM user_accounts WHERE email LIKE 'sim-%'
+  );
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RAISE NOTICE 'Deleted % simulation volunteers', v_deleted;
+
   DELETE FROM user_accounts WHERE email LIKE 'sim-%';
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RAISE NOTICE 'Deleted % simulation user_accounts', v_deleted;
-
-  DELETE FROM volunteers WHERE user_id NOT IN (SELECT id FROM user_accounts);
-  GET DIAGNOSTICS v_deleted = ROW_COUNT;
-  RAISE NOTICE 'Deleted % orphaned volunteers', v_deleted;
-
-  DELETE FROM agent_assignments WHERE volunteer_id NOT IN (SELECT id FROM volunteers);
-  GET DIAGNOSTICS v_deleted = ROW_COUNT;
-  RAISE NOTICE 'Deleted % orphaned agent_assignments', v_deleted;
 END $$;
 
 -- ============================================================
