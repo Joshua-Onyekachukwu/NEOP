@@ -8,6 +8,7 @@ import PartyResults from "@/components/live/PartyResults";
 import IncidentBar from "@/components/live/IncidentBar";
 import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
+import ExportPanel from "@/components/live/ExportPanel";
 import { supabase } from "@/lib/supabase-browser";
 
 interface ElectionConfig {
@@ -228,6 +229,13 @@ const HomePage: React.FC = () => {
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
           <IncidentBar />
+        </div>
+      </section>
+
+      {/* Export Results */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
+          <ExportPanel variant="public" />
         </div>
       </section>
 

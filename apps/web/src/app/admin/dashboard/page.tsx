@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { waitForSession } from "@/lib/auth-helpers";
+import ExportPanel from "@/components/live/ExportPanel";
 
 interface AdminStats {
   totalVolunteers: number;
@@ -284,6 +285,7 @@ const AdminDashboard: React.FC = () => {
           <>
             {/* Overview */}
             {activeTab === "overview" && (
+              <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   { label: "Volunteers", value: stats.totalVolunteers, sub: `${stats.activeVolunteers} active` },
@@ -298,6 +300,10 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 ))}
               </div>
+              <div className="mt-4">
+                <ExportPanel variant="admin" />
+              </div>
+              </>
             )}
 
             {/* Verification */}
