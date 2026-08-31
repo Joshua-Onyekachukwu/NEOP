@@ -13,6 +13,7 @@
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.49.0",
     "@types/pg": "^8.23.1",
+    "convex": "^1.45.0",
     "maplibre-gl": "^4.7.0",
     "material-symbols": "^0.31.3",
     "next": "^15.3.6",
