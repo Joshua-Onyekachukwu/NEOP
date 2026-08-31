@@ -2,18 +2,24 @@
  * GET /api/admin/agent-locations
  * Returns all currently checked-in agents with their GPS locations
  * and distance from polling unit.
+ * Admin-only endpoint — requires authenticated admin.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin, isAdminSuccess } from "@/lib/admin-auth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
+    // Verify admin auth
+    const auth = await requireAdmin(request);
+    if (!isAdminSuccess(auth)) return auth.error;
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Try RPC first
