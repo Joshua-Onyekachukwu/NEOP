@@ -295,7 +295,7 @@ const AgentDashboard: React.FC = () => {
                     <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
                       Quick Report — Election Problem
                     </div>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {[
                         { cat: "ELECTION_NOT_HELD", label: "⛔ Election Not Held", sev: "CRITICAL" },
                         { cat: "VIOLENCE", label: "🔴 Violence / Threats", sev: "CRITICAL" },

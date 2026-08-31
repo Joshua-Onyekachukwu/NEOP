@@ -139,8 +139,8 @@ const HomePage: React.FC = () => {
 
       {/* Hero */}
       <section className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[48px]">
-          <div className="flex flex-col md:flex-row items-end justify-between gap-[24px]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px] md:py-[48px]">
+          <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-[16px] md:gap-[24px]">
             <div>
               <div className="flex items-center gap-[10px] mb-[8px]">
                 <div className={`stat-label`}>                    {config.title} — {config.subtitle}
