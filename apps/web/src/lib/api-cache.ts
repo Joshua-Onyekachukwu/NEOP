@@ -137,21 +137,17 @@ export const getCachedPartyResults = unstable_cache(
       idToAbbr[p.id] = p.abbreviation;
     }
 
-    // Sum votes in batches (376K rows ÷ 10K batches = ~37 iterations)
-    let offset = 0;
-    const pageSize = 10000;
-    while (offset < 500000) {
-      const { data: batch } = await supabase
-        .from("party_results")
-        .select("votes, party_id")
-        .range(offset, offset + pageSize - 1);
-      if (!batch || batch.length === 0) break;
-      for (const pr of batch) {
+    // Sum all votes in one query — override Supabase default limit of 1000
+    const { data: allPr } = await supabase
+      .from("party_results")
+      .select("votes, party_id")
+      .limit(500000);
+
+    if (allPr) {
+      for (const pr of allPr) {
         const abbr = idToAbbr[pr.party_id];
         if (abbr && partyMap[abbr]) partyMap[abbr].total_votes += pr.votes;
       }
-      if (batch.length < pageSize) break;
-      offset += pageSize;
     }
 
     const sorted = Object.values(partyMap).sort((a, b) => b.total_votes - a.total_votes);
