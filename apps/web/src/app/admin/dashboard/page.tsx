@@ -756,12 +756,12 @@ const AdminDashboard: React.FC = () => {
                                     style={{
                                       backgroundColor: status === "VERIFIED" ? "#22C55E"
                                         : status === "RESULT_SUBMITTED" ? "#8B5CF6"
-                                        : status === "RESULT_ANNOUNCED" ? "#10B981"
-                                        : status === "VERIFICATION_PENDING" ? "#06B6D4"
+                                        : status === "RESULT_ANNOUNCED" ? "#06B6D4"
+                                        : status === "VERIFICATION_PENDING" ? "#F472B6"
                                         : status === "DISPUTED" ? "#F97316"
                                         : status === "DISRUPTED" ? "#EF4444"
                                         : status === "VOTING" ? "#3B82F6"
-                                        : status === "COUNTING" ? "#F59E0B"
+                                        : status === "COUNTING" ? "#FBBF24"
                                         : "#6B7280",
                                     }}
                                   />
