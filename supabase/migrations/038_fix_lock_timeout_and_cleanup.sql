@@ -12,10 +12,17 @@ BEGIN
 END $$;
 UPDATE elections SET is_active = true WHERE is_active IS NULL;
 
--- 2. Cleanup fake users/volunteers (fast single DELETE)
+-- 2. Cleanup fake users/volunteers (correct FK cascade order)
+-- Must delete in order: agent_assignments → volunteers → user_accounts
+DELETE FROM agent_assignments WHERE volunteer_id IN (
+  SELECT id FROM volunteers WHERE user_id IN (
+    SELECT id FROM user_accounts WHERE email LIKE 'sim-%'
+  )
+);
+DELETE FROM volunteers WHERE user_id IN (
+  SELECT id FROM user_accounts WHERE email LIKE 'sim-%'
+);
 DELETE FROM user_accounts WHERE email LIKE 'sim-%';
-DELETE FROM volunteers WHERE user_id NOT IN (SELECT id FROM user_accounts);
-DELETE FROM agent_assignments WHERE volunteer_id NOT IN (SELECT id FROM volunteers);
 
 -- 3. Verify
 SELECT 'Parties: ' || count(*) FROM parties;
