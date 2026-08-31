@@ -107,46 +107,24 @@ export const getCachedStats = unstable_cache(
 export const getCachedPartyResults = unstable_cache(
   async () => {
     const supabase = getServiceClient();
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_party_totals");
 
-    if (!rpcError && rpcData && rpcData.length > 0) {
-      const deduped: Record<string, any> = {};
-      for (const p of rpcData) {
-        const abbr = p.party_abbreviation;
-        if (!deduped[abbr] || Number(p.total_votes) > Number(deduped[abbr].total_votes)) {
-          deduped[abbr] = p;
-        }
-      }
-      const parties = Object.values(deduped).sort(
-        (a, b) => Number(b.total_votes) - Number(a.total_votes)
-      );
-      const grandTotal = parties.reduce(
-        (s: number, r: any) => s + Number(r.total_votes), 0
-      );
-
-      return {
-        parties: parties.map((p: any) => ({
-          name: p.party_name,
-          abbreviation: p.party_abbreviation,
-          color: p.party_color,
-          total_votes: Number(p.total_votes),
-          percentage: grandTotal > 0 ? Number(((Number(p.total_votes) / grandTotal) * 100).toFixed(1)) : 0,
-        })),
-        grand_total: grandTotal,
-        last_updated: new Date().toISOString(),
-      };
-    }
-
-    // Fallback: client-side aggregation
+    // Primary: fetch ALL parties and LEFT JOIN with party_results
+    // This guarantees all 9 parties appear even if RPC is outdated
     const { data: allParties } = await supabase
       .from("parties")
-      .select("id, official_name, abbreviation, color");
+      .select("id, official_name, abbreviation, color")
+      .order("abbreviation");
 
+    if (!allParties || allParties.length === 0) {
+      return { parties: [], grand_total: 0, total_results: 0, verified_results: 0, last_updated: new Date().toISOString() };
+    }
+
+    // Build id→party map
     const partyMap: Record<string, { name: string; abbreviation: string; color: string; total_votes: number }> = {};
     const idToAbbr: Record<string, string> = {};
     const seen = new Set<string>();
 
-    for (const p of allParties || []) {
+    for (const p of allParties) {
       if (!seen.has(p.abbreviation)) {
         seen.add(p.abbreviation);
         partyMap[p.abbreviation] = {
@@ -159,6 +137,7 @@ export const getCachedPartyResults = unstable_cache(
       idToAbbr[p.id] = p.abbreviation;
     }
 
+    // Sum votes in batches (376K rows ÷ 10K batches = ~37 iterations)
     let offset = 0;
     const pageSize = 10000;
     while (offset < 500000) {
@@ -178,16 +157,24 @@ export const getCachedPartyResults = unstable_cache(
     const sorted = Object.values(partyMap).sort((a, b) => b.total_votes - a.total_votes);
     const grandTotal = sorted.reduce((sum, p) => sum + p.total_votes, 0);
 
+    // Get total results and verified count
+    const [totalRes, verifiedRes] = await Promise.all([
+      supabase.from("result_submissions").select("*", { count: "exact", head: true }),
+      supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
+    ]);
+
     return {
       parties: sorted.map((p) => ({
         ...p,
         percentage: grandTotal > 0 ? Number(((p.total_votes / grandTotal) * 100).toFixed(1)) : 0,
       })),
       grand_total: grandTotal,
+      total_results: totalRes.count || 0,
+      verified_results: verifiedRes.count || 0,
       last_updated: new Date().toISOString(),
     };
   },
-  ["party-results-v1"],
+  ["party-results-v2"],
   {
     revalidate: 30,
     tags: ["party-results"],
