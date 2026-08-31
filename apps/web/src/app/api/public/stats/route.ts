@@ -36,35 +36,74 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json(rpcData);
     }
 
-    // Fallback: minimal query set
-    const [totalPU, coveredRes, verifiedRes, activeRes, incidentRes] =
+    // Fallback: efficient query set
+    const [totalPU, submittedRes, verifiedRes, activeRes, incidentRes, statusCounts] =
       await Promise.all([
         supabase.from("polling_units").select("*", { count: "exact", head: true }),
-        supabase.from("agent_assignments").select("*", { count: "exact", head: true }),
+        // Count all result_submissions (this is the real "covered" count)
+        supabase.from("result_submissions").select("*", { count: "exact", head: true }),
         supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
         supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
         supabase.from("incidents").select("*", { count: "exact", head: true }),
+        // Status distribution for simulation indicator
+        supabase.from("result_submissions").select("status"),
       ]);
+
+    // Build status counts
+    const statusDist: Record<string, number> = {};
+    for (const r of statusCounts.data || []) {
+      statusDist[r.status] = (statusDist[r.status] || 0) + 1;
+    }
 
     const INEC_TOTAL = totalPU.count || 188042;
     const totalCount = INEC_TOTAL;
+    const coveredCount = submittedRes.count || 0;
+    const verifiedCount = verifiedRes.count || 0;
+
+    // Build state breakdown from status_counts data (group by state)
+    let stateBreakdown: any[] = [];
+    if (coveredCount > 0 && coveredCount <= 50000) {
+      // For smaller datasets, fetch with joins
+      const { data: withPU } = await supabase
+        .from("result_submissions")
+        .select(`status, polling_units ( states ( name ) )`)
+        .limit(50000);
+      const stateMap: Record<string, Record<string, number>> = {};
+      for (const r of withPU || []) {
+        const stateName = (r.polling_units as any)?.states?.name || "Unknown";
+        if (!stateMap[stateName]) stateMap[stateName] = {};
+        stateMap[stateName][r.status] = (stateMap[stateName][r.status] || 0) + 1;
+      }
+      stateBreakdown = Object.entries(stateMap).map(([name, statuses]) => ({
+        state_name: name,
+        state_id: name,
+        name,
+        total_pus: Object.values(statuses).reduce((s, v) => s + v, 0),
+        verified: statuses["VERIFIED"] || 0,
+        submitted: statuses["RESULT_SUBMITTED"] || 0,
+        disputed: statuses["DISPUTED"] || 0,
+        disrupted: statuses["DISRUPTED"] || 0,
+        statuses,
+      })).sort((a, b) => b.total_pus - a.total_pus);
+    }
 
     const result = {
       inec_total_polling_units: INEC_TOTAL,
       total_polling_units: totalCount,
-      covered_polling_units: coveredRes.count || 0,
-      verified_polling_units: verifiedRes.count || 0,
+      covered_polling_units: coveredCount,
+      verified_polling_units: verifiedCount,
       active_observers: activeRes.count || 0,
       total_incidents: incidentRes.count || 0,
       incident_counts: {} as Record<string, number>,
-      state_breakdown: [] as any[],
+      status_distribution: statusDist,
+      state_breakdown: stateBreakdown,
       coverage_percent:
         totalCount > 0
-          ? Number((((coveredRes.count || 0) / totalCount) * 100).toFixed(1))
+          ? Number(((coveredCount / totalCount) * 100).toFixed(1))
           : 0,
       verification_percent:
         totalCount > 0
-          ? Number((((verifiedRes.count || 0) / totalCount) * 100).toFixed(1))
+          ? Number(((verifiedCount / totalCount) * 100).toFixed(1))
           : 0,
       last_updated: new Date().toISOString(),
       disclaimer:
