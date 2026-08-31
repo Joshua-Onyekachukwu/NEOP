@@ -1,204 +1,12 @@
--- ============================================================
--- 020_comprehensive_qa_fix.sql
--- Complete fix for all SQL issues found during QA audit
--- Run this ONE file in Supabase SQL Editor
--- ============================================================
+-- Fix: Remove broken ::election_type enum casts from simulation functions
+-- The 'election_type' enum type does not exist — the 'type' column is TEXT
 
--- ============================================================
--- 1. DEDUPLICATE PARTIES (41 rows → 10 unique)
--- ============================================================
-DO $$
-DECLARE
-  v_origins RECORD;
-  v_keep_id UUID;
-  v_dup_ids UUID[];
-BEGIN
-  FOR v_origins IN (
-    SELECT abbreviation, COUNT(*) AS cnt
-    FROM parties
-    GROUP BY abbreviation
-    HAVING COUNT(*) > 1
-  ) LOOP
-    -- Keep the first (oldest) row, delete the rest
-    SELECT id INTO v_keep_id
-    FROM parties
-    WHERE abbreviation = v_origins.abbreviation
-    ORDER BY created_at ASC NULLS FIRST
-    LIMIT 1;
-
-    SELECT ARRAY_AGG(id) INTO v_dup_ids
-    FROM parties
-    WHERE abbreviation = v_origins.abbreviation
-      AND id != v_keep_id;
-
-    IF v_dup_ids IS NOT NULL AND array_length(v_dup_ids, 1) > 0 THEN
-      -- Can't delete if party_results reference these IDs — update references first
-      UPDATE party_results SET party_id = v_keep_id
-      WHERE party_id = ANY(v_dup_ids);
-
-      DELETE FROM parties WHERE id = ANY(v_dup_ids);
-      RAISE NOTICE 'Deduplicated %: kept %, removed % duplicates', v_origins.abbreviation, v_keep_id, array_length(v_dup_ids, 1);
-    END IF;
-  END LOOP;
-
-  RAISE NOTICE 'Parties after dedup: %', (SELECT count(*) FROM parties);
-END $$;
-
--- ============================================================
--- 2. FIX RESULT_SUBMISSIONS: ensure NDC party results work
---    The simulation uses 'NDC' as abbreviation, but parties table
---    may not have NDC. Ensure it exists.
--- ============================================================
+-- 1. Ensure NDC party exists
 INSERT INTO parties (official_name, abbreviation, color)
 SELECT 'New Democratic Coalition', 'NDC', '#22C55E'
 WHERE NOT EXISTS (SELECT 1 FROM parties WHERE abbreviation = 'NDC');
 
--- ============================================================
--- 3. CREATE/REPLACE ALL MISSING SQL FUNCTIONS
--- ============================================================
-
--- 3a. get_admin_stats — admin dashboard
-CREATE OR REPLACE FUNCTION get_admin_stats()
-RETURNS JSONB
-LANGUAGE plpgsql
-STABLE
-AS $$
-BEGIN
-  RETURN (
-    SELECT jsonb_build_object(
-      'total_volunteers', (SELECT count(*) FROM volunteers),
-      'active_volunteers', (SELECT count(*) FROM volunteers WHERE status = 'ACTIVE'),
-      'total_assignments', (SELECT count(*) FROM agent_assignments),
-      'checked_in_assignments', (SELECT count(*) FROM agent_assignments WHERE status = 'CHECKED_IN'),
-      'total_results', (SELECT count(*) FROM result_submissions),
-      'verified_results', (SELECT count(*) FROM result_submissions WHERE status = 'VERIFIED'),
-      'pending_verification', (SELECT count(*) FROM result_submissions WHERE status = 'UNVERIFIED'),
-      'total_incidents', (SELECT count(*) FROM incidents)
-    )
-  );
-END;
-$$;
-GRANT EXECUTE ON FUNCTION get_admin_stats() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_admin_stats() TO anon;
-
--- 3b. get_fast_stats — public dashboard
-CREATE OR REPLACE FUNCTION get_fast_stats()
-RETURNS JSONB
-LANGUAGE plpgsql
-STABLE
-AS $$
-BEGIN
-  RETURN (
-    SELECT jsonb_build_object(
-      'inec_total_polling_units', (SELECT count(*) FROM polling_units),
-      'total_polling_units', (SELECT count(*) FROM polling_units),
-      'covered_polling_units', (SELECT count(*) FROM agent_assignments),
-      'verified_polling_units', (SELECT count(*) FROM result_submissions WHERE status = 'VERIFIED'),
-      'active_observers', (SELECT count(*) FROM agent_assignments WHERE status = 'CHECKED_IN'),
-      'total_incidents', (SELECT count(*) FROM incidents),
-      'state_breakdown', (
-        SELECT jsonb_agg(
-          jsonb_build_object(
-            'state_id', s.id, 'state_name', s.name, 'state_code', s.code,
-            'total_polling_units', COALESCE(pu_counts.cnt, 0),
-            'covered_polling_units', COALESCE(aa_counts.cnt, 0),
-            'verified_polling_units', COALESCE(rs_counts.cnt, 0),
-            'coverage_percent', CASE WHEN COALESCE(pu_counts.cnt, 0) > 0
-              THEN ROUND((COALESCE(aa_counts.cnt, 0)::NUMERIC / pu_counts.cnt * 100), 1) ELSE 0 END,
-            'verification_percent', CASE WHEN COALESCE(pu_counts.cnt, 0) > 0
-              THEN ROUND((COALESCE(rs_counts.cnt, 0)::NUMERIC / pu_counts.cnt * 100), 1) ELSE 0 END
-          )
-          ORDER BY pu_counts.cnt DESC NULLS LAST
-        )
-        FROM states s
-        LEFT JOIN LATERAL (SELECT count(*) AS cnt FROM polling_units WHERE state_id = s.id) pu_counts ON true
-        LEFT JOIN LATERAL (SELECT count(*) AS cnt FROM agent_assignments a JOIN polling_units pu ON pu.id = a.polling_unit_id WHERE pu.state_id = s.id) aa_counts ON true
-        LEFT JOIN LATERAL (SELECT count(*) AS cnt FROM result_submissions rs JOIN polling_units pu ON pu.id = rs.polling_unit_id WHERE pu.state_id = s.id AND rs.status = 'VERIFIED') rs_counts ON true
-      ),
-      'incident_counts', (SELECT COALESCE(jsonb_object_agg(category, cnt), '{}'::jsonb) FROM (SELECT category, count(*) AS cnt FROM incidents GROUP BY category) sub),
-      'coverage_percent', CASE WHEN (SELECT count(*) FROM polling_units) > 0
-        THEN ROUND((SELECT count(*) FROM agent_assignments)::NUMERIC / (SELECT count(*) FROM polling_units) * 100, 1) ELSE 0 END,
-      'verification_percent', CASE WHEN (SELECT count(*) FROM polling_units) > 0
-        THEN ROUND((SELECT count(*) FROM result_submissions WHERE status = 'VERIFIED')::NUMERIC / (SELECT count(*) FROM polling_units) * 100, 1) ELSE 0 END,
-      'last_updated', now(),
-      'disclaimer', 'These are independently collected field observations and are not official INEC election results.'
-    )
-  );
-END;
-$$;
-GRANT EXECUTE ON FUNCTION get_fast_stats() TO service_role;
-GRANT EXECUTE ON FUNCTION get_fast_stats() TO anon;
-
--- 3c. get_polling_unit_rows — map GeoJSON
-CREATE OR REPLACE FUNCTION get_polling_unit_rows()
-RETURNS TABLE (
-  id UUID, official_code TEXT, name TEXT,
-  latitude DOUBLE PRECISION, longitude DOUBLE PRECISION,
-  status TEXT, state_name TEXT
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT pu.id, pu.official_code, pu.name, pu.latitude, pu.longitude,
-    pu.status, COALESCE(st.name, 'Unknown') as state_name
-  FROM polling_units pu
-  LEFT JOIN states st ON st.id = pu.state_id
-  WHERE pu.latitude IS NOT NULL AND pu.longitude IS NOT NULL;
-END;
-$$ LANGUAGE plpgsql STABLE;
-GRANT EXECUTE ON FUNCTION get_polling_unit_rows() TO anon;
-GRANT EXECUTE ON FUNCTION get_polling_unit_rows() TO service_role;
-
--- 3d. get_party_totals — leaderboard
-CREATE OR REPLACE FUNCTION get_party_totals()
-RETURNS TABLE (party_name TEXT, party_abbreviation TEXT, party_color TEXT, total_votes BIGINT, percentage NUMERIC)
-AS $$
-DECLARE gt BIGINT;
-BEGIN
-  SELECT COALESCE(SUM(pr.votes), 0) INTO gt FROM party_results pr;
-  RETURN QUERY
-  WITH ps AS (
-    SELECT p.official_name, p.abbreviation, p.color, SUM(pr.votes) AS votes
-    FROM parties p
-    INNER JOIN party_results pr ON pr.party_id = p.id
-    GROUP BY p.id, p.official_name, p.abbreviation, p.color
-  ),
-  dd AS (
-    SELECT abbreviation, MAX(official_name) AS official_name, MAX(color) AS color, MAX(votes) AS votes
-    FROM ps GROUP BY abbreviation
-  )
-  SELECT d.official_name, d.abbreviation, d.color, d.votes,
-    CASE WHEN gt > 0 THEN ROUND((d.votes::NUMERIC / gt) * 100, 1) ELSE 0 END
-  FROM dd d ORDER BY d.votes DESC;
-END;
-$$ LANGUAGE plpgsql STABLE;
-GRANT EXECUTE ON FUNCTION get_party_totals() TO anon;
-GRANT EXECUTE ON FUNCTION get_party_totals() TO service_role;
-
--- 3e. get_state_breakdown
-CREATE OR REPLACE FUNCTION get_state_breakdown()
-RETURNS TABLE (
-  state_id UUID, state_name TEXT, state_code TEXT,
-  total_polling_units BIGINT, covered_polling_units BIGINT,
-  verified_polling_units BIGINT, coverage_percent NUMERIC,
-  verification_percent NUMERIC
-) AS $$
-BEGIN
-  RETURN QUERY
-  WITH spc AS (SELECT pu.state_id, COUNT(*) AS total_pu FROM polling_units pu GROUP BY pu.state_id),
-  sc AS (SELECT pu.state_id, COUNT(DISTINCT pu.id) AS covered FROM polling_units pu INNER JOIN agent_assignments aa ON aa.polling_unit_id = pu.id GROUP BY pu.state_id),
-  svc AS (SELECT pu.state_id, COUNT(DISTINCT rs.polling_unit_id) AS verified FROM result_submissions rs INNER JOIN polling_units pu ON pu.id = rs.polling_unit_id WHERE rs.status = 'VERIFIED' GROUP BY pu.state_id)
-  SELECT spc.state_id, st.name, st.code, spc.total_pu, COALESCE(sc.covered,0), COALESCE(svc.verified,0),
-    CASE WHEN spc.total_pu > 0 THEN ROUND((COALESCE(sc.covered,0)::NUMERIC / spc.total_pu) * 100, 1) ELSE 0 END,
-    CASE WHEN spc.total_pu > 0 THEN ROUND((COALESCE(svc.verified,0)::NUMERIC / spc.total_pu) * 100, 1) ELSE 0 END
-  FROM spc INNER JOIN states st ON st.id = spc.state_id LEFT JOIN sc ON sc.state_id = spc.state_id LEFT JOIN svc ON svc.state_id = spc.state_id
-  ORDER BY spc.total_pu DESC;
-END;
-$$ LANGUAGE plpgsql STABLE;
-GRANT EXECUTE ON FUNCTION get_state_breakdown() TO anon;
-GRANT EXECUTE ON FUNCTION get_state_breakdown() TO service_role;
-
--- 3f. run_fast_simulation — THE BIG ONE
-DROP FUNCTION IF EXISTS run_fast_simulation(TEXT, INTEGER, BIGINT);
+-- 2. Drop the broken simulation function and recreate without enum casts
 DROP FUNCTION IF EXISTS run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT);
 
 CREATE OR REPLACE FUNCTION run_fast_simulation(
@@ -272,7 +80,7 @@ BEGIN
     ELSE 'NOT_STARTED'
   END WHERE id IS NOT NULL;
 
-  -- Step 4: Ensure election exists
+  -- Step 4: Ensure election exists (plain TEXT insert, no enum cast)
   IF p_election_type = 'GOVERNORSHIP' THEN
     INSERT INTO elections (name, type) VALUES ('Governorship Election 2027', 'GOVERNORSHIP') ON CONFLICT DO NOTHING;
     SELECT id INTO v_election_id FROM elections WHERE type = 'GOVERNORSHIP' LIMIT 1;
@@ -328,11 +136,7 @@ BEGIN
           WHEN 'SW' THEN 1.5 WHEN 'NW' THEN 1.4 WHEN 'NE' THEN 1.3
           WHEN 'NC' THEN 1.1 WHEN 'FC' THEN 1.0 WHEN 'SS' THEN 0.4
           WHEN 'SE' THEN 0.3 ELSE 1.0
-        END * (0.85 + random() * 0.30)))::INTEGER AS apc_votes,
-      pd.total_votes - GREATEST(0, ROUND(pd.total_votes * v_ndc_share *
-        CASE pd.region WHEN 'SE' THEN 1.9 WHEN 'SS' THEN 1.6 WHEN 'FC' THEN 1.2 WHEN 'NC' THEN 1.0 WHEN 'NE' THEN 0.7 WHEN 'NW' THEN 0.6 WHEN 'SW' THEN 0.5 ELSE 1.0 END * (0.85 + random() * 0.30)))::INTEGER
-      - GREATEST(0, ROUND(pd.total_votes * 0.24 *
-        CASE pd.region WHEN 'SW' THEN 1.5 WHEN 'NW' THEN 1.4 WHEN 'NE' THEN 1.3 WHEN 'NC' THEN 1.1 WHEN 'FC' THEN 1.0 WHEN 'SS' THEN 0.4 WHEN 'SE' THEN 0.3 ELSE 1.0 END * (0.85 + random() * 0.30)))::INTEGER AS others_total
+        END * (0.85 + random() * 0.30)))::INTEGER AS apc_votes
     FROM result_insert ri JOIN pu_data pd ON pd.pu_id = ri.polling_unit_id
   )
   INSERT INTO party_results (result_submission_id, party_id, votes)
@@ -375,7 +179,7 @@ $$;
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION run_fast_simulation(TEXT, INTEGER, BIGINT, TEXT) TO anon;
 
--- 3g. simulation_tick
+-- 3. Also recreate simulation_tick (create if not exists)
 CREATE OR REPLACE FUNCTION simulation_tick()
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -428,7 +232,7 @@ $$;
 GRANT EXECUTE ON FUNCTION simulation_tick() TO service_role;
 GRANT EXECUTE ON FUNCTION simulation_tick() TO anon;
 
--- 3h. reset_simulation_data
+-- 4. Reset function
 CREATE OR REPLACE FUNCTION reset_simulation_data()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -442,12 +246,3 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION reset_simulation_data() TO service_role;
-
-DO $$
-BEGIN
-  RAISE NOTICE '=== Migration 020 Complete ===';
-  RAISE NOTICE '1. Parties deduplicated';
-  RAISE NOTICE '2. NDC party ensured';
-  RAISE NOTICE '3. All SQL functions created/granted';
-  RAISE NOTICE '4. Simulation function fixed with proper election type + party IDs';
-END $$;
