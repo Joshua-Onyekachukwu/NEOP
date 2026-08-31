@@ -3,7 +3,6 @@
  *
  * Runs the election simulation via a single SQL function call.
  * The heavy work (188K PUs, millions of votes) happens inside Postgres.
- * This API returns in <5 seconds instead of timing out.
  *
  * Body: {
  *   scenario?: "landslide" | "close" | "sweep" | "random",
@@ -32,61 +31,76 @@ export async function POST(request: NextRequest) {
       election_type,
     } = body;
 
-    // Create a client with longer timeout for simulation
-    const customFetch = (url: string, init: RequestInit) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 240000);
-      return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
-    };
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      global: { fetch: customFetch as any },
-    });
-
     // Verify admin — require auth header
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { data: adminUser } = await supabase
-      .from("admin_users")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .single();
-    if (!adminUser) {
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
-    }
 
-    console.log(
-      `[sim] Starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
-    );
+    // Create a Supabase client with 4-minute timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 230_000);
 
-    // Call the fast SQL function — runs entirely in Postgres (1-3 min for 188K PUs)
-    const { data, error } = await supabase.rpc("run_fast_simulation", {
-      p_scenario: scenarioKey || "random",
-      p_duration_minutes: duration_minutes || 5,
-      p_total_voters: total_voters || 100_000_000,
-      p_election_type: election_type || "PRESIDENTIAL",
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      global: {
+        fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
+          return fetch(input, { ...init, signal: controller.signal });
+        }) as typeof fetch,
+      },
     });
 
-    if (error) {
-      console.error("[sim] SQL function error:", error);
-      return NextResponse.json(
-        { error: `Simulation failed: ${error.message}` },
-        { status: 500 }
+    try {
+      // Verify user is admin
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .single();
+      if (!adminUser) {
+        return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
+      }
+
+      console.log(
+        `[sim] Admin ${user.email} starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
       );
+
+      // Call the fast SQL function — runs entirely in Postgres
+      const { data, error } = await supabase.rpc("run_fast_simulation", {
+        p_scenario: scenarioKey || "random",
+        p_duration_minutes: duration_minutes || 5,
+        p_total_voters: total_voters || 100_000_000,
+        p_election_type: election_type || "PRESIDENTIAL",
+      });
+
+      if (error) {
+        console.error("[sim] SQL function error:", error);
+        return NextResponse.json(
+          { error: `Simulation failed: ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      console.log("[sim] Simulation complete:", JSON.stringify(data).slice(0, 500));
+
+      return NextResponse.json(data);
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    console.log("[sim] Simulation complete:", data);
-
-    return NextResponse.json(data);
   } catch (error: any) {
     console.error("[sim] Error:", error);
+    if (error.name === "AbortError") {
+      return NextResponse.json(
+        { error: "Simulation timed out after 4 minutes. The function may still be running in the database. Check the admin dashboard in a few minutes." },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { error: error.message || "Simulation failed" },
       { status: 500 }

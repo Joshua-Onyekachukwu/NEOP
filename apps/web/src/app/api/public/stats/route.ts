@@ -1,7 +1,7 @@
 /**
  * GET /api/public/stats
  * Dashboard statistics endpoint.
- * Strategy: RPC first, then client-side aggregation with correct joins.
+ * Always queries DB directly (fast aggregation queries).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,73 +13,10 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// In-memory cache
+// In-memory cache (10s TTL)
 let cachedStats: any = null;
 let cacheTime = 0;
 const CACHE_TTL = 10_000;
-
-/**
- * Build state breakdown by querying with explicit FK join.
- * Batches in groups of 5000 to avoid Supabase row limits.
- */
-async function fetchStateBreakdown(supabase: any): Promise<any[]> {
-  const stateMap: Record<string, Record<string, number>> = {};
-  let offset = 0;
-  const pageSize = 5000;
-  const maxRows = 200000;
-  const startTime = Date.now();
-  const maxTime = 25000;
-
-  while (offset < maxRows && Date.now() - startTime < maxTime) {
-    const { data, error } = await supabase
-      .from("result_submissions")
-      .select("status, polling_units ( name, state_id )")
-      .range(offset, offset + pageSize - 1);
-
-    if (error || !data || data.length === 0) break;
-
-    for (const r of data) {
-      const stateId = (r.polling_units as any)?.state_id || "unknown";
-      if (!stateMap[stateId]) stateMap[stateId] = {};
-      stateMap[stateId][r.status] = (stateMap[stateId][r.status] || 0) + 1;
-    }
-
-    if (data.length < pageSize) break;
-    offset += pageSize;
-  }
-
-  // Now resolve state IDs to names
-  const stateIds = Object.keys(stateMap).filter((id) => id !== "unknown");
-  const stateNameMap: Record<string, string> = {};
-
-  if (stateIds.length > 0) {
-    // Fetch state names in batches
-    for (let i = 0; i < stateIds.length; i += 50) {
-      const batch = stateIds.slice(i, i + 50);
-      const { data: states } = await supabase
-        .from("states")
-        .select("id, name")
-        .in("id", batch);
-      for (const s of states || []) {
-        stateNameMap[s.id] = s.name;
-      }
-    }
-  }
-
-  return Object.entries(stateMap)
-    .map(([id, statuses]) => ({
-      state_name: stateNameMap[id] || id,
-      state_id: id,
-      name: stateNameMap[id] || id,
-      total_pus: Object.values(statuses).reduce((s, v) => s + v, 0),
-      verified: statuses["VERIFIED"] || 0,
-      submitted: statuses["RESULT_SUBMITTED"] || 0,
-      disputed: statuses["DISPUTED"] || 0,
-      disrupted: statuses["DISRUPTED"] || 0,
-      statuses,
-    }))
-    .sort((a, b) => b.total_pus - a.total_pus);
-}
 
 export async function GET(_request: NextRequest) {
   try {
@@ -90,58 +27,128 @@ export async function GET(_request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Always compute fresh stats from the database (skip potentially stale RPC)
-    const [totalPU, submittedRes, verifiedRes, activeRes, incidentRes] =
-      await Promise.all([
-        supabase.from("polling_units").select("*", { count: "exact", head: true }),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }),
-        supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
-        supabase.from("agent_assignments").select("*", { count: "exact", head: true }).eq("status", "CHECKED_IN"),
-        supabase.from("incidents").select("*", { count: "exact", head: true }),
-      ]);
+    // Try fast SQL functions first
+    let result: any = null;
 
-    const INEC_TOTAL = totalPU.count || 188042;
-    const coveredCount = submittedRes.count || 0;
-    const verifiedCount = verifiedRes.count || 0;
+    // Attempt 1: Use get_state_breakdown_from_results (fast, uses result_submissions directly)
+    try {
+      const { data: sbData, error: sbError } = await supabase.rpc(
+        "get_state_breakdown_from_results"
+      );
 
-    // Build state breakdown — try fast SQL function first, fall back to pagination
-    let stateBreakdown: any[] = [];
-    if (coveredCount > 0) {
-      try {
-        const { data: sbRpc, error: sbErr } = await supabase.rpc("get_state_breakdown_from_results");
-        if (!sbErr && sbRpc && sbRpc.length > 0) {
-          stateBreakdown = sbRpc;
-        } else {
-          // Fallback to client-side pagination
-          stateBreakdown = await fetchStateBreakdown(supabase);
+      if (!sbError && sbData && sbData.length > 0) {
+        // Build stats from the state breakdown
+        let totalCovered = 0;
+        let totalVerified = 0;
+        let totalPU = 0;
+        for (const row of sbData) {
+          totalPU += Number(row.total_polling_units || 0);
+          totalCovered += Number(row.covered_polling_units || 0);
+          totalVerified += Number(row.verified_polling_units || 0);
         }
-      } catch (e) {
-        console.error("State breakdown fetch failed:", e);
-        stateBreakdown = [];
+
+        result = {
+          inec_total_polling_units: 188042,
+          total_polling_units: totalPU || 188042,
+          covered_polling_units: totalCovered,
+          verified_polling_units: totalVerified,
+          active_observers: 0,
+          total_incidents: 0,
+          incident_counts: {},
+          state_breakdown: sbData.map((row: any) => ({
+            state_id: row.state_id,
+            state_name: row.state_name || row.state_name,
+            name: row.state_name,
+            state_code: row.state_code,
+            total_pus: Number(row.total_polling_units || 0),
+            covered: Number(row.covered_polling_units || 0),
+            verified: Number(row.verified_polling_units || 0),
+            coverage_percent: Number(row.coverage_percent || 0),
+            verification_percent: Number(row.verification_percent || 0),
+          })),
+          coverage_percent:
+            totalPU > 0
+              ? Number(((totalCovered / totalPU) * 100).toFixed(1))
+              : 0,
+          verification_percent:
+            totalPU > 0
+              ? Number(((totalVerified / totalPU) * 100).toFixed(1))
+              : 0,
+          last_updated: new Date().toISOString(),
+          disclaimer:
+            "These are independently collected field observations and are not official INEC election results.",
+        };
       }
+    } catch (e) {
+      console.error("State breakdown RPC failed, using fallback:", e);
     }
 
-    const result = {
-      inec_total_polling_units: INEC_TOTAL,
-      total_polling_units: INEC_TOTAL,
-      covered_polling_units: coveredCount,
-      verified_polling_units: verifiedCount,
-      active_observers: activeRes.count || 0,
-      total_incidents: incidentRes.count || 0,
-      incident_counts: {} as Record<string, number>,
-      state_breakdown: stateBreakdown,
-      coverage_percent:
-        INEC_TOTAL > 0
-          ? Number(((coveredCount / INEC_TOTAL) * 100).toFixed(1))
-          : 0,
-      verification_percent:
-        INEC_TOTAL > 0
-          ? Number(((verifiedCount / INEC_TOTAL) * 100).toFixed(1))
-          : 0,
-      last_updated: new Date().toISOString(),
-      disclaimer:
-        "These are independently collected field observations and are not official INEC election results.",
-    };
+    // Attempt 2: Fallback — direct queries
+    if (!result) {
+      const [totalPU, submittedRes, verifiedRes] = await Promise.all([
+        supabase
+          .from("polling_units")
+          .select("*", { count: "exact", head: true }),
+        supabase
+          .from("result_submissions")
+          .select("*", { count: "exact", head: true }),
+        supabase
+          .from("result_submissions")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "VERIFIED"),
+      ]);
+
+      const INEC_TOTAL = 188042;
+      const coveredCount = submittedRes.count || 0;
+      const verifiedCount = verifiedRes.count || 0;
+
+      // Build state breakdown from result_submissions
+      let stateBreakdown: any[] = [];
+      if (coveredCount > 0) {
+        try {
+          const { data: sbData } = await supabase.rpc(
+            "get_state_breakdown_from_results"
+          );
+          if (sbData && sbData.length > 0) {
+            stateBreakdown = sbData.map((row: any) => ({
+              state_id: row.state_id,
+              state_name: row.state_name,
+              name: row.state_name,
+              state_code: row.state_code,
+              total_pus: Number(row.total_polling_units || 0),
+              covered: Number(row.covered_polling_units || 0),
+              verified: Number(row.verified_polling_units || 0),
+              coverage_percent: Number(row.coverage_percent || 0),
+              verification_percent: Number(row.verification_percent || 0),
+            }));
+          }
+        } catch (e) {
+          console.error("State breakdown fallback failed:", e);
+        }
+      }
+
+      result = {
+        inec_total_polling_units: INEC_TOTAL,
+        total_polling_units: INEC_TOTAL,
+        covered_polling_units: coveredCount,
+        verified_polling_units: verifiedCount,
+        active_observers: 0,
+        total_incidents: 0,
+        incident_counts: {},
+        state_breakdown: stateBreakdown,
+        coverage_percent:
+          INEC_TOTAL > 0
+            ? Number(((coveredCount / INEC_TOTAL) * 100).toFixed(1))
+            : 0,
+        verification_percent:
+          INEC_TOTAL > 0
+            ? Number(((verifiedCount / INEC_TOTAL) * 100).toFixed(1))
+            : 0,
+        last_updated: new Date().toISOString(),
+        disclaimer:
+          "These are independently collected field observations and are not official INEC election results.",
+      };
+    }
 
     cachedStats = result;
     cacheTime = now;
@@ -149,6 +156,9 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Error in public stats API:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
