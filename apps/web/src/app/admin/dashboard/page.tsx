@@ -188,9 +188,13 @@ const AdminDashboard: React.FC = () => {
     }, 30000);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/admin/simulate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           scenario: simScenario,
           duration_minutes: simDuration,

@@ -32,24 +32,24 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify admin
+    // Verify admin — require auth header
     const authHeader = request.headers.get("Authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.substring(7);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser(token);
-      if (user) {
-        const { data: adminUser } = await supabase
-          .from("admin_users")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("is_active", true)
-          .single();
-        if (!adminUser) {
-          return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-        }
-      }
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.substring(7);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { data: adminUser } = await supabase
+      .from("admin_users")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .single();
+    if (!adminUser) {
+      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
     }
 
     console.log(
