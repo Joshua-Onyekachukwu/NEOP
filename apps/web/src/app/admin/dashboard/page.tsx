@@ -104,6 +104,23 @@ const AdminDashboard: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           if (active) setLiveProgress(data);
+          // Detect simulation completion
+          if (!data.is_running && active) {
+            setSimRunning(false);
+            setSimResult({
+              scenario: data.scenario || "random",
+              description: "Simulation completed",
+              duration_minutes: Math.round((data.elapsed_seconds || 0) / 60),
+              target_voters: 100_000_000,
+              total_polling_units: 188042,
+              results_created: data.total_results || 0,
+              party_results_created: 0,
+              total_votes: data.total_votes || 0,
+              final_status_distribution: data.status_distribution || {},
+              ndc_wins: true,
+            });
+            fetchStats();
+          }
         }
       } catch {}
     };
@@ -228,7 +245,8 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/admin/simulate", {
+      // Use trigger endpoint — returns in under 1 second (no Vercel timeout)
+      const res = await fetch("/api/admin/simulate/trigger", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -238,6 +256,7 @@ const AdminDashboard: React.FC = () => {
           scenario: simScenario,
           duration_minutes: simDuration,
           total_voters: simVoters * 1_000_000,
+          election_type: simElectionType,
         }),
       });
 
@@ -249,15 +268,17 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      const data: SimResult = await res.json();
-      setSimResult(data);
+      const data = await res.json();
+      // Simulation started — progress bar will poll for updates
+      setSimProgress("Simulation started in Postgres. Monitoring progress...");
       fetchStats(); // refresh stats
     } catch (e: any) {
       setSimError(e.message || "Network error");
-    } finally {
       setSimRunning(false);
       setSimProgress("");
     }
+    // Note: simRunning stays true — the progress polling useEffect
+    // will detect completion and set simRunning = false
   };
 
   const tabs = ["overview", "verification", "volunteers", "locations", "incidents", "simulation"] as const;
