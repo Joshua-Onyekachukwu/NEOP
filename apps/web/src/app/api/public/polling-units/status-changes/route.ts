@@ -67,9 +67,19 @@ export async function GET(_request: NextRequest) {
     cacheTime = now;
 
     return NextResponse.json(result, {
-      headers: { "Cache-Control": "no-cache" },
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
+        "Surrogate-Control": "max-age=10, stale-if-error=120",
+        "X-Content-Type-Options": "nosniff",
+      },
     });
   } catch (error) {
-    return NextResponse.json({ active: [], count: 0 }, { status: 200 });
+    return NextResponse.json({ active: [], count: 0, timestamp: Date.now() }, {
+      status: 200,
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
+        "Surrogate-Control": "max-age=10, stale-if-error=120",
+      },
+    });
   }
 }

@@ -160,6 +160,12 @@ export async function GET(request: NextRequest) {
       summary,
       map_markers: mapMarkers,
       disclaimer: "Incident reports are filed by field observers in real time. They are unverified until reviewed by administrators.",
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
+        "Surrogate-Control": "max-age=10, stale-if-error=120",
+        "X-Content-Type-Options": "nosniff",
+      },
     });
   } catch (error) {
     console.error("Disruptions error:", error);
