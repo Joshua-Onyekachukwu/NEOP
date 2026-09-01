@@ -9,16 +9,7 @@
  * Falls back gracefully if CONVEX_URL is not configured.
  */
 
-import React, { createContext, useContext, useMemo } from "react";
-
-let ConvexClientProvider: React.ComponentType<any> | null = null;
-
-try {
-  const convexReact = require("convex/react");
-  ConvexClientProvider = convexReact.ConvexClientProvider;
-} catch {
-  // Convex not installed — provider will be a no-op
-}
+import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
 
 interface ConvexContextValue {
   isConfigured: boolean;
@@ -41,16 +32,27 @@ const CONVEX_URL =
     ? process.env.NEXT_PUBLIC_CONVEX_URL || ""
     : "";
 
-const IS_CONFIGURED = Boolean(CONVEX_URL && ConvexClientProvider);
-
 export function ConvexProvider({ children }: { children: React.ReactNode }) {
+  const [ConvexClientProvider, setConvexClientProvider] = useState<React.ComponentType<any> | null>(null);
+
+  useEffect(() => {
+    // Dynamically import convex/react only on the client
+    import("convex/react").then((mod) => {
+      setConvexClientProvider(() => mod.ConvexClientProvider);
+    }).catch(() => {
+      // Convex not available — will render children without provider
+    });
+  }, []);
+
+  const isConfigured = Boolean(CONVEX_URL && ConvexClientProvider);
+
   const ctxValue = useMemo(
-    () => ({ isConfigured: IS_CONFIGURED }),
-    []
+    () => ({ isConfigured }),
+    [isConfigured]
   );
 
-  // If Convex is not configured, render children without provider
-  if (!IS_CONFIGURED || !ConvexClientProvider) {
+  // If Convex is not configured or not loaded yet, render children without provider
+  if (!isConfigured || !ConvexClientProvider) {
     return (
       <ConvexContext.Provider value={ctxValue}>
         {children}

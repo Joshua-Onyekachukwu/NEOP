@@ -51,14 +51,8 @@ export interface ElectionConfig {
   total_results: number;
 }
 
-// ── Convex-powered hooks (when Convex is available) ──
-let useConvexQuery: ((query: any, args?: any) => any) | null = null;
-
-try {
-  useConvexQuery = require("convex/react").useQuery;
-} catch {
-  // Convex not available
-}
+// NOTE: Convex useQuery is NOT used in this hook.
+// This hook uses REST polling for Supabase data.
 
 /**
  * Fetch data from Supabase public API with caching.
@@ -82,12 +76,6 @@ async function fetchAPI<T>(path: string, ttl = 10000): Promise<T | null> {
 export function useRealtimeStats(refreshKey = 0): LiveStats | null {
   const { isConfigured } = useConvexContext();
   const [stats, setStats] = useState<LiveStats | null>(null);
-
-  // Convex path (when available)
-  if (isConfigured && useConvexQuery) {
-    // This would use: const convexStats = useConvexQuery(api.stats.getGlobalStats);
-    // For now, we use the Supabase path for both
-  }
 
   // Supabase polling path
   useEffect(() => {
