@@ -6,12 +6,15 @@
  *
  *   CDN cache (edge) → Serverless cache (unstable_cache) → Database
  *
- * NEW: Falls back to Convex when Supabase is unreachable. This ensures
- * the live dashboard always shows data even during Supabase outages.
+ * Falls back to Convex when Supabase is unreachable or slow. This ensures
+ * the live dashboard always shows data even during database outages.
+ *
+ * CRITICAL: Supabase calls have a 4-second timeout so they never eat the
+ * full Vercel 10-second function budget, leaving time for the Convex fallback.
  */
 
 import { unstable_cache, revalidateTag } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
   getConvexPartyTotals,
   getConvexGlobalStats,
@@ -22,19 +25,30 @@ import {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-function getServiceClient() {
+/** Supabase timeout — must be under 8s (Vercel Hobby limit is 10s) */
+const SB_TIMEOUT_MS = 4_000;
+
+function getServiceClient(): SupabaseClient {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-/** Test if Supabase is reachable (used for fallback decisions) */
-async function isSupabaseReachable(): Promise<boolean> {
-  try {
-    const client = getServiceClient();
-    const { error } = await client.from("parties").select("id").limit(1);
-    return !error;
-  } catch {
-    return false;
-  }
+/**
+ * Race a promise against a timeout. Returns null on timeout or error.
+ * This prevents Supabase hangs from eating the full Vercel function budget.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[api-cache] ${label} timed out after ${ms}ms`);
+        resolve(null);
+      }, ms)
+    ),
+  ]).catch((e) => {
+    console.warn(`[api-cache] ${label} error:`, e?.message || e);
+    return null;
+  });
 }
 
 // ─────────────────────────────────────────────────────
@@ -43,18 +57,17 @@ async function isSupabaseReachable(): Promise<boolean> {
 
 export const getCachedStats = unstable_cache(
   async () => {
+    // ── Try Supabase with timeout ──
     const supabase = getServiceClient();
 
-    // Try Supabase first
-    try {
-      const { data: sbData, error: sbError } = await supabase.rpc(
-        "get_state_breakdown_from_results"
-      );
+    const sbResult = await withTimeout(
+      (async () => {
+        const { data, error } = await supabase.rpc("get_state_breakdown_from_results");
+        if (error || !data || data.length === 0) return null;
 
-      if (!sbError && sbData && sbData.length > 0) {
         let totalCovered = 0;
         let totalVerified = 0;
-        for (const row of sbData) {
+        for (const row of data) {
           totalCovered += Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0);
           totalVerified += Number(row.verified || row.verified_polling_units || 0);
         }
@@ -64,7 +77,7 @@ export const getCachedStats = unstable_cache(
           total_polling_units: 188042,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
-          state_breakdown: sbData.map((row: any) => ({
+          state_breakdown: data.map((row: any) => ({
             state_id: row.state_id,
             state_name: row.state_name,
             name: row.state_name,
@@ -78,20 +91,23 @@ export const getCachedStats = unstable_cache(
           verification_percent: 188042 > 0 ? Number(((totalVerified / 188042) * 100).toFixed(1)) : 0,
           last_updated: new Date().toISOString(),
           disclaimer: "These are independently collected field observations and are not official INEC election results.",
-          source: "supabase",
+          source: "supabase" as const,
         };
-      }
-    } catch (e) {
-      console.error("Supabase stats RPC failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "supabase:stats"
+    );
 
-    // ── Fallback: Try Convex ──
-    try {
-      const convexStats = await getConvexGlobalStats();
-      const convexStates = await getConvexStateBreakdown();
+    if (sbResult) return sbResult;
 
-      if (convexStats && convexStats.covered_polling_units > 0) {
-        console.log("Using Convex fallback for stats");
+    // ── Fallback: Convex (also with timeout) ──
+    const convexResult = await withTimeout(
+      (async () => {
+        const convexStats = await getConvexGlobalStats();
+        const convexStates = await getConvexStateBreakdown();
+
+        if (!convexStats || convexStats.covered_polling_units === 0) return null;
+
         return {
           inec_total_polling_units: 188042,
           total_polling_units: convexStats.total_polling_units,
@@ -111,14 +127,16 @@ export const getCachedStats = unstable_cache(
           verification_percent: convexStats.verification_percent,
           last_updated: new Date().toISOString(),
           disclaimer: "These are independently collected field observations and are not official INEC election results.",
-          source: "convex",
+          source: "convex" as const,
         };
-      }
-    } catch (e) {
-      console.error("Convex stats fallback failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "convex:stats"
+    );
 
-    // ── Last resort: return zeros ──
+    if (convexResult) return convexResult;
+
+    // ── Last resort ──
     return {
       inec_total_polling_units: 188042,
       total_polling_units: 188042,
@@ -129,10 +147,10 @@ export const getCachedStats = unstable_cache(
       verification_percent: 0,
       last_updated: new Date().toISOString(),
       disclaimer: "These are independently collected field observations and are not official INEC election results.",
-      source: "empty",
+      source: "empty" as const,
     };
   },
-  ["stats-v4"],
+  ["stats-v5"],
   {
     revalidate: 30,
     tags: ["stats"],
@@ -145,13 +163,14 @@ export const getCachedStats = unstable_cache(
 
 export const getCachedPartyResults = unstable_cache(
   async () => {
+    // ── Try Supabase with timeout ──
     const supabase = getServiceClient();
 
-    // ── Primary: Try Supabase RPC ──
-    try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc("get_party_totals");
+    const sbResult = await withTimeout(
+      (async () => {
+        const { data: rpcData, error: rpcError } = await supabase.rpc("get_party_totals");
+        if (rpcError || !rpcData || rpcData.length === 0) return null;
 
-      if (!rpcError && rpcData && rpcData.length > 0) {
         const deduped: Record<string, any> = {};
         for (const p of rpcData) {
           const abbr = p.party_abbreviation;
@@ -183,19 +202,21 @@ export const getCachedPartyResults = unstable_cache(
           total_results: totalRes.count || 0,
           verified_results: verifiedRes.count || 0,
           last_updated: new Date().toISOString(),
-          source: "supabase",
+          source: "supabase" as const,
         };
-      }
-    } catch (e) {
-      console.error("Supabase party results failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "supabase:party-results"
+    );
 
-    // ── Fallback: Try Convex ──
-    try {
-      const convexParties = await getConvexPartyTotals();
+    if (sbResult) return sbResult;
 
-      if (convexParties && convexParties.length > 0) {
-        console.log("Using Convex fallback for party results");
+    // ── Fallback: Convex ──
+    const convexResult = await withTimeout(
+      (async () => {
+        const convexParties = await getConvexPartyTotals();
+        if (!convexParties || convexParties.length === 0) return null;
+
         const grandTotal = convexParties.reduce(
           (sum: number, p: any) => sum + p.total_votes, 0
         );
@@ -212,24 +233,26 @@ export const getCachedPartyResults = unstable_cache(
           total_results: 0,
           verified_results: 0,
           last_updated: new Date().toISOString(),
-          source: "convex",
+          source: "convex" as const,
         };
-      }
-    } catch (e) {
-      console.error("Convex party results fallback failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "convex:party-results"
+    );
 
-    // ── Last resort: return empty ──
+    if (convexResult) return convexResult;
+
+    // ── Last resort ──
     return {
       parties: [],
       grand_total: 0,
       total_results: 0,
       verified_results: 0,
       last_updated: new Date().toISOString(),
-      source: "empty",
+      source: "empty" as const,
     };
   },
-  ["party-results-v4"],
+  ["party-results-v5"],
   {
     revalidate: 30,
     tags: ["party-results"],
@@ -242,16 +265,19 @@ export const getCachedPartyResults = unstable_cache(
 
 export const getCachedConfig = unstable_cache(
   async () => {
-    // ── Try Supabase first ──
-    try {
-      const supabase = getServiceClient();
-      const { data } = await supabase
-        .from("simulation_config")
-        .select("*")
-        .eq("id", "00000000-0000-0000-0000-000000000001")
-        .single();
+    // ── Try Supabase with timeout ──
+    const supabase = getServiceClient();
 
-      if (data) {
+    const sbResult = await withTimeout(
+      (async () => {
+        const { data } = await supabase
+          .from("simulation_config")
+          .select("*")
+          .eq("id", "00000000-0000-0000-0000-000000000001")
+          .single();
+
+        if (!data) return null;
+
         const isRunning = data.status === "RUNNING";
         return {
           election_type: data.election_type || "PRESIDENTIAL",
@@ -266,19 +292,21 @@ export const getCachedConfig = unstable_cache(
           display_status: isRunning ? "SIMULATION" : "LIVE",
           status_label: isRunning ? "Simulation Running" : "Live Election Data",
           total_results: data.total_results_submitted || 0,
-          source: "supabase",
+          source: "supabase" as const,
         };
-      }
-    } catch (e) {
-      console.error("Supabase config failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "supabase:config"
+    );
 
-    // ── Fallback: Try Convex ──
-    try {
-      const convexConfig = await getConvexSimConfig();
+    if (sbResult) return sbResult;
 
-      if (convexConfig) {
-        console.log("Using Convex fallback for config");
+    // ── Fallback: Convex ──
+    const convexResult = await withTimeout(
+      (async () => {
+        const convexConfig = await getConvexSimConfig();
+        if (!convexConfig) return null;
+
         const isRunning = convexConfig.status === "RUNNING";
         return {
           election_type: convexConfig.election_type || "PRESIDENTIAL",
@@ -293,12 +321,14 @@ export const getCachedConfig = unstable_cache(
           display_status: isRunning ? "SIMULATION" : (convexConfig.status === "COMPLETED" ? "LIVE" : "LIVE"),
           status_label: isRunning ? "Simulation Running" : "Live Election Data",
           total_results: convexConfig.results_processed || 0,
-          source: "convex",
+          source: "convex" as const,
         };
-      }
-    } catch (e) {
-      console.error("Convex config fallback failed:", e);
-    }
+      })(),
+      SB_TIMEOUT_MS,
+      "convex:config"
+    );
+
+    if (convexResult) return convexResult;
 
     // ── Last resort: defaults ──
     return {
@@ -310,10 +340,10 @@ export const getCachedConfig = unstable_cache(
       display_status: "LIVE",
       status_label: "Live Election Data",
       total_results: 0,
-      source: "empty",
+      source: "empty" as const,
     };
   },
-  ["config-v2"],
+  ["config-v3"],
   {
     revalidate: 300,
     tags: ["config"],
