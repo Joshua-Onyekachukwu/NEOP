@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import StatsBar from "@/components/live/StatsBar";
 import ResultFeed from "@/components/live/ResultFeed";
 import StateTable from "@/components/live/StateTable";
@@ -11,6 +12,12 @@ import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
 import SimulationTicker from "@/components/live/SimulationTicker";
 import { supabase } from "@/lib/supabase-browser";
+
+// Convex real-time layer — only rendered on client (no SSR)
+const ConvexRealtimeLayer = dynamic(
+  () => import("@/components/live/ConvexRealtimeLayer").then((m) => m.ConvexRealtimeLayer),
+  { ssr: false }
+);
 
 interface ElectionConfig {
   election_type: string;
@@ -133,6 +140,7 @@ const HomePage: React.FC = () => {
         : "glow-waiting";
 
   return (
+    <ConvexRealtimeLayer>
     <div className="min-h-screen pt-[56px]">
       <main id="main-content">
         {/* ── Disclaimer ── */}
@@ -367,6 +375,7 @@ const HomePage: React.FC = () => {
         </section>
       </main>
     </div>
+    </ConvexRealtimeLayer>
   );
 };
 
