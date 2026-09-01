@@ -504,7 +504,50 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- ── 3.8 Simulation Tick ─────────────────────────────────────
+-- ── 3.8 Simulation Progress Stats ──────────────────────────
+-- Returns everything the progress endpoint needs in ONE query.
+-- Replaces loading 188K polling_unit rows + all result_submissions into memory.
+
+CREATE OR REPLACE FUNCTION get_simulation_progress_stats()
+RETURNS JSONB
+LANGUAGE plpgsql STABLE
+AS $$
+  DECLARE
+    v_status_dist JSONB;
+    v_total_results BIGINT;
+    v_verified_results BIGINT;
+    v_total_votes BIGINT;
+    v_total_pus BIGINT;
+  BEGIN
+    -- Polling-unit status distribution (aggregate, not row-level)
+    SELECT coalesce(jsonb_object_agg(status, cnt), '{}') INTO v_status_dist
+    FROM (
+      SELECT status, count(*) AS cnt
+      FROM polling_units
+      GROUP BY status
+    ) sub;
+
+    SELECT count(*) INTO v_total_pus FROM polling_units;
+
+    SELECT count(*),
+           count(*) FILTER (WHERE status = 'VERIFIED'),
+           coalesce(sum(total_votes), 0)
+    INTO v_total_results, v_verified_results, v_total_votes
+    FROM result_submissions;
+
+    RETURN jsonb_build_object(
+      'total_polling_units', v_total_pus,
+      'total_results', v_total_results,
+      'verified_results', v_verified_results,
+      'total_votes', v_total_votes,
+      'status_distribution', v_status_dist
+    );
+  END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_simulation_progress_stats() TO anon, service_role;
+
+-- ── 3.9 Simulation Tick ─────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION simulation_tick()
 RETURNS JSONB

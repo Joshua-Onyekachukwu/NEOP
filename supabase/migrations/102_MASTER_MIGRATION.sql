@@ -350,7 +350,54 @@ RAISE NOTICE 'Function get_state_breakdown_from_results created';
 
 
 -- ============================================================
--- SECTION 10: SIMULATION FUNCTION
+-- SECTION 10: SIMULATION PROGRESS STATS FUNCTION
+-- Returns aggregate progress data in ONE query.
+-- Replaces loading 188K+ polling_unit rows into memory.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_simulation_progress_stats()
+RETURNS JSONB
+LANGUAGE plpgsql STABLE
+AS $$
+  DECLARE
+    v_status_dist JSONB;
+    v_total_results BIGINT;
+    v_verified_results BIGINT;
+    v_total_votes BIGINT;
+    v_total_pus BIGINT;
+  BEGIN
+    SELECT coalesce(jsonb_object_agg(status, cnt), '{}') INTO v_status_dist
+    FROM (
+      SELECT status, count(*) AS cnt
+      FROM polling_units
+      GROUP BY status
+    ) sub;
+
+    SELECT count(*) INTO v_total_pus FROM polling_units;
+
+    SELECT count(*),
+           count(*) FILTER (WHERE status = 'VERIFIED'),
+           coalesce(sum(total_votes), 0)
+    INTO v_total_results, v_verified_results, v_total_votes
+    FROM result_submissions;
+
+    RETURN jsonb_build_object(
+      'total_polling_units', v_total_pus,
+      'total_results', v_total_results,
+      'verified_results', v_verified_results,
+      'total_votes', v_total_votes,
+      'status_distribution', v_status_dist
+    );
+  END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_simulation_progress_stats() TO anon, service_role;
+
+RAISE NOTICE 'Function get_simulation_progress_stats created';
+
+
+-- ============================================================
+-- SECTION 11: SIMULATION FUNCTION
 -- The main function called by the admin panel.
 -- NDC always wins. All 9 parties get votes.
 -- TRUNCATE for instant reset (no lock timeout).

@@ -5,7 +5,7 @@
  * Queries Convex's HTTP API directly from Next.js serverless functions.
  */
 
-const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://flexible-guineapig-4.convex.cloud";
+const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
 export async function convexQuery<T = any>(
   path: string,

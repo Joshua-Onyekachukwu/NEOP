@@ -157,7 +157,10 @@ export async function POST(request: NextRequest) {
       const verifyUrl = `${request.nextUrl.origin}/api/verify/result`;
       fetch(verifyUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
         body: JSON.stringify({ result_id: result.id }),
       }).catch(err => console.error('Verification trigger failed:', err));
     } catch {
