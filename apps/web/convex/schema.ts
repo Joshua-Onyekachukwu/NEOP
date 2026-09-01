@@ -127,6 +127,7 @@ export default defineSchema({
     results_processed: v.number(),
     total_results: v.number(),
     progress_percent: v.number(),
+    updated_at: v.optional(v.number()),
   })
     .index("by_key", ["key"]),
 });

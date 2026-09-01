@@ -1,24 +1,24 @@
 /**
  * POST /api/admin/simulate/trigger
  *
- * Ultra-lean simulation trigger — minimal work, fast response.
- * Designed to complete within Vercel Hobby's 10-second timeout.
+ * Simulation trigger — runs via Convex for dev/simulation phase.
  *
- * Does only:
- * 1. Verify Bearer token (fast)
- * 2. Set simulation_config to RUNNING
- * 3. Fire Supabase RPC (no await)
- * 4. Return immediately
+ * Does:
+ * 1. Verify Bearer token
+ * 2. Fire Convex runSimulation action (fire-and-forget)
+ * 3. Return immediately
  *
- * The SQL function runs entirely inside Postgres.
- * Admin dashboard polls /api/admin/simulate/progress for updates.
+ * The Convex action processes all PUs in batches and updates
+ * sim_config progress. Admin dashboard polls progress endpoint.
  */
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+const convexDeployKey = process.env.CONVEX_DEPLOY_KEY || "";
+
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
@@ -27,25 +27,24 @@ export async function POST(request: NextRequest) {
     const scenario = body.scenario || "random";
     const electionType = body.election_type || "PRESIDENTIAL";
     const totalVoters = body.total_voters || 100_000_000;
-    const duration = body.duration_minutes || 5;
 
-    // Quick auth check — just verify the token is valid
+    // Quick auth check
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify JWT is valid
     const token = authHeader.substring(7);
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Set status to RUNNING immediately
-    const { error: updateError } = await supabase
+    console.log(`[trigger] Admin ${user.email} starting simulation: scenario=${scenario}, type=${electionType}`);
+
+    // Set Supabase status to RUNNING (for backward compat)
+    await supabase
       .from("simulation_config")
       .update({
         status: "RUNNING",
@@ -56,91 +55,58 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", "00000000-0000-0000-0000-000000000001");
 
-    if (updateError) {
-      console.error("[trigger] Config update error:", updateError);
+    // Fire Convex simulation — don't await, let it run in background
+    if (convexUrl && convexDeployKey) {
+      console.log("[trigger] Firing Convex simulation...");
+      fetch(`${convexUrl}/api/action`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${convexDeployKey}`,
+        },
+        body: JSON.stringify({
+          path: "runSimulation:runSimulation",
+          args: { scenario, electionType, totalVoters },
+        }),
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            console.log("[trigger] Convex simulation complete:", JSON.stringify(data).slice(0, 300));
+          } else {
+            const err = await res.text();
+            console.error("[trigger] Convex simulation failed:", err.slice(0, 300));
+          }
+        })
+        .catch((e) => console.error("[trigger] Convex error:", e.message));
+    } else {
+      // Fallback: use Supabase SQL function if Convex not configured
+      console.log("[trigger] Convex not configured, falling back to Supabase SQL");
+      const rpcUrl = `${supabaseUrl}/rest/v1/rpc/run_fast_simulation`;
+      fetch(rpcUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseServiceKey,
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          p_scenario: scenario,
+          p_duration_minutes: 5,
+          p_total_voters: totalVoters,
+          p_election_type: electionType,
+        }),
+      }).catch((e) => console.error("[trigger] SQL fallback error:", e.message));
     }
 
-    // Fire the SQL function — don't await, let it run in Postgres
-    const rpcUrl = `${supabaseUrl}/rest/v1/rpc/run_fast_simulation`;
-    fetch(rpcUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseServiceKey,
-        Authorization: `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({
-        p_scenario: scenario,
-        p_duration_minutes: duration,
-        p_total_voters: totalVoters,
-        p_election_type: electionType,
-      }),
-    })
-      .then(async (res) => {
-        const completedAt = new Date().toISOString();
-        if (res.ok) {
-          const data = await res.json();
-          console.log("[trigger] Simulation complete:", JSON.stringify(data).slice(0, 300));
-
-          // Record in simulation_history
-          try {
-            const historyData = Array.isArray(data) ? data[0] : data;
-            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${supabaseServiceKey}`,
-              },
-              body: JSON.stringify({
-                scenario,
-                election_type: electionType,
-                status: "COMPLETED",
-                total_polling_units: 188042,
-                results_created: historyData?.results_created || historyData?.total_results || 0,
-                total_votes: historyData?.total_votes || 0,
-                duration_seconds: historyData?.duration_seconds || 0,
-                started_at: new Date(Date.now() - (historyData?.duration_seconds || 0) * 1000).toISOString(),
-                completed_at: completedAt,
-              }),
-            }).catch(() => {});
-          } catch {}
-        } else {
-          const err = await res.text();
-          console.error("[trigger] Simulation failed:", err.slice(0, 300));
-          // Reset status on failure
-          await supabase
-            .from("simulation_config")
-            .update({ status: "COMPLETED", total_results_submitted: 0 })
-            .eq("id", "00000000-0000-0000-0000-000000000001");
-
-          // Record failure in history
-          try {
-            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${supabaseServiceKey}`,
-              },
-              body: JSON.stringify({
-                scenario,
-                election_type: electionType,
-                status: "FAILED",
-                error_message: err.slice(0, 500),
-                completed_at: completedAt,
-              }),
-            }).catch(() => {});
-          } catch {}
-        }
-      })
-      .catch((e) => console.error("[trigger] Background error:", e.message));
-
-    // Return immediately — under 1 second
+    // Return immediately
     return NextResponse.json({
       success: true,
-      message: "Simulation started in background. Monitor progress on admin dashboard.",
+      message: "Simulation started. Monitor progress on admin dashboard.",
       scenario,
       election_type: electionType,
       total_voters: totalVoters,
+      engine: convexUrl ? "convex" : "supabase",
     });
   } catch (error: any) {
     return NextResponse.json(
