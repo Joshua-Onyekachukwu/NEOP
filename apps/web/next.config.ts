@@ -42,11 +42,11 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://flexible-guineapig-4.convex.cloud",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://blessed-caribou-851.convex.cloud",
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://lvtfrfrnqxqwjuematum.supabase.co https://flexible-guineapig-4.convex.cloud https://flexible-guineapig-4.convex.site wss://flexible-guineapig-4.convex.cloud",
+      "connect-src 'self' https://lvtfrfrnqxqwjuematum.supabase.co https://blessed-caribou-851.convex.cloud https://blessed-caribou-851.convex.site wss://blessed-caribou-851.convex.cloud",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
