@@ -77,9 +77,30 @@ export async function POST(request: NextRequest) {
       }),
     })
       .then(async (res) => {
+        const completedAt = new Date().toISOString();
         if (res.ok) {
           const data = await res.json();
           console.log("[trigger] Simulation complete:", JSON.stringify(data).slice(0, 300));
+
+          // Record in simulation_history
+          try {
+            const historyData = Array.isArray(data) ? data[0] : data;
+            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                scenario,
+                election_type: electionType,
+                status: "COMPLETED",
+                total_polling_units: 188042,
+                results_created: historyData?.results_created || historyData?.total_results || 0,
+                total_votes: historyData?.total_votes || 0,
+                duration_seconds: historyData?.duration_seconds || 0,
+                started_at: new Date(Date.now() - (historyData?.duration_seconds || 0) * 1000).toISOString(),
+                completed_at: completedAt,
+              }),
+            }).catch(() => {});
+          } catch {}
         } else {
           const err = await res.text();
           console.error("[trigger] Simulation failed:", err.slice(0, 300));
@@ -88,6 +109,21 @@ export async function POST(request: NextRequest) {
             .from("simulation_config")
             .update({ status: "COMPLETED", total_results_submitted: 0 })
             .eq("id", "00000000-0000-0000-0000-000000000001");
+
+          // Record failure in history
+          try {
+            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                scenario,
+                election_type: electionType,
+                status: "FAILED",
+                error_message: err.slice(0, 500),
+                completed_at: completedAt,
+              }),
+            }).catch(() => {});
+          } catch {}
         }
       })
       .catch((e) => console.error("[trigger] Background error:", e.message));
