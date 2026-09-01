@@ -7,6 +7,7 @@
  * - Progress percentage
  * - Scenario and elapsed time
  *
+ * Auto-triggers Convex sync when simulation completes.
  * Admin-only — requires authenticated admin.
  */
 
@@ -15,8 +16,13 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 
 export const dynamic = "force-dynamic";
+
+// Track whether we've already triggered sync for the current simulation
+let lastSyncTriggeredAt = 0;
+let lastSyncTriggeredStatus = "";
 
 export async function GET(request: NextRequest) {
   try {
@@ -106,6 +112,40 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // ── AUTO-SYNC: Trigger Convex sync when simulation completes ──
+    let syncTriggered = false;
+    let syncStatus = "not_needed";
+
+    if (!isRunning && config.status === "COMPLETED" && convexUrl) {
+      const now = Date.now();
+      const alreadyTriggered =
+        lastSyncTriggeredStatus === config.started_at &&
+        now - lastSyncTriggeredAt < 300_000; // 5 min cooldown
+
+      if (!alreadyTriggered) {
+        // Fire sync in background (don't await — fire-and-forget)
+        lastSyncTriggeredAt = now;
+        lastSyncTriggeredStatus = config.started_at || "";
+
+        syncTriggered = true;
+        syncStatus = "triggered";
+
+        console.log("[progress] Simulation completed — triggering auto-sync to Convex");
+
+        // Fire the sync endpoint in background
+        fetch(`${request.nextUrl.origin}/api/admin/sync-convex/auto`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }).catch((e) => {
+          console.error("[progress] Auto-sync trigger failed:", e.message);
+        });
+      } else {
+        syncStatus = "already_triggered";
+      }
+    }
+
     return NextResponse.json({
       is_running: isRunning,
       status: config.status,
@@ -119,6 +159,9 @@ export async function GET(request: NextRequest) {
       status_distribution: statusDistribution,
       started_at: config.started_at,
       last_tick_at: config.last_tick_at,
+      // Sync fields
+      convex_sync: syncStatus,
+      sync_triggered: syncTriggered,
     });
   } catch (error: any) {
     console.error("[sim-progress] Error:", error);
