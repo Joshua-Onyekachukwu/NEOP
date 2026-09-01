@@ -132,11 +132,12 @@ export async function GET(request: NextRequest) {
 
         console.log("[progress] Simulation completed — triggering auto-sync to Convex");
 
-        // Fire the sync endpoint in background
+        // Fire the sync endpoint in background (with service role auth)
         fetch(`${request.nextUrl.origin}/api/admin/sync-convex/auto`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${supabaseServiceKey}`,
           },
         }).catch((e) => {
           console.error("[progress] Auto-sync trigger failed:", e.message);

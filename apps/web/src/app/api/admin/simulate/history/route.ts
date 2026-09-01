@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ── POST: Record a simulation run ──
+// Requires admin auth — prevents unauthorized history manipulation
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,8 +82,23 @@ export async function POST(request: NextRequest) {
       error_message,
     } = body;
 
-    // No auth required — this is called internally by the simulation trigger
+    // Verify admin auth (required for POST)
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.substring(7);
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { data: adminUser } = await supabase
+      .from("admin_users").select("id")
+      .eq("user_id", user.id).eq("is_active", true).single();
+    if (!adminUser) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { error } = await supabase
       .from("simulation_history")

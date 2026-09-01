@@ -38,7 +38,7 @@ export function ConvexProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Dynamically import convex/react only on the client
     import("convex/react").then((mod) => {
-      setConvexClientProvider(() => mod.ConvexClientProvider);
+      setConvexClientProvider(() => mod.ConvexProvider);
     }).catch(() => {
       // Convex not available — will render children without provider
     });

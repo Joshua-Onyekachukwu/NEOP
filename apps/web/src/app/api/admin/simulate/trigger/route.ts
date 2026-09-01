@@ -87,7 +87,10 @@ export async function POST(request: NextRequest) {
             const historyData = Array.isArray(data) ? data[0] : data;
             await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${supabaseServiceKey}`,
+              },
               body: JSON.stringify({
                 scenario,
                 election_type: electionType,
@@ -114,7 +117,10 @@ export async function POST(request: NextRequest) {
           try {
             await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(request.url).origin : ""}/api/admin/simulate/history`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${supabaseServiceKey}`,
+              },
               body: JSON.stringify({
                 scenario,
                 election_type: electionType,
