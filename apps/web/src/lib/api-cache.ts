@@ -72,11 +72,12 @@ export const getCachedStats = unstable_cache(
     const sbResult = await withTimeout(
       (async () => {
         const { data, error } = await supabase.rpc("get_state_breakdown_from_results");
-        if (error || !data || data.length === 0) return null;
+        if (error) return null;
 
+        const breakdown = data || [];
         let totalCovered = 0;
         let totalVerified = 0;
-        for (const row of data) {
+        for (const row of breakdown) {
           totalCovered += Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0);
           totalVerified += Number(row.verified || row.verified_polling_units || 0);
         }
@@ -86,7 +87,7 @@ export const getCachedStats = unstable_cache(
           total_polling_units: totalPUCount,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
-          state_breakdown: data.map((row: any) => ({
+          state_breakdown: breakdown.map((row: any) => ({
             state_id: row.state_id,
             state_name: row.state_name,
             name: row.state_name,
