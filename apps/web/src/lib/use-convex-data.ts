@@ -1,59 +1,25 @@
 /**
  * Convex Real-Time Data Hooks
  *
- * Uses Convex useQuery for real-time subscriptions (instant updates).
- * Falls back to REST API polling when Convex is unavailable or during SSR.
+ * All hooks use REST API polling for Supabase data.
+ * Convex real-time subscriptions are handled by ConvexRealtimeLayer.
  *
  * Architecture:
- *   Convex connected → useQuery (real-time, zero polling)
- *   Convex unavailable → REST API polling (10s interval)
+ *   REST API polling (10s interval) — reliable, works everywhere
+ *   Convex useQuery subscriptions — handled separately in ConvexRealtimeLayer
  */
 
 "use client";
 
 import { useEffect, useState } from "react";
 
-// Safe hook: only calls useQuery on client side
-function useConvexQuery(queryFn: any, args?: any): any | undefined {
-  const [data, setData] = useState<any | undefined>(undefined);
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  // We can't use useQuery conditionally, so we use a wrapper pattern
-  // The actual useQuery is called in the component, not here
-  return undefined; // placeholder
-}
-
 // ── Party Totals Hook ──
 
 export function usePartyTotals(refreshKey?: number) {
   const [restData, setRestData] = useState<any>(null);
   const [restLoading, setRestLoading] = useState(true);
-  const [convexAvailable, setConvexAvailable] = useState<boolean | null>(null);
 
-  // Try to import and use Convex dynamically
-  useEffect(() => {
-    let active = true;
-
-    const tryConvex = async () => {
-      try {
-        const { useQuery } = await import("convex/react");
-        const { api } = await import("../../convex/_generated/api");
-        // If we can import, Convex is available
-        if (active) setConvexAvailable(true);
-      } catch {
-        if (active) setConvexAvailable(false);
-      }
-    };
-
-    tryConvex();
-    return () => { active = false; };
-  }, []);
-
-  // REST API data (always fetch as fallback)
+  // REST API data
   useEffect(() => {
     let active = true;
     const fetchData = async () => {

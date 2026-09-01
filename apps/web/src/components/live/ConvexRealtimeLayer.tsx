@@ -85,18 +85,8 @@ export function useRealtimeData() {
   return useContext(RealtimeContext);
 }
 
-// ── Try to load Convex ──
-
-let useConvexQuery: any = null;
-let convexApi: any = null;
-
-try {
-  const convexReact = require("convex/react");
-  useConvexQuery = convexReact.useQuery;
-  convexApi = require("../../../convex/_generated/api").api;
-} catch {
-  // Convex not available — will use REST fallback
-}
+// NOTE: Convex useQuery is NOT used here — this layer uses REST polling.
+// Convex subscriptions are handled separately if needed in the future.
 
 // ── Provider ──
 
@@ -104,40 +94,7 @@ export function ConvexRealtimeLayer({
   children,
 }: {
   children: React.ReactNode;
-}) {
-  // Convex queries (these are subscriptions — auto-update)
-  const [convexData, setConvexData] = useState<{
-    parties: any;
-    stats: any;
-    config: any;
-    states: any;
-  } | null>(null);
-
-  const [convexAvailable, setConvexAvailable] = useState(false);
-
-  // Try Convex useQuery inside a sub-component pattern
-  // We use a state-based approach to avoid hook issues
-  useEffect(() => {
-    if (!useConvexQuery || !convexApi) return;
-
-    // We can't call useQuery outside a component, so we'll use
-    // a polling approach with Convex's fetchQuery instead
-    let cancelled = false;
-
-    const pollConvex = async () => {
-      try {
-        const client = require("convex/react").useConvexClient;
-        // If we're here, Convex is available but we need the client
-        // Use REST fallback — it's more reliable for this use case
-      } catch {}
-    };
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // REST API fallback polling — always runs
+}) {  // REST API fallback polling — always runs
   const [restParties, setRestParties] = useState<PartyTotal[]>([]);
   const [restStats, setRestStats] = useState<GlobalStats | null>(null);
   const [restConfig, setRestConfig] = useState<SimConfig | null>(null);
