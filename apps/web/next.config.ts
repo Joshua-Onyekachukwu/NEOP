@@ -46,7 +46,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://lgdubqovtyvzckvpbtrs.supabase.co https://flexible-guineapig-4.convex.cloud https://flexible-guineapig-4.convex.site wss://flexible-guineapig-4.convex.cloud",
+      "connect-src 'self' https://lvtfrfrnqxqwjuematum.supabase.co https://flexible-guineapig-4.convex.cloud https://flexible-guineapig-4.convex.site wss://flexible-guineapig-4.convex.cloud",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
