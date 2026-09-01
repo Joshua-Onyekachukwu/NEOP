@@ -66,10 +66,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  typescript: {
-    // @ts-expect-error — ignoreDuringBuilds still works at runtime
-    ignoreDuringBuilds: true,
-  },
+
   async headers() {
     return [
       {
