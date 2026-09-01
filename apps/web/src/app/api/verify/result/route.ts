@@ -10,9 +10,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyResult } from '@/lib/domain/verification';
+import { requireAdmin, isAdminSuccess } from '@/lib/admin-auth';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lgdubqovtyvzckvpbtrs.supabase.co';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST(request: NextRequest) {
@@ -25,31 +26,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Require admin auth for verification
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const token = authHeader.substring(7);
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify JWT
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check admin role
-    const { data: adminUser } = await supabase
-      .from('admin_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single();
-
-    if (!adminUser) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-    }
+    const auth = await requireAdmin(request);
+    if (!isAdminSuccess(auth)) return auth.error;
 
     // Run verification pipeline
     const result = await verifyResult(result_id);
