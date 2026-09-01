@@ -24,27 +24,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'result_id is required' }, { status: 400 });
     }
 
-    // Optional: verify caller is admin or system
+    // Require admin auth for verification
     const authHeader = request.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Allow system calls (no auth) or admin calls
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const { data: { user } } = await supabase.auth.getUser(token);
+    // Verify JWT
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-      if (user) {
-        const { data: adminUser } = await supabase
-          .from('admin_users')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .single();
+    // Check admin role
+    const { data: adminUser } = await supabase
+      .from('admin_users')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .single();
 
-        if (!adminUser) {
-          return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-        }
-      }
+    if (!adminUser) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
     // Run verification pipeline

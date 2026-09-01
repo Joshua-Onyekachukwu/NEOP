@@ -37,6 +37,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Convex not configured" }, { status: 400 });
     }
 
+    // Basic internal auth — this endpoint should only be called by the server
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.substring(7);
+    const authClient = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: { user }, error: authErr } = await authClient.auth.getUser(token);
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Cooldown check
     const now = Date.now();
     if (now - lastSyncAt < SYNC_COOLDOWN_MS) {
