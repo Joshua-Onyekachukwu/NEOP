@@ -1,0 +1,12 @@
+name = "neop-ddos-protection"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Route pattern — covers your entire domain
+routes = [
+  { pattern = "ngeop.ng/*", zone_name = "ngeop.ng" },
+  { pattern = "www.ngeop.ng/*", zone_name = "ngeop.ng" }
+]
+
+# Environment variables (set via wrangler secret put)
+# ANTHROPIC_API_KEY = "..." (not needed for this worker)
