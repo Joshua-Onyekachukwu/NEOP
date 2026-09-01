@@ -34,11 +34,20 @@ export async function GET(_request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: config } = await supabase
-      .from("simulation_config")
-      .select("*")
-      .eq("id", "00000000-0000-0000-0000-000000000001")
-      .single();
+    const [configResult, puCountResult] = await Promise.all([
+      supabase
+        .from("simulation_config")
+        .select("*")
+        .eq("id", "00000000-0000-0000-0000-000000000001")
+        .single(),
+      supabase.rpc("get_fast_stats"),
+    ]);
+
+    const config = configResult.data;
+    const totalPUCount = puCountResult.data?.total_polling_units ?? 188042;
+    if (puCountResult.error) {
+      console.warn("[config] Failed to get PU count from DB, using fallback:", puCountResult.error.message);
+    }
 
     let status = config?.status || "IDLE";
 
@@ -74,7 +83,7 @@ export async function GET(_request: NextRequest) {
         ? "Simulation complete — reviewing results"
         : "Awaiting election data — observers will report from polling units",
       date: config?.election_type === "GOVERNORSHIP" ? "2027-02-06" : "2027-01-16",
-      total_polling_units: 188042,
+      total_polling_units: totalPUCount,
       total_results: config?.total_results_submitted || 0,
       display_status: isRunning ? "SIMULATION" : isLive ? "LIVE" : "WAITING",
       status_label: isRunning
@@ -103,7 +112,7 @@ export async function GET(_request: NextRequest) {
         title: "Presidential & National Assembly Election",
         subtitle: "Awaiting election data",
         date: "2027-01-16",
-        total_polling_units: 188042,
+        total_polling_units: 188042, // fallback only — error path
         total_results: 0,
         display_status: "IDLE",
         status_label: "AWAITING DATA",

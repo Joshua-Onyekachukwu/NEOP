@@ -60,6 +60,15 @@ export const getCachedStats = unstable_cache(
     // ── Try Supabase with timeout ──
     const supabase = getServiceClient();
 
+    // Query PU count once, reuse throughout
+    let totalPUCount = 188042; // fallback
+    try {
+      const { data: fastStats } = await supabase.rpc("get_fast_stats");
+      if (fastStats?.total_polling_units) {
+        totalPUCount = Number(fastStats.total_polling_units);
+      }
+    } catch {}
+
     const sbResult = await withTimeout(
       (async () => {
         const { data, error } = await supabase.rpc("get_state_breakdown_from_results");
@@ -73,8 +82,8 @@ export const getCachedStats = unstable_cache(
         }
 
         return {
-          inec_total_polling_units: 188042,
-          total_polling_units: 188042,
+          inec_total_polling_units: totalPUCount,
+          total_polling_units: totalPUCount,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
           state_breakdown: data.map((row: any) => ({
@@ -87,8 +96,8 @@ export const getCachedStats = unstable_cache(
             coverage_percent: Number(row.coverage_percent || 0),
             verification_percent: Number(row.verification_percent || 0),
           })),
-          coverage_percent: 188042 > 0 ? Number(((totalCovered / 188042) * 100).toFixed(1)) : 0,
-          verification_percent: 188042 > 0 ? Number(((totalVerified / 188042) * 100).toFixed(1)) : 0,
+          coverage_percent: totalPUCount > 0 ? Number(((totalCovered / totalPUCount) * 100).toFixed(1)) : 0,
+          verification_percent: totalPUCount > 0 ? Number(((totalVerified / totalPUCount) * 100).toFixed(1)) : 0,
           last_updated: new Date().toISOString(),
           disclaimer: "These are independently collected field observations and are not official INEC election results.",
           source: "supabase" as const,
@@ -109,7 +118,7 @@ export const getCachedStats = unstable_cache(
         if (!convexStats || convexStats.covered_polling_units === 0) return null;
 
         return {
-          inec_total_polling_units: 188042,
+          inec_total_polling_units: totalPUCount,
           total_polling_units: convexStats.total_polling_units,
           covered_polling_units: convexStats.covered_polling_units,
           verified_polling_units: convexStats.verified_polling_units,
@@ -138,8 +147,8 @@ export const getCachedStats = unstable_cache(
 
     // ── Last resort ──
     return {
-      inec_total_polling_units: 188042,
-      total_polling_units: 188042,
+      inec_total_polling_units: totalPUCount,
+      total_polling_units: totalPUCount,
       covered_polling_units: 0,
       verified_polling_units: 0,
       state_breakdown: [],
@@ -268,6 +277,15 @@ export const getCachedConfig = unstable_cache(
     // ── Try Supabase with timeout ──
     const supabase = getServiceClient();
 
+    // Query PU count once, reuse throughout
+    let totalPUCount = 188042; // fallback
+    try {
+      const { data: fastStats } = await supabase.rpc("get_fast_stats");
+      if (fastStats?.total_polling_units) {
+        totalPUCount = Number(fastStats.total_polling_units);
+      }
+    } catch {}
+
     const sbResult = await withTimeout(
       (async () => {
         const { data } = await supabase
@@ -288,7 +306,7 @@ export const getCachedConfig = unstable_cache(
             ? "6 February 2027"
             : "16 January 2027",
           date: data.election_type === "GOVERNORSHIP" ? "2027-02-06" : "2027-01-16",
-          total_polling_units: 188042,
+          total_polling_units: totalPUCount,
           display_status: isRunning ? "SIMULATION" : "LIVE",
           status_label: isRunning ? "Simulation Running" : "Live Election Data",
           total_results: data.total_results_submitted || 0,
@@ -317,7 +335,7 @@ export const getCachedConfig = unstable_cache(
             ? "6 February 2027"
             : "16 January 2027",
           date: convexConfig.election_type === "GOVERNORSHIP" ? "2027-02-06" : "2027-01-16",
-          total_polling_units: 188042,
+          total_polling_units: totalPUCount,
           display_status: isRunning ? "SIMULATION" : (convexConfig.status === "COMPLETED" ? "LIVE" : "LIVE"),
           status_label: isRunning ? "Simulation Running" : "Live Election Data",
           total_results: convexConfig.results_processed || 0,
@@ -336,7 +354,7 @@ export const getCachedConfig = unstable_cache(
       title: "Presidential & National Assembly Election",
       subtitle: "16 January 2027",
       date: "2027-01-16",
-      total_polling_units: 188042,
+      total_polling_units: totalPUCount,
       display_status: "LIVE",
       status_label: "Live Election Data",
       total_results: 0,
