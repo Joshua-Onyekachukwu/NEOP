@@ -216,24 +216,28 @@ export const finalize = mutation({
     let totalCount = 0;
     let verifiedCount = 0;
 
-    // Process results in batches of 5000
-    for (let offset = 0; ; offset += 5000) {
-      const batch = await ctx.db.query("results").order("asc").skip(offset).take(5000);
-      if (batch.length === 0) break;
-      for (const r of batch) {
+    // Process results in batches using cursor pagination
+    let cursor: string | null = null;
+    while (true) {
+      const { page, isDone, continueCursor } = await ctx.db.query("results").order("asc").paginate({ cursor, numItems: 5000 });
+      for (const r of page) {
         totalVotes += r.total_votes;
         totalCount++;
         if (r.status === "VERIFIED") verifiedCount++;
       }
+      if (isDone) break;
+      cursor = continueCursor;
     }
 
-    // Process party_results in batches of 5000
-    for (let offset = 0; ; offset += 5000) {
-      const batch = await ctx.db.query("party_results").order("asc").skip(offset).take(5000);
-      if (batch.length === 0) break;
-      for (const pr of batch) {
+    // Process party_results in batches using cursor pagination
+    cursor = null;
+    while (true) {
+      const { page, isDone, continueCursor } = await ctx.db.query("party_results").order("asc").paginate({ cursor, numItems: 5000 });
+      for (const pr of page) {
         partyTotals[pr.party_abbreviation] = (partyTotals[pr.party_abbreviation] || 0) + pr.votes;
       }
+      if (isDone) break;
+      cursor = continueCursor;
     }
 
     const grandTotal = Object.values(partyTotals).reduce((s, v) => s + v, 0);
@@ -270,7 +274,7 @@ export const finalize = mutation({
       total_votes: totalVotes,
       valid_votes: totalVotes,
       rejected_votes: 0,
-      active_pu_count: allResults.length,
+      active_pu_count: totalCount,
       updated_at: Date.now(),
       simulation_running: false,
       scenario: args.scenario,

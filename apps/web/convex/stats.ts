@@ -352,6 +352,8 @@ export const updateSimConfig = mutation({
     progress_percent: v.optional(v.number()),
     results_processed: v.optional(v.number()),
     total_results: v.optional(v.number()),
+    started_at: v.optional(v.number()),
+    completed_at: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -390,18 +392,8 @@ export const clearSimulationData = mutation({
   handler: async (ctx) => {
     let deleted = 0;
 
-    // Delete large tables in batches of 1000 to avoid timeout
-    for (const table of ["results", "party_results"] as const) {
-      for (let offset = 0; ; offset += 1000) {
-        const batch = await ctx.db.query(table).order("asc").skip(offset).take(1000);
-        if (batch.length === 0) break;
-        for (const doc of batch) await ctx.db.delete(doc._id);
-        deleted += batch.length;
-      }
-    }
-
-    // Small tables — safe to load all
-    for (const table of ["state_stats", "party_totals", "live_stats", "sim_config"] as const) {
+    // Delete all tables — collect and delete (Convex limits to 1 paginated query)
+    for (const table of ["results", "party_results", "state_stats", "party_totals", "live_stats", "sim_config"] as const) {
       const docs = await ctx.db.query(table).collect();
       for (const doc of docs) await ctx.db.delete(doc._id);
       deleted += docs.length;

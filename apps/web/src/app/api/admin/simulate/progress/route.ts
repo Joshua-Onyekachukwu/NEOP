@@ -45,18 +45,45 @@ export async function GET(request: NextRequest) {
 
     const isRunning = config.status === "RUNNING";
 
-    // Use RPC for efficient aggregate queries (avoids loading 188K+ rows into memory)
-    const { data: progressStats } = await supabase.rpc("get_simulation_progress_stats");
+    // Try to read progress from Convex first (for Convex-powered simulations)
+    let totalResults = 0;
+    let verifiedResults = 0;
+    let totalVotes = 0;
+    let totalPUCount = 46560;
+    let progressPercent = 0;
+    let statusDistribution: Record<string, number> = {};
+    let source = "supabase";
 
-    const statusDistribution: Record<string, number> = progressStats?.status_distribution || {};
-    const totalResults = progressStats?.total_results || 0;
-    const verifiedResults = progressStats?.verified_results || 0;
-    const totalVotes = progressStats?.total_votes || 0;
-    const totalPUCount = progressStats?.total_polling_units || 0;
+    if (convexUrl) {
+      try {
+        const convexRes = await fetch(`${convexUrl}/api/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: "stats:getSimConfig", args: {} }),
+          signal: AbortSignal.timeout(3000),
+        });
+        if (convexRes.ok) {
+          const convexData = await convexRes.json();
+          const simConfig = convexData.value;
+          if (simConfig && simConfig.results_processed > 0) {
+            totalResults = simConfig.results_processed || 0;
+            progressPercent = simConfig.progress_percent || 0;
+            source = "convex";
+          }
+        }
+      } catch {}
+    }
 
-    // Calculate progress using actual PU count from database
-    const expectedResults = totalPUCount || 188042;
-    const progressPercent = Math.min(100, Math.round((totalResults / expectedResults) * 100));
+    // Fallback to Supabase RPC if Convex didn't return data
+    if (source === "supabase") {
+      const { data: progressStats } = await supabase.rpc("get_simulation_progress_stats");
+      statusDistribution = progressStats?.status_distribution || {};
+      totalResults = progressStats?.total_results || 0;
+      verifiedResults = progressStats?.verified_results || 0;
+      totalVotes = progressStats?.total_votes || 0;
+      totalPUCount = progressStats?.total_polling_units || 46560;
+      progressPercent = Math.min(100, Math.round((totalResults / totalPUCount) * 100));
+    }
 
     // Calculate elapsed time
     let elapsedSeconds = 0;

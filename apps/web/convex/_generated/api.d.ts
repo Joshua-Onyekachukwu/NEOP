@@ -11,6 +11,7 @@
 import type * as finalize from "../finalize.js";
 import type * as http from "../http.js";
 import type * as httpHandler from "../httpHandler.js";
+import type * as runSimulation from "../runSimulation.js";
 import type * as seed_parties from "../seed_parties.js";
 import type * as simulation from "../simulation.js";
 import type * as stats from "../stats.js";
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   finalize: typeof finalize;
   http: typeof http;
   httpHandler: typeof httpHandler;
+  runSimulation: typeof runSimulation;
   seed_parties: typeof seed_parties;
   simulation: typeof simulation;
   stats: typeof stats;
