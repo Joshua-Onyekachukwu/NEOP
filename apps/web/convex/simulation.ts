@@ -36,21 +36,22 @@ const REGION_MULT: Record<string, number[]> = {
   FC: [1.2, 1.0, 0.9, 1.1, 0.8, 0.8, 1.0, 0.9, 0.8],
 };
 
-// Simple state list with PU counts
-const STATE_DATA = [
-  ["Lagos", "SW", 13320], ["Kano", "NW", 11340], ["Rivers", "SS", 6840],
-  ["Kaduna", "NW", 6630], ["Oyo", "SW", 6300], ["Delta", "SS", 5280],
-  ["Katsina", "NW", 4950], ["Borno", "NE", 4680], ["Jigawa", "NW", 4590],
-  ["Benue", "NC", 4230], ["Anambra", "SE", 4140], ["Plateau", "NC", 3960],
-  ["Sokoto", "NW", 3960], ["Cross River", "SS", 3690], ["Adamawa", "NE", 3780],
-  ["Ogun", "SW", 3600], ["Bauchi", "NE", 4410], ["Niger", "NC", 4050],
-  ["Imo", "SE", 3330], ["Abia", "SE", 2970], ["Osun", "SW", 3330],
-  ["Zamfara", "NW", 3420], ["Ondo", "SW", 3060], ["Edo", "SS", 2970],
-  ["Akwa Ibom", "SS", 3420], ["Kebbi", "NW", 3150], ["Kogi", "NC", 3060],
-  ["Enugu", "SE", 2880], ["Nasarawa", "NC", 2700], ["Taraba", "NE", 2250],
-  ["Ebonyi", "SE", 2070], ["Gombe", "NE", 1800], ["Ekiti", "SW", 1980],
-  ["Yobe", "NE", 2340], ["Kwara", "NC", 1890], ["Bayelsa", "SS", 1890],
-  ["FCT", "FC", 2160],
+// State list with PU counts matching actual seeded data (5 PUs × 12 wards × LGAs per state)
+// Total: 46,560 PUs across 37 states
+const STATE_DATA: [string, string, number][] = [
+  ["Lagos", "SW", 1200], ["Kano", "NW", 2640], ["Rivers", "SS", 1380],
+  ["Kaduna", "NW", 1380], ["Oyo", "SW", 1980], ["Delta", "SS", 1500],
+  ["Katsina", "NW", 2040], ["Borno", "NE", 1620], ["Jigawa", "NW", 1620],
+  ["Benue", "NC", 1380], ["Anambra", "SE", 1260], ["Plateau", "NC", 1020],
+  ["Sokoto", "NW", 1380], ["Cross River", "SS", 1080], ["Adamawa", "NE", 1260],
+  ["Ogun", "SW", 1200], ["Bauchi", "NE", 1200], ["Niger", "NC", 1500],
+  ["Imo", "SE", 1620], ["Abia", "SE", 1020], ["Osun", "SW", 1800],
+  ["Zamfara", "NW", 840], ["Ondo", "SW", 1080], ["Edo", "SS", 1080],
+  ["Akwa Ibom", "SS", 1860], ["Kebbi", "NW", 1380], ["Kogi", "NC", 1260],
+  ["Enugu", "SE", 1020], ["Nasarawa", "NC", 780], ["Taraba", "NE", 960],
+  ["Ebonyi", "SE", 780], ["Gombe", "NE", 660], ["Ekiti", "SW", 960],
+  ["Yobe", "NE", 1020], ["Kwara", "NC", 960], ["Bayelsa", "SS", 480],
+  ["FCT", "FC", 360],
 ];
 
 /**
@@ -78,7 +79,7 @@ export const seedBatch = mutation({
     }
 
     const start = args.offset;
-    const end = Math.min(start + args.batchSize, allPUs.length, 188042);
+    const end = Math.min(start + args.batchSize, allPUs.length, 46560);
     const batchResults: any[] = [];
     const batchPR: any[] = [];
 
@@ -177,7 +178,7 @@ export const seedBatch = mutation({
     }
 
     // Update progress
-    const progress = Math.round((end / 188042) * 100);
+    const progress = Math.round((end / 46560) * 100);
     const existing = await ctx.db
       .query("sim_config")
       .withIndex("by_key", (q) => q.eq("key", "current"))
@@ -187,16 +188,16 @@ export const seedBatch = mutation({
       await ctx.db.patch(existing._id, {
         progress_percent: progress,
         results_processed: end,
-        total_results: 188042,
+        total_results: 46560,
       });
     }
 
     return {
       batch: `${start}-${end}`,
       processed: end - start,
-      total: 188042,
+      total: 46560,
       progress,
-      isComplete: end >= 188042,
+      isComplete: end >= 46560,
       partyTotals,
     };
   },
@@ -208,13 +209,33 @@ export const seedBatch = mutation({
 export const finalize = mutation({
   args: { scenario: v.string() },
   handler: async (ctx, args) => {
-    // Aggregate party totals
-    const allPR = await ctx.db.query("party_results").collect();
+    // Aggregate party totals in batches (avoids loading all 1.7M rows)
     const partyTotals: Record<string, number> = {};
     for (const p of PARTIES) partyTotals[p.abbr] = 0;
-    for (const pr of allPR) {
-      partyTotals[pr.party_abbreviation] = (partyTotals[pr.party_abbreviation] || 0) + pr.votes;
+    let totalVotes = 0;
+    let totalCount = 0;
+    let verifiedCount = 0;
+
+    // Process results in batches of 5000
+    for (let offset = 0; ; offset += 5000) {
+      const batch = await ctx.db.query("results").order("asc").skip(offset).take(5000);
+      if (batch.length === 0) break;
+      for (const r of batch) {
+        totalVotes += r.total_votes;
+        totalCount++;
+        if (r.status === "VERIFIED") verifiedCount++;
+      }
     }
+
+    // Process party_results in batches of 5000
+    for (let offset = 0; ; offset += 5000) {
+      const batch = await ctx.db.query("party_results").order("asc").skip(offset).take(5000);
+      if (batch.length === 0) break;
+      for (const pr of batch) {
+        partyTotals[pr.party_abbreviation] = (partyTotals[pr.party_abbreviation] || 0) + pr.votes;
+      }
+    }
+
     const grandTotal = Object.values(partyTotals).reduce((s, v) => s + v, 0);
 
     // Upsert party_totals
@@ -236,11 +257,6 @@ export const finalize = mutation({
       else await ctx.db.insert("party_totals", data);
     }
 
-    // Upsert global stats
-    const allResults = await ctx.db.query("results").collect();
-    const totalVotes = allResults.reduce((s, r) => s + r.total_votes, 0);
-    const verified = allResults.filter((r) => r.status === "VERIFIED").length;
-
     const existingStats = await ctx.db
       .query("live_stats")
       .withIndex("by_key", (q) => q.eq("key", "global"))
@@ -248,9 +264,9 @@ export const finalize = mutation({
 
     const statsData = {
       key: "global",
-      total_polling_units: 188042,
-      covered_polling_units: allResults.length,
-      verified_polling_units: verified,
+      total_polling_units: 46560,
+      covered_polling_units: totalCount,
+      verified_polling_units: verifiedCount,
       total_votes: totalVotes,
       valid_votes: totalVotes,
       rejected_votes: 0,
@@ -273,13 +289,13 @@ export const finalize = mutation({
       await ctx.db.patch(config._id, {
         status: "COMPLETED",
         progress_percent: 100,
-        results_processed: allResults.length,
-        total_results: allResults.length,
+        results_processed: totalCount,
+        total_results: totalCount,
         completed_at: Date.now(),
       });
     }
 
-    return { success: true, totalVotes, partyTotals };
+    return { success: true, totalVotes, partyTotals, totalCount };
   },
 });
 

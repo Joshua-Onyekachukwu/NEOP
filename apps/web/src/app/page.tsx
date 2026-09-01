@@ -1,23 +1,17 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import dynamic from "next/dynamic";
 import StatsBar from "@/components/live/StatsBar";
 import ResultFeed from "@/components/live/ResultFeed";
 import StateTable from "@/components/live/StateTable";
 import PartyResults from "@/components/live/PartyResults";
+import IncidentBar from "@/components/live/IncidentBar";
 import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
 import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
 import SimulationTicker from "@/components/live/SimulationTicker";
 import { supabase } from "@/lib/supabase-browser";
-
-// Convex real-time layer — only rendered on client (no SSR)
-const ConvexRealtimeLayer = dynamic(
-  () => import("@/components/live/ConvexRealtimeLayer").then((m) => m.ConvexRealtimeLayer),
-  { ssr: false }
-);
 
 interface ElectionConfig {
   election_type: string;
@@ -65,17 +59,20 @@ const HomePage: React.FC = () => {
     total_results: 0,
   });
 
+  // Refresh key — bumped whenever data changes, children refetch when this changes
   const [refreshKey, setRefreshKey] = useState(0);
   const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const isSimulation = config.display_status === "SIMULATION";
 
+  // Adaptive polling: fast during simulation, slow when idle
   useEffect(() => {
     fetchConfig();
     const interval = setInterval(fetchConfig, isSimulation ? 5000 : 30000);
     return () => clearInterval(interval);
   }, [isSimulation]);
 
+  // Clock
   useEffect(() => {
     const updateTime = () => {
       setCurrentTime(
@@ -92,6 +89,7 @@ const HomePage: React.FC = () => {
     return () => clearInterval(t);
   }, []);
 
+  // Supabase Realtime — subscribe to table changes for instant updates
   useEffect(() => {
     const channel = supabase
       .channel("live-results")
@@ -132,250 +130,178 @@ const HomePage: React.FC = () => {
   };
 
   const statusStyle = STATUS_STYLES[config.display_status] || STATUS_STYLES.WAITING;
-  const glowClass =
-    config.display_status === "LIVE"
-      ? "glow-live"
-      : config.display_status === "SIMULATION"
-        ? "glow-simulation"
-        : "glow-waiting";
+  const glowClass = config.display_status === "LIVE" ? "glow-live" : config.display_status === "SIMULATION" ? "glow-simulation" : "glow-waiting";
 
   return (
-    <ConvexRealtimeLayer>
     <div className="min-h-screen pt-[56px]">
       <main id="main-content">
-        {/* ── Disclaimer ── */}
-        <Disclaimer />
+      {/* Disclaimer */}
+      <Disclaimer />
 
-        {/* ── Simulation Ticker ── */}
-        <SimulationTicker />
+      {/* Live Simulation Ticker — shows during simulation */}
+      <SimulationTicker />
 
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 1: ELECTION HEADER — Broadcast-style top bar
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
-          <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[16px] md:py-[20px]">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-[12px]">
-              {/* Left: Election identity */}
-              <div className="flex items-center gap-[12px] min-w-0">
-                {/* Election type badge */}
-                <div
-                  className={`flex-shrink-0 px-[10px] py-[4px] border font-mono text-[10px] font-bold uppercase tracking-wider ${
-                    config.election_type === "GOVERNORSHIP"
-                      ? "border-[var(--color-blue)]/40 text-[var(--color-blue)] bg-[var(--color-blue)]/10"
-                      : "border-[var(--color-green)]/40 text-[var(--color-green-bright)] bg-[var(--color-green)]/10"
-                  }`}
-                >
-                  {config.election_type === "GOVERNORSHIP" ? "GOVERNOR" : "PRESIDENT"}
+      {/* Hero */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px] md:py-[48px]">
+          <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-[16px] md:gap-[24px]">
+            <div>
+              <div className="flex items-center gap-[10px] mb-[8px]">
+                <div className={`stat-label`}>                    {config.title} — {config.subtitle}
                 </div>
-                {/* Election title */}
-                <div className="min-w-0">
-                  <h1 className="font-display font-bold text-base md:text-lg text-[var(--color-text)] truncate">
-                    {config.title}
-                  </h1>
-                  <div className="font-mono text-[10px] text-[var(--color-text-dim)]">
-                    {config.subtitle}
-                  </div>
+                <div className={`flex-shrink-0 px-2 py-0.5 border font-mono text-[9px] font-bold uppercase tracking-wider ${
+                  config.election_type === "GOVERNORSHIP"
+                    ? "border-[var(--color-blue)]/40 text-[var(--color-blue)] bg-[var(--color-blue)]/10"
+                    : "border-[var(--color-green)]/40 text-[var(--color-green-bright)] bg-[var(--color-green)]/10"
+                }`}>
+                  {config.election_type === "GOVERNORSHIP" ? "GOVERNORSHIP" : "PRESIDENTIAL"}
                 </div>
               </div>
-
-              {/* Right: Status + Clock */}
-              <div className="flex items-center gap-[16px] flex-shrink-0">
-                {/* Status badge */}
-                <div
-                  className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg} ${glowClass}`}
-                >
-                  <div
-                    className={`w-[6px] h-[6px] rounded-full ${statusStyle.dot} ${
-                      isSimulation ? "animate-pulse" : ""
-                    }`}
-                  />
-                  <span
-                    className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}
-                  >
-                    {statusStyle.label}
-                  </span>
-                </div>
-
-                {/* Connection + Clock */}
-                <div className="hidden md:flex items-center gap-[12px]">
-                  <div className="flex items-center gap-[6px]">
-                    <div
-                      className={
-                        isLive ? "live-dot" : "w-2 h-2 rounded-full bg-[var(--color-gray-400)]"
-                      }
-                    />
-                    <span className="font-mono text-[11px] text-[var(--color-text-muted)]">
-                      {isLive ? "CONNECTED" : "CONNECTING"}
-                    </span>
-                  </div>
-                  <span className="font-mono text-[11px] text-[var(--color-text-dim)]">
-                    {currentTime} WAT
-                  </span>
-                </div>
-              </div>
+              <h1 className="big-number">{config.total_polling_units.toLocaleString()}</h1>
+              <div className="stat-label mt-[8px]">polling units across Nigeria (INEC 2026)</div>
             </div>
-          </div>
-        </section>
 
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 2: STATS STRIP — Key metrics ribbon
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto">
-            <StatsBar refreshKey={refreshKey} />
-          </div>
-        </section>
-
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 3: PARTY LEADERBOARD — The hero element
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto">
-            <PartyResults refreshKey={refreshKey} />
-          </div>
-        </section>
-
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 4: MAP + LIVE FEED — Side by side
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-5">
-              {/* Map — 3 cols */}
-              <div className="lg:col-span-3 border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
-                <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] flex items-center justify-between">
-                  <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
-                    NATIONAL MAP
-                  </h3>
+            <div className="flex flex-col items-end gap-[8px] pb-[8px]">
+              <div className={`flex items-center gap-[6px] px-3 py-1.5 border ${statusStyle.bg} ${glowClass}`}>
+                <div className={`w-2 h-2 rounded-full ${statusStyle.dot} ${isSimulation ? "animate-pulse" : ""}`} />
+                <span className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}>
+                  {statusStyle.label}
+                </span>
+                {config.total_results > 0 && (
                   <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-                    All 36 states + FCT
+                    • {config.total_results.toLocaleString()} results
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-[16px]">
+                <div className="flex items-center gap-[8px]">
+                  <div className={isLive ? "live-dot" : "w-2 h-2 rounded-full bg-[var(--color-gray-400)]"} />
+                  <span className="font-mono text-[var(--color-text-muted)] text-sm">
+                    {isLive ? "CONNECTED" : "CONNECTING"}
                   </span>
                 </div>
-                <LiveMap refreshKey={refreshKey} />
-              </div>
-              {/* Live Feed — 2 cols */}
-              <div className="lg:col-span-2">
-                <ResultFeed refreshKey={refreshKey} />
+                <span className="font-mono text-[var(--color-text-dim)] text-sm">
+                  {currentTime} WAT
+                </span>
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 5: STATE BREAKDOWN — Full width table
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto">
-            <StateTable refreshKey={refreshKey} />
+      {/* Stats row */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
+          <StatsBar refreshKey={refreshKey} />
+        </div>
+      </section>
+
+      {/* Map + Feed */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
+              <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
+                <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
+                  NATIONAL MAP
+                </h3>
+              </div>
+              <LiveMap refreshKey={refreshKey} />
+            </div>
+            <div>
+              <ResultFeed refreshKey={refreshKey} />
+            </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 6: DISRUPTIONS — Only shown if there are incidents
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto">
-            <DisruptionFeed refreshKey={refreshKey} />
+      {/* State Breakdown + Party Results */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
+              <StateTable refreshKey={refreshKey} />
+            </div>
+            <div className="max-h-[600px] overflow-y-auto">
+              <PartyResults refreshKey={refreshKey} />
+            </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ═══════════════════════════════════════════════════════
-            SECTION 7: EXPORT + METHODOLOGY — Footer area
-            ═══════════════════════════════════════════════════════ */}
-        <section className="border-b border-[var(--color-gray-100)]">
-          <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
-            <ExportPanel variant="public" />
-          </div>
-        </section>
+      {/* Disruptions & Incidents Feed */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto">
+          <DisruptionFeed refreshKey={refreshKey} />
+        </div>
+      </section>
 
-        {/* Methodology — compact version */}
-        <section id="methodology">
-          <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px] md:py-[32px]">
-            <div className="flex items-center gap-[8px] mb-[16px]">
-              <h2 className="font-display font-bold text-lg text-[var(--color-text)]">
-                How We Collect Data
-              </h2>
-              <a
-                href="/about/methodology"
-                className="font-mono text-[10px] text-[var(--color-green)] hover:text-[var(--color-green-bright)] transition-colors"
+      {/* Export Results */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
+          <ExportPanel variant="public" />
+        </div>
+      </section>
+
+      {/* Methodology */}
+      <section id="methodology" className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
+          <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[24px]">
+            How We Collect Data
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[16px]">
+            {[
+              { step: "01", title: "Recruit & Verify", desc: "Volunteers register, verify their identity, and are confirmed as qualified observers.", icon: "📋" },
+              { step: "02", title: "Train & Assign", desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit.", icon: "🎓" },
+              { step: "03", title: "Observe & Report", desc: "Observers submit structured field reports with photographic evidence where permitted.", icon: "📝" },
+              { step: "04", title: "Verify & Publish", desc: "Results are cross-checked using two-observer comparison, OCR, and mathematical validation.", icon: "✅" },
+            ].map((item) => (
+              <div
+                key={item.step}
+                className="border border-[var(--color-gray-100)] p-[20px] hover:border-[var(--color-green)]/30 transition-colors"
               >
-                Read full methodology →
-              </a>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-[12px]">
-              {[
-                {
-                  step: "01",
-                  title: "Recruit & Verify",
-                  desc: "Volunteers register and verify identity as qualified observers.",
-                  icon: "📋",
-                },
-                {
-                  step: "02",
-                  title: "Train & Assign",
-                  desc: "Each volunteer completes training and is assigned to a polling unit.",
-                  icon: "🎓",
-                },
-                {
-                  step: "03",
-                  title: "Observe & Report",
-                  desc: "Observers submit structured field reports with evidence.",
-                  icon: "📝",
-                },
-                {
-                  step: "04",
-                  title: "Verify & Publish",
-                  desc: "Two-observer comparison, OCR, and mathematical validation.",
-                  icon: "✅",
-                },
-              ].map((item) => (
-                <div
-                  key={item.step}
-                  className="border border-[var(--color-gray-100)] p-[16px] hover:border-[var(--color-green)]/30 transition-colors"
-                >
-                  <div className="flex items-center gap-[8px] mb-[8px]">
-                    <span className="text-lg" aria-hidden="true">
-                      {item.icon}
-                    </span>
-                    <div className="font-mono text-[9px] font-bold text-[var(--color-green)] uppercase tracking-wider">
-                      {item.step}
-                    </div>
+                <div className="flex items-center gap-[12px] mb-[12px]">
+                  <span className="text-xl" aria-hidden="true">{item.icon}</span>
+                  <div className="font-mono text-[10px] font-bold text-[var(--color-green)] uppercase tracking-wider">
+                    Step {item.step}
                   </div>
-                  <h3 className="font-display font-semibold text-sm text-[var(--color-text)] mb-[4px]">
-                    {item.title}
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                    {item.desc}
-                  </p>
                 </div>
-              ))}
-            </div>
-
-            {/* Limitations — compact inline */}
-            <div className="mt-[20px] p-[16px] border border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
-              <div className="font-mono text-[10px] font-bold text-[var(--color-amber)] uppercase tracking-wider mb-[8px]">
-                Important Limitations
+                <h3 className="font-display font-semibold text-sm text-[var(--color-text)] mb-[8px]">
+                  {item.title}
+                </h3>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                  {item.desc}
+                </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-[12px] text-xs text-[var(--color-text-muted)]">
-                <div>
-                  <strong className="text-[var(--color-text)]">Coverage Gaps:</strong>{" "}
-                  We cannot guarantee coverage of every polling unit.
-                </div>
-                <div>
-                  <strong className="text-[var(--color-text)]">Not Official:</strong>{" "}
-                  Official results are declared by INEC. This is independent parallel observation.
-                </div>
-                <div>
-                  <strong className="text-[var(--color-text)]">Anomaly Flags:</strong>{" "}
-                  Unusual patterns are flagged for human review — not automatically evidence of irregularity.
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
-        </section>
+        </div>
+      </section>
+
+      {/* Limitations */}
+      <section className="border-b border-[var(--color-gray-100)]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
+          <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[16px]">
+            Our Limitations
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-[16px]">
+            {[
+              { title: "Coverage Gaps", desc: "We cannot guarantee coverage of every polling unit. Some areas may be inaccessible due to security concerns, logistical challenges, or other factors." },
+              { title: "Not Official Results", desc: "We do not determine official results. Official election results are declared by INEC. Our platform provides independent, parallel observation to complement — not replace — the official process." },
+              { title: "Anomaly Flags", desc: "Anomaly detection flags unusual patterns for human review. An anomaly is not automatically evidence of fraud or irregularity." },
+            ].map((item) => (
+              <div key={item.title} className="border border-[var(--color-gray-100)] p-[20px]">
+                <h3 className="font-display font-semibold text-sm text-[var(--color-text)] mb-[8px]">{item.title}</h3>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       </main>
     </div>
-    </ConvexRealtimeLayer>
   );
 };
 
