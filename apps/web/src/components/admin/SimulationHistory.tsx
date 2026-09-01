@@ -89,9 +89,10 @@ const SimulationHistory: React.FC = () => {
           Simulation History
         </h3>
         <div className="text-center py-6">
-          <div className="font-mono text-sm text-[var(--color-text-dim)]">No simulations yet</div>
+          <div className="text-xl mb-2">📋</div>
+          <div className="font-mono text-sm text-[var(--color-text-dim)]">No simulation history yet</div>
           <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-            Run your first simulation above
+            History is recorded automatically after each simulation run
           </div>
         </div>
       </div>
@@ -116,7 +117,7 @@ const SimulationHistory: React.FC = () => {
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-[var(--color-gray-100)]">
-              {["Scenario", "Type", "Status", "Results", "Votes", "Duration", "Started"].map((h) => (
+              {["Scenario", "Type", "Status", "Results", "Votes", "Duration", "Started", ""].map((h) => (
                 <th
                   key={h}
                   className="px-3 py-2 text-left font-mono text-[10px] text-[var(--color-text-dim)] uppercase"
@@ -169,6 +170,21 @@ const SimulationHistory: React.FC = () => {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
+                  </td>
+                  <td className="px-3 py-2">
+                    {run.status === "COMPLETED" && (
+                      <button
+                        onClick={() => {
+                          // Dispatch custom event to parent to re-run this scenario
+                          window.dispatchEvent(new CustomEvent("rerun-simulation", {
+                            detail: { scenario: run.scenario, election_type: run.election_type },
+                          }));
+                        }}
+                        className="font-mono text-[9px] px-2 py-1 border border-[var(--color-gray-200)] text-[var(--color-text-dim)] hover:border-[var(--color-green)] hover:text-[var(--color-green)] transition-colors"
+                      >
+                        RE-RUN
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
