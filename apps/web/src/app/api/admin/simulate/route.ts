@@ -15,14 +15,16 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminWithDetails, isAdminDetailsSuccess } from "@/lib/admin-auth";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdminWithDetails(request);
+    if (!isAdminDetailsSuccess(auth)) return auth.error;
+    const { supabase, adminUser } = auth;
+
     const body = await request.json().catch(() => ({}));
     const {
       scenario: scenarioKey,
@@ -30,31 +32,6 @@ export async function POST(request: NextRequest) {
       total_voters,
       election_type,
     } = body;
-
-    // Verify admin — require auth header
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.substring(7);
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify user is admin
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: adminUser } = await supabase
-      .from("admin_users")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .single();
-    if (!adminUser) {
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
-    }
 
     // Check if simulation is already running
     const { data: config } = await supabase
@@ -71,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[sim] Admin ${user.email} starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
+      `[sim] Admin ${adminUser.email} starting simulation: scenario=${scenarioKey || "random"}, voters=${total_voters || 100_000_000}, type=${election_type || "PRESIDENTIAL"}`
     );
 
     // Set status to RUNNING immediately so the UI shows the progress bar
@@ -88,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Fire-and-forget: start the SQL function in the background
     // The function runs entirely inside Postgres, not on Vercel
     // We use a simple HTTP call to Supabase's REST API to kick it off
-    const rpcUrl = `${supabaseUrl}/rest/v1/rpc/run_fast_simulation`;
+    const rpcUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/run_fast_simulation`;
     const rpcBody = {
       p_scenario: scenarioKey || "random",
       p_duration_minutes: duration_minutes || 5,
@@ -101,8 +78,8 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: supabaseServiceKey,
-        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ""}`,
       },
       body: JSON.stringify(rpcBody),
     })

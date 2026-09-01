@@ -8,10 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminWithDetails, isAdminDetailsSuccess } from "@/lib/admin-auth";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 
 export const dynamic = "force-dynamic";
@@ -26,25 +24,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify admin auth
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.substring(7);
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const { data: adminUser } = await supabase
-      .from("admin_users").select("id")
-      .eq("user_id", user.id).eq("is_active", true).single();
-    if (!adminUser) {
-      return NextResponse.json({ error: "Not authorized as admin" }, { status: 403 });
-    }
+    const auth = await requireAdminWithDetails(request);
+    if (!isAdminDetailsSuccess(auth)) return auth.error;
+    const { supabase, adminUser } = auth;
 
-    console.log(`[sync-convex] Admin ${user.email} starting sync...`);
+    console.log(`[sync-convex] Admin ${adminUser.email} starting sync...`);
 
     // Fetch aggregated data from Supabase
     const [partyResults, stateBreakdown, configData] = await Promise.all([
