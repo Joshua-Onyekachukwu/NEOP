@@ -1,154 +1,162 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
+import { useRealtimeData } from "@/components/live/ConvexRealtimeLayer";
 import PartyResultsSkeleton from "@/components/live/skeletons/PartyResultsSkeleton";
 
-interface PartyTotal {
-  name: string;
-  abbreviation: string;
-  color: string;
-  total_votes: number;
-  percentage: string;
-}
-
-interface PartyResultsData {
-  parties: PartyTotal[];
-  grand_total: number;
-  total_results: number;
-  verified_results: number;
-  last_updated: string;
-}
-
-const RANK_STYLES: Record<number, { badge: string; bar: string }> = {
-  0: { badge: "bg-[var(--color-green)] text-white", bar: "h-[4px]" },
-  1: { badge: "bg-[var(--color-green-dim)] text-[var(--color-green-bright)]", bar: "h-[3px]" },
-  2: { badge: "bg-[var(--color-ink-lighter)] text-[var(--color-text-muted)]", bar: "h-[3px]" },
+const PARTY_NAMES: Record<string, string> = {
+  NDC: "Nigeria Democratic Congress",
+  APC: "All Progressives Congress",
+  PDP: "Peoples Democratic Party",
+  LP: "Labour Party",
+  NNPP: "New Nigeria Peoples Party",
+  APGA: "All Progressives Grand Alliance",
+  SDP: "Social Democratic Party",
+  YPP: "Young Progressives Party",
+  ADC: "African Democratic Congress",
 };
 
 const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
-  const [data, setData] = useState<PartyResultsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { parties, grandTotal, connected, source } = useRealtimeData();
 
-  useEffect(() => {
-    fetchPartyResults();
-    const interval = setInterval(fetchPartyResults, 10000);
-    return () => clearInterval(interval);
-  }, [refreshKey]);
+  if (!connected) return <PartyResultsSkeleton />;
 
-  const fetchPartyResults = async () => {
-    try {
-      const res = await fetch("/api/public/party-results");
-      if (!res.ok) return;
-      const result = await res.json();
-      setData(result);
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading && !data) {
-    return <PartyResultsSkeleton />;
-  }
-
-  if (!data || data.parties.length === 0) {
+  if (parties.length === 0) {
     return (
       <div>
         <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
           <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
-            PARTY RESULTS
+            NATIONAL LEADERBOARD
           </h3>
         </div>
-        <div className="p-[24px] text-center font-mono text-sm text-[var(--color-text-dim)]">
-          No results yet
+        <div className="p-[40px] text-center">
+          <div className="text-2xl mb-[8px]">🗳</div>
+          <div className="font-mono text-sm text-[var(--color-text-dim)]">Awaiting results</div>
         </div>
       </div>
     );
   }
 
-  const maxVotes = data.parties[0]?.total_votes || 1;
+  const maxVotes = parties[0]?.total_votes || 1;
 
   return (
     <div>
-      {/* Header — sticky */}
-      <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] sticky top-0 bg-[var(--color-ink)] z-10">
-        <div className="flex items-center justify-between gap-2">
+      {/* Header */}
+      <div className="px-[16px] md:px-[24px] py-[14px] border-b border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
+        <div className="flex items-center justify-between gap-[12px]">
           <div className="min-w-0">
-            <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
-              PARTY RESULTS
+            <h3 className="font-display font-bold text-sm md:text-base text-[var(--color-text)]">
+              NATIONAL LEADERBOARD
             </h3>
-            <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-0.5 truncate">
-              {data.total_results?.toLocaleString() ?? '—'} submissions
+            <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[2px]">
+              {source === "convex" ? (
+                <>Real-time via Convex <span className="text-[var(--color-green-bright)]">● LIVE</span></>
+              ) : (
+                <>Polling every 10s</>
+              )}
             </div>
           </div>
           <div className="text-right flex-shrink-0">
-            <div className="font-mono text-[10px] text-[var(--color-text-dim)]">TOTAL</div>
-            <div className="font-display font-bold text-base md:text-lg text-[var(--color-text)]">
-              {data.grand_total.toLocaleString()}
+            <div className="font-mono text-[9px] text-[var(--color-text-dim)] uppercase tracking-wider">
+              Total Votes
+            </div>
+            <div className="font-display font-bold text-lg md:text-xl text-[var(--color-green-bright)] tabular-nums">
+              {grandTotal.toLocaleString()}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Party rows — leaderboard */}
+      {/* Party rows */}
       <div className="divide-y divide-[var(--color-gray-100)]">
-        {data.parties.map((party, index) => {
+        {parties.map((party: any, index: number) => {
           const barWidth = maxVotes > 0 ? (party.total_votes / maxVotes) * 100 : 0;
-          const isTop3 = index < 3;
-          const rankStyle = RANK_STYLES[index] || RANK_STYLES[2];
+          const isWinner = index === 0;
+          const isRunnerUp = index === 1;
 
           return (
             <div
               key={party.abbreviation}
-              className={`px-[16px] md:px-[24px] py-[10px] hover:bg-[var(--color-ink-light)] transition-colors ${
-                isTop3 ? "bg-[var(--color-ink-light)]" : ""
+              className={`px-[16px] md:px-[24px] transition-all duration-300 ${
+                isWinner
+                  ? "py-[14px] bg-[var(--color-green)]/[0.04] border-l-[3px] border-l-[var(--color-green-bright)]"
+                  : isRunnerUp
+                    ? "py-[12px] bg-[var(--color-ink-light)]/50 border-l-[3px] border-l-[var(--color-green)]/40"
+                    : "py-[10px] hover:bg-[var(--color-ink-light)] border-l-[3px] border-l-transparent"
               }`}
             >
-              <div className="flex items-center justify-between mb-[6px]">
-                {/* Left: rank + party info */}
+              <div className="flex items-center justify-between mb-[8px]">
                 <div className="flex items-center gap-[10px] min-w-0">
-                  {/* Rank badge */}
                   <div
-                    className={`w-[22px] h-[22px] rounded-full flex items-center justify-center flex-shrink-0 font-mono text-[10px] font-bold ${rankStyle.badge}`}
+                    className={`w-[28px] h-[28px] rounded-full flex items-center justify-center flex-shrink-0 font-mono text-[11px] font-bold ${
+                      isWinner
+                        ? "bg-[var(--color-green-bright)] text-white"
+                        : isRunnerUp
+                          ? "bg-[var(--color-green)]/30 text-[var(--color-green-bright)]"
+                          : "bg-[var(--color-gray-100)] text-[var(--color-text-muted)]"
+                    }`}
                   >
                     {index + 1}
                   </div>
-                  {/* Color dot + name */}
-                  <div
-                    className="w-[10px] h-[10px] rounded-full flex-shrink-0"
-                    style={{ backgroundColor: party.color }}
-                  />
-                  <div className="min-w-0">
-                    <span className="font-display font-semibold text-sm text-[var(--color-text)]">
-                      {party.abbreviation}
-                    </span>
-                    <span className="font-mono text-[10px] text-[var(--color-text-dim)] ml-[8px] hidden sm:inline">
-                      {party.name}
-                    </span>
+                  <div className="flex items-center gap-[8px] min-w-0">
+                    <div
+                      className="w-[14px] h-[14px] rounded-[3px] flex-shrink-0 ring-1 ring-white/10"
+                      style={{ backgroundColor: party.color }}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-[8px]">
+                        <span
+                          className={`font-display font-bold ${
+                            isWinner ? "text-base md:text-lg" : "text-sm"
+                          } text-[var(--color-text)]`}
+                        >
+                          {party.abbreviation}
+                        </span>
+                        {isWinner && (
+                          <span className="font-mono text-[8px] font-bold text-[var(--color-green-bright)] bg-[var(--color-green)]/15 px-[6px] py-[2px] uppercase tracking-wider">
+                            Leading
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-mono text-[10px] text-[var(--color-text-dim)] hidden sm:inline">
+                        {PARTY_NAMES[party.abbreviation] || party.name}
+                      </span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Right: votes + percentage */}
-                <div className="flex items-center gap-[12px] flex-shrink-0">
-                  <span className="font-mono text-sm font-bold text-[var(--color-text)] tabular-nums">
-                    {party.total_votes.toLocaleString()}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-muted)] w-[48px] text-right tabular-nums">
-                    {party.percentage}%
-                  </span>
+                <div className="flex items-center gap-[16px] flex-shrink-0">
+                  <div className="text-right">
+                    <div
+                      className={`font-mono font-bold tabular-nums ${
+                        isWinner ? "text-lg md:text-xl" : "text-sm md:text-base"
+                      } text-[var(--color-text)]`}
+                    >
+                      {party.total_votes.toLocaleString()}
+                    </div>
+                    <div className="font-mono text-[10px] text-[var(--color-text-dim)]">votes</div>
+                  </div>
+                  <div className="text-right min-w-[48px]">
+                    <div
+                      className={`font-mono font-bold tabular-nums ${
+                        isWinner ? "text-lg md:text-xl text-[var(--color-green-bright)]" : "text-sm text-[var(--color-text-muted)]"
+                      }`}
+                    >
+                      {party.percentage}%
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Progress bar — wider for top 3 */}
-              <div className="ml-[32px] h-[3px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${rankStyle.bar}`}
-                  style={{
-                    width: `${barWidth}%`,
-                    backgroundColor: party.color,
-                  }}
-                />
+              <div className="ml-[38px]">
+                <div className="h-[6px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    style={{
+                      width: `${barWidth}%`,
+                      backgroundColor: party.color,
+                      boxShadow: isWinner ? `0 0 8px ${party.color}40` : "none",
+                    }}
+                  />
+                </div>
               </div>
             </div>
           );
@@ -156,12 +164,12 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Footer */}
-      <div className="px-[16px] md:px-[24px] py-[10px] border-t border-[var(--color-gray-100)] flex items-center justify-between">
+      <div className="px-[16px] md:px-[24px] py-[10px] border-t border-[var(--color-gray-100)] flex items-center justify-between bg-[var(--color-ink-light)]/50">
         <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-          {data.verified_results?.toLocaleString() ?? '—'} verified of {data.total_results?.toLocaleString() ?? '—'} total
+          {source === "convex" ? "Real-time updates • No polling" : "Polling every 10 seconds"}
         </span>
         <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-          Updated {new Date(data.last_updated).toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" })}
+          {new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" })}
         </span>
       </div>
     </div>
