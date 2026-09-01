@@ -24,6 +24,7 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+const convexDeployKey = process.env.CONVEX_DEPLOY_KEY || "";
 
 export const dynamic = "force-dynamic";
 
@@ -181,7 +182,10 @@ export async function POST(request: NextRequest) {
       try {
         const res = await fetch(convexApi, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${convexDeployKey}`,
+          },
           body: JSON.stringify(mutation),
           signal: AbortSignal.timeout(8000),
         });

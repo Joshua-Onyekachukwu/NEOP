@@ -45,44 +45,18 @@ export async function GET(request: NextRequest) {
 
     const isRunning = config.status === "RUNNING";
 
-    // Get status distribution from polling_units
-    const { data: statusRows } = await supabase
-      .from("polling_units")
-      .select("status");
+    // Use RPC for efficient aggregate queries (avoids loading 188K+ rows into memory)
+    const { data: progressStats } = await supabase.rpc("get_simulation_progress_stats");
 
-    const statusDistribution: Record<string, number> = {};
-    if (statusRows) {
-      for (const row of statusRows) {
-        const s = row.status || "NOT_STARTED";
-        statusDistribution[s] = (statusDistribution[s] || 0) + 1;
-      }
-    }
+    const statusDistribution: Record<string, number> = progressStats?.status_distribution || {};
+    const totalResults = progressStats?.total_results || 0;
+    const verifiedResults = progressStats?.verified_results || 0;
+    const totalVotes = progressStats?.total_votes || 0;
+    const totalPUCount = progressStats?.total_polling_units || 0;
 
-    // Get result counts
-    const { count: totalResults } = await supabase
-      .from("result_submissions")
-      .select("*", { count: "exact", head: true });
-
-    const { count: verifiedResults } = await supabase
-      .from("result_submissions")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "VERIFIED");
-
-    // Get total votes
-    const { data: voteSum } = await supabase
-      .from("result_submissions")
-      .select("total_votes");
-
-    let totalVotes = 0;
-    if (voteSum) {
-      for (const row of voteSum) {
-        totalVotes += row.total_votes || 0;
-      }
-    }
-
-    // Calculate progress
-    const expectedResults = 188042;
-    const progressPercent = Math.min(100, Math.round(((totalResults || 0) / expectedResults) * 100));
+    // Calculate progress using actual PU count from database
+    const expectedResults = totalPUCount || 188042;
+    const progressPercent = Math.min(100, Math.round((totalResults / expectedResults) * 100));
 
     // Calculate elapsed time
     let elapsedSeconds = 0;
