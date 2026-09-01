@@ -36,7 +36,7 @@ export const finalizeUltraLight = mutation({
 
     const statsData = {
       key: "global",
-      total_polling_units: 188042,
+      total_polling_units: 46560,
       covered_polling_units: estimatedTotal,
       verified_polling_units: Math.round(estimatedTotal * 0.05),
       total_votes: estimatedVotes,

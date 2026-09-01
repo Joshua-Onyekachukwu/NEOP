@@ -25,8 +25,8 @@ export const getGlobalStats = query({
 
     if (!stats) {
       return {
-        inec_total_polling_units: 188042,
-        total_polling_units: 188042,
+        inec_total_polling_units: 46560,
+        total_polling_units: 46560,
         covered_polling_units: 0,
         verified_polling_units: 0,
         total_votes: 0,
@@ -39,8 +39,8 @@ export const getGlobalStats = query({
     }
 
     return {
-      inec_total_polling_units: 188042,
-      total_polling_units: stats.total_polling_units,
+      inec_total_polling_units: stats.total_polling_units || 46560,
+      total_polling_units: stats.total_polling_units || 46560,
       covered_polling_units: stats.covered_polling_units,
       verified_polling_units: stats.verified_polling_units,
       total_votes: stats.total_votes,
@@ -256,7 +256,7 @@ export const upsertGlobalStats = mutation({
 
     const data = {
       key: "global",
-      total_polling_units: 188042,
+      total_polling_units: 46560,
       ...args,
       updated_at: Date.now(),
     };
@@ -388,30 +388,25 @@ export const updateSimConfig = mutation({
 export const clearSimulationData = mutation({
   args: {},
   handler: async (ctx) => {
-    // Delete all results
-    const results = await ctx.db.query("results").collect();
-    for (const r of results) await ctx.db.delete(r._id);
+    let deleted = 0;
 
-    // Delete all party_results
-    const prs = await ctx.db.query("party_results").collect();
-    for (const pr of prs) await ctx.db.delete(pr._id);
+    // Delete large tables in batches of 1000 to avoid timeout
+    for (const table of ["results", "party_results"] as const) {
+      for (let offset = 0; ; offset += 1000) {
+        const batch = await ctx.db.query(table).order("asc").skip(offset).take(1000);
+        if (batch.length === 0) break;
+        for (const doc of batch) await ctx.db.delete(doc._id);
+        deleted += batch.length;
+      }
+    }
 
-    // Delete all state_stats
-    const states = await ctx.db.query("state_stats").collect();
-    for (const s of states) await ctx.db.delete(s._id);
+    // Small tables — safe to load all
+    for (const table of ["state_stats", "party_totals", "live_stats", "sim_config"] as const) {
+      const docs = await ctx.db.query(table).collect();
+      for (const doc of docs) await ctx.db.delete(doc._id);
+      deleted += docs.length;
+    }
 
-    // Delete all party_totals
-    const parties = await ctx.db.query("party_totals").collect();
-    for (const p of parties) await ctx.db.delete(p._id);
-
-    // Reset live_stats
-    const stats = await ctx.db.query("live_stats").collect();
-    for (const s of stats) await ctx.db.delete(s._id);
-
-    // Reset sim_config
-    const configs = await ctx.db.query("sim_config").collect();
-    for (const c of configs) await ctx.db.delete(c._id);
-
-    return { cleared: true };
+    return { cleared: true, deleted };
   },
 });
