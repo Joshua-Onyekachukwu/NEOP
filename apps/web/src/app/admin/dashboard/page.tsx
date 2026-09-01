@@ -57,6 +57,7 @@ const AdminDashboard: React.FC = () => {
   const [simError, setSimError] = useState<string>("");
   const [convexSyncing, setConvexSyncing] = useState(false);
   const [convexSyncResult, setConvexSyncResult] = useState<string>("");
+  const [autoSyncStatus, setAutoSyncStatus] = useState<string>("");
   // Live simulation progress
   const [liveProgress, setLiveProgress] = useState<{
     progress_percent: number;
@@ -103,7 +104,11 @@ const AdminDashboard: React.FC = () => {
         });
         if (res.ok) {
           const data = await res.json();
-          if (active) setLiveProgress(data);
+          if (active) {
+            setLiveProgress(data);
+            // Track auto-sync status
+            if (data.convex_sync) setAutoSyncStatus(data.convex_sync);
+          }
           // Detect simulation completion
           if (!data.is_running && active) {
             setSimRunning(false);
@@ -854,6 +859,23 @@ const AdminDashboard: React.FC = () => {
                                 </div>
                               );
                             })}
+                        </div>
+                      )}
+
+                      {/* Auto-sync indicator */}
+                      {autoSyncStatus && autoSyncStatus !== "not_needed" && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-gray-200)]">
+                          <div className={`w-2 h-2 rounded-full ${
+                            autoSyncStatus === "triggered" ? "bg-[var(--color-amber)] animate-pulse" :
+                            autoSyncStatus === "completed" ? "bg-[var(--color-green-bright)]" :
+                            "bg-[var(--color-gray-400)]"
+                          }`} />
+                          <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
+                            {autoSyncStatus === "triggered" && "⚡ Syncing to Convex..."}
+                            {autoSyncStatus === "already_triggered" && "✓ Sync already triggered"}
+                            {autoSyncStatus === "completed" && "✅ Synced to Convex"}
+                            {autoSyncStatus === "not_needed" && ""}
+                          </span>
                         </div>
                       )}
                     </div>
