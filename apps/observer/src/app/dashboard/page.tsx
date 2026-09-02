@@ -45,9 +45,11 @@ export default function ObserverDashboard() {
   // Fetch live data from public API
   const fetchData = async () => {
     try {
+      // Use the main web app URL for cross-origin requests
+      const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL || '';
       const [partyRes, statsRes] = await Promise.all([
-        fetch('/api/public/party-results'),
-        fetch('/api/public/stats'),
+        fetch(`${WEB_URL}/api/public/party-results`),
+        fetch(`${WEB_URL}/api/public/stats`),
       ]);
       if (partyRes.ok) {
         const data = await partyRes.json();

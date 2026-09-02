@@ -3,18 +3,12 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useRealtimeData } from "@/components/live/ConvexRealtimeLayer";
 import PartyResultsSkeleton from "@/components/live/skeletons/PartyResultsSkeleton";
+import { PARTIES } from "@/lib/party-config";
 
-const PARTY_NAMES: Record<string, string> = {
-  NDC: "Nigeria Democratic Congress",
-  APC: "All Progressives Congress",
-  PDP: "Peoples Democratic Party",
-  LP: "Labour Party",
-  NNPP: "New Nigeria Peoples Party",
-  APGA: "All Progressives Grand Alliance",
-  SDP: "Social Democratic Party",
-  YPP: "Young Progressives Party",
-  ADC: "African Democratic Congress",
-};
+// Build PARTY_NAMES from shared config
+const PARTY_NAMES: Record<string, string> = Object.fromEntries(
+  PARTIES.map(p => [p.abbr, p.name])
+);
 
 // ── Animated Number Hook ──
 // Smoothly interpolates between old and new values

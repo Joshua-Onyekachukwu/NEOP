@@ -16,6 +16,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
+import { INEC_TOTAL_PUS } from "@/lib/party-config";
 
 // ── Types ──
 
@@ -60,8 +61,8 @@ const RealtimeContext = createContext<RealtimeData>({
   parties: [],
   grandTotal: 0,
   stats: {
-    inec_total_polling_units: 176846,
-    total_polling_units: 176846,
+    inec_total_polling_units: INEC_TOTAL_PUS,
+    total_polling_units: INEC_TOTAL_PUS,
     covered_polling_units: 0,
     verified_polling_units: 0,
     coverage_percent: 0,
@@ -116,8 +117,8 @@ export function ConvexRealtimeLayer({
       if (statsRes.status === "fulfilled" && statsRes.value.ok) {
         const statsData = await statsRes.value.json();
         setRestStats({
-          inec_total_polling_units: statsData.inec_total_polling_units || 176846,
-          total_polling_units: statsData.total_polling_units || 176846,
+          inec_total_polling_units: statsData.inec_total_polling_units || INEC_TOTAL_PUS,
+          total_polling_units: statsData.total_polling_units || INEC_TOTAL_PUS,
           covered_polling_units: statsData.covered_polling_units || 0,
           verified_polling_units: statsData.verified_polling_units || 0,
           coverage_percent: statsData.coverage_percent || 0,
@@ -159,8 +160,8 @@ export function ConvexRealtimeLayer({
     parties: restParties,
     grandTotal,
     stats: restStats || {
-      inec_total_polling_units: 176846,
-      total_polling_units: 176846,
+      inec_total_polling_units: INEC_TOTAL_PUS,
+      total_polling_units: INEC_TOTAL_PUS,
       covered_polling_units: 0,
       verified_polling_units: 0,
       coverage_percent: 0,
