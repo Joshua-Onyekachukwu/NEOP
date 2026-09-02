@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -49,6 +50,10 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 export async function GET(request: NextRequest) {
+  // Rate limiting
+  const rateResult = publicLimiter.check(request);
+  if (!rateResult.ok) return rateLimitResponse(rateResult);
+
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);

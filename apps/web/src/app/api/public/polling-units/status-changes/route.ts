@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -18,6 +19,10 @@ let cacheTime = 0;
 const CACHE_TTL = 10_000;
 
 export async function GET(_request: NextRequest) {
+  // Rate limiting
+  const rateResult = publicLimiter.check(_request);
+  if (!rateResult.ok) return rateLimitResponse(rateResult);
+
   try {
     const now = Date.now();
     if (cachedActive && now - cacheTime < CACHE_TTL) {

@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -19,7 +20,11 @@ let cachedConfig: any = null;
 let cacheTime = 0;
 const CACHE_TTL = 5_000; // 5 seconds serverless-level cache
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+  // Rate limiting
+  const rateResult = publicLimiter.check(request);
+  if (!rateResult.ok) return rateLimitResponse(rateResult);
+
   try {
     const now = Date.now();
     if (cachedConfig && now - cacheTime < CACHE_TTL) {
@@ -96,13 +101,14 @@ export async function GET(_request: NextRequest) {
     cachedConfig = result;
     cacheTime = now;
 
-    return NextResponse.json(result, {
+    const response = NextResponse.json(result, {
       headers: {
         "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
         "Surrogate-Control": "max-age=300, stale-if-error=3600",
         "X-Content-Type-Options": "nosniff",
       },
     });
+    return addRateLimitHeaders(response, rateResult);
   } catch (error) {
     console.error("Error in config API:", error);
     return NextResponse.json(
@@ -112,7 +118,7 @@ export async function GET(_request: NextRequest) {
         title: "Presidential & National Assembly Election",
         subtitle: "Awaiting election data",
         date: "2027-01-16",
-        total_polling_units: 188042, // fallback only — error path
+        total_polling_units: 176846, // INEC 2026 official count
         total_results: 0,
         display_status: "IDLE",
         status_label: "AWAITING DATA",
