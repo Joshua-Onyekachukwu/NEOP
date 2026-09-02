@@ -13,6 +13,7 @@ import type * as finalize from "../finalize.js";
 import type * as http from "../http.js";
 import type * as httpHandler from "../httpHandler.js";
 import type * as runSimulation from "../runSimulation.js";
+import type * as scheduler from "../scheduler.js";
 import type * as seed_parties from "../seed_parties.js";
 import type * as simEngineV2 from "../simEngineV2.js";
 import type * as simulation from "../simulation.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   httpHandler: typeof httpHandler;
   runSimulation: typeof runSimulation;
+  scheduler: typeof scheduler;
   seed_parties: typeof seed_parties;
   simEngineV2: typeof simEngineV2;
   simulation: typeof simulation;
