@@ -215,6 +215,7 @@ export const runSimulationV2 = action({
     }
 
     const totalPUs = allPUs.length;
+    console.log(`[sim-v2] Total PUs from Supabase: ${totalPUs}`);
 
     // ── Step 2: Compute state-level voter distribution ──
     // Each state gets voters proportional to its population
