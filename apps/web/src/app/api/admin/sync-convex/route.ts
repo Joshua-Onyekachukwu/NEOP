@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
         covered_pus: Number(s.total_pus || 0), // all PUs have results
         verified_pus: Number(s.verified || 0),
         total_votes: 0, // Will be computed from party_results
-        ndc_votes: 0, apc_votes: 0, pdp_votes: 0, lp_votes: 0,
-        nnpp_votes: 0, apga_votes: 0, sdp_votes: 0, ypp_votes: 0, adc_votes: 0,
+        ndc_votes: 0, apc_votes: 0,
+        adc_votes: 0, others_votes: 0,
       }));
       mutations.push({
         path: "stats:upsertStateStats",
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert global stats
-    const totalPU = 188042;
+    const totalPU = 176846;
     const covered = partyResults.data
       ? partyResults.data.reduce((sum: number, p: any) => sum + Number(p.total_votes), 0)
       : 0;

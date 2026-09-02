@@ -21,30 +21,25 @@ import { v } from "convex/values";
 const PARTIES = [
   { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#1B5E20" },
   { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#00A859" },
-  { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#000080" },
-  { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF0000" },
-  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#E53935" },
-  { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#FFD600" },
-  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#1565C0" },
-  { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#6A1B9A" },
   { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#00838F" },
+  { id: "others", name: "Others", abbr: "OTHERS", color: "#757575" },
 ];
 
 const PARTY_SHARES: Record<string, number[]> = {
-  landslide: [0.42, 0.22, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02],
-  sweep: [0.37, 0.25, 0.10, 0.08, 0.06, 0.04, 0.03, 0.04, 0.03],
-  close: [0.30, 0.28, 0.12, 0.08, 0.07, 0.05, 0.04, 0.03, 0.03],
+  landslide: [0.45, 0.25, 0.15, 0.15],
+  sweep: [0.40, 0.30, 0.15, 0.15],
+  close: [0.35, 0.33, 0.17, 0.15],
 };
 
 // Regional vote multipliers (NDC vs APC strength by geo-political zone)
 const REGION_MULT: Record<string, number[]> = {
-  NW: [0.6, 1.4, 0.8, 0.5, 1.3, 0.7, 0.6, 0.5, 0.6],
-  NE: [0.7, 1.3, 0.9, 0.6, 1.2, 0.8, 0.7, 0.6, 0.7],
-  NC: [1.0, 1.1, 1.0, 0.8, 0.9, 0.9, 1.0, 0.8, 0.9],
-  SW: [0.5, 1.5, 1.1, 0.7, 0.8, 1.2, 0.9, 0.7, 0.8],
-  SE: [1.9, 0.3, 0.8, 1.8, 0.5, 1.5, 0.7, 0.9, 0.6],
-  SS: [1.6, 0.4, 1.2, 1.4, 0.6, 0.7, 0.8, 0.7, 0.6],
-  FC: [1.2, 1.0, 0.9, 1.1, 0.8, 0.8, 1.0, 0.9, 0.8],
+  NW: [0.6, 1.4, 0.8, 0.7],
+  NE: [0.7, 1.3, 0.9, 0.8],
+  NC: [1.0, 1.1, 1.0, 0.9],
+  SW: [0.5, 1.5, 1.1, 0.8],
+  SE: [1.9, 0.3, 0.8, 0.6],
+  SS: [1.6, 0.4, 1.2, 0.6],
+  FC: [1.2, 1.0, 0.9, 0.8],
 };
 
 // State → Region mapping
@@ -332,7 +327,7 @@ interface PUWithVoters extends PURecord {
         unavailable_pus: 0,
         total_votes: 0,
         registered_voters: 0,
-        party_votes: new Array(9).fill(0),
+        party_votes: new Array(4).fill(0),
       };
     }
 
@@ -413,15 +408,15 @@ interface PUWithVoters extends PURecord {
           scenario: config.scenario,
         });
 
-        // Calculate party votes
+        // Calculate party votes (NDC, APC, ADC, Others)
         let remaining = valid;
         const votes: number[] = [];
-        for (let p = 0; p < 9; p++) {
+        for (let p = 0; p < 4; p++) {
           const v = Math.max(0, Math.round(valid * shares[p] * regionMult[p] * (0.7 + rng() * 0.6)));
           votes.push(v);
           remaining -= v;
         }
-        votes[8] = Math.max(0, votes[8] + remaining); // ADC gets remainder
+        votes[3] = Math.max(0, votes[3] + remaining); // Others gets remainder
 
         // Accumulate
         totalVotes += totalVotesPU;
@@ -437,10 +432,10 @@ interface PUWithVoters extends PURecord {
           if (status === "VERIFIED") ss.verified_pus++;
           ss.total_votes += totalVotesPU;
           ss.registered_voters += pu.registered_voters;
-          for (let p = 0; p < 9; p++) ss.party_votes[p] += votes[p];
+          for (let p = 0; p < 4; p++) ss.party_votes[p] += votes[p];
         }
 
-        for (let p = 0; p < 9; p++) {
+        for (let p = 0; p < 4; p++) {
           runningPartyTotals[PARTIES[p].abbr] += votes[p];
           batchPR.push({
             result_index: batchResults.length - 1,
@@ -593,13 +588,8 @@ interface PUWithVoters extends PURecord {
       turnout_percent: ss.registered_voters > 0 ? Number(((ss.total_votes / ss.registered_voters) * 100).toFixed(1)) : 0,
       ndc_votes: ss.party_votes[0],
       apc_votes: ss.party_votes[1],
-      pdp_votes: ss.party_votes[2],
-      lp_votes: ss.party_votes[3],
-      nnpp_votes: ss.party_votes[4],
-      apga_votes: ss.party_votes[5],
-      sdp_votes: ss.party_votes[6],
-      ypp_votes: ss.party_votes[7],
-      adc_votes: ss.party_votes[8],
+      adc_votes: ss.party_votes[2],
+      others_votes: ss.party_votes[3],
     }));
     await ctx.runMutation("stats:upsertStateStats" as any, { states: stateEntries });
 

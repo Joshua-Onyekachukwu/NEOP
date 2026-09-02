@@ -7,13 +7,8 @@ import PartyResultsSkeleton from "@/components/live/skeletons/PartyResultsSkelet
 const PARTY_NAMES: Record<string, string> = {
   NDC: "Nigeria Democratic Congress",
   APC: "All Progressives Congress",
-  PDP: "Peoples Democratic Party",
-  LP: "Labour Party",
-  NNPP: "New Nigeria Peoples Party",
-  APGA: "All Progressives Grand Alliance",
-  SDP: "Social Democratic Party",
-  YPP: "Young Progressives Party",
   ADC: "African Democratic Congress",
+  OTHERS: "Others",
 };
 
 // ── Animated Number Hook ──

@@ -84,7 +84,7 @@ const SimulationTicker: React.FC = () => {
             prevResults.current = totalResults;
 
             // Estimate progress based on results count
-            const expectedResults = 188042;
+            const expectedResults = 176846;
             const progressPct = Math.min(100, Math.round((totalResults / expectedResults) * 100));
 
             setProgress({

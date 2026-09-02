@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
       random_seed = Date.now(),
       batch_size = 2000,
       pu_failure_rate = 0.03,
-      turnout_min = 0.3,
-      turnout_max = 0.8,
+      turnout_min = 0.85,
+      turnout_max = 0.95,
       geographic_scope = "national",
       simulation_speed = 1,
     } = body;

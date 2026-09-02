@@ -22,29 +22,24 @@ import { v } from "convex/values";
 const PARTIES = [
   { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#1B5E20" },
   { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#00A859" },
-  { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#000080" },
-  { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF0000" },
-  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#E53935" },
-  { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#FFD600" },
-  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#1565C0" },
-  { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#6A1B9A" },
   { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#00838F" },
+  { id: "others", name: "Others", abbr: "OTHERS", color: "#757575" },
 ];
 
 const PARTY_CONFIG: Record<string, number[]> = {
-  landslide: [0.42, 0.22, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02],
-  sweep: [0.37, 0.25, 0.10, 0.08, 0.06, 0.04, 0.03, 0.04, 0.03],
-  close: [0.30, 0.28, 0.12, 0.08, 0.07, 0.05, 0.04, 0.03, 0.03],
+  landslide: [0.45, 0.25, 0.15, 0.15],
+  sweep: [0.40, 0.30, 0.15, 0.15],
+  close: [0.35, 0.33, 0.17, 0.15],
 };
 
 const REGION_MULT: Record<string, number[]> = {
-  NW: [0.6, 1.4, 0.8, 0.5, 1.3, 0.7, 0.6, 0.5, 0.6],
-  NE: [0.7, 1.3, 0.9, 0.6, 1.2, 0.8, 0.7, 0.6, 0.7],
-  NC: [1.0, 1.1, 1.0, 0.8, 0.9, 0.9, 1.0, 0.8, 0.9],
-  SW: [0.5, 1.5, 1.1, 0.7, 0.8, 1.2, 0.9, 0.7, 0.8],
-  SE: [1.9, 0.3, 0.8, 1.8, 0.5, 1.5, 0.7, 0.9, 0.6],
-  SS: [1.6, 0.4, 1.2, 1.4, 0.6, 0.7, 0.8, 0.7, 0.6],
-  FC: [1.2, 1.0, 0.9, 1.1, 0.8, 0.8, 1.0, 0.9, 0.8],
+  NW: [0.6, 1.4, 0.8, 0.7],
+  NE: [0.7, 1.3, 0.9, 0.8],
+  NC: [1.0, 1.1, 1.0, 0.9],
+  SW: [0.5, 1.5, 1.1, 0.8],
+  SE: [1.9, 0.3, 0.8, 0.6],
+  SS: [1.6, 0.4, 1.2, 0.6],
+  FC: [1.2, 1.0, 0.9, 0.8],
 };
 
 const STATE_DATA: [string, string, number][] = [
@@ -113,13 +108,8 @@ export const runSimulation = action({
       total_votes: number;
       ndc_votes: number;
       apc_votes: number;
-      pdp_votes: number;
-      lp_votes: number;
-      nnpp_votes: number;
-      apga_votes: number;
-      sdp_votes: number;
-      ypp_votes: number;
       adc_votes: number;
+      others_votes: number;
     }> = {};
     for (const p of PARTIES) runningPartyTotals[p.abbr] = 0;
     let totalVotes = 0;
@@ -138,13 +128,8 @@ export const runSimulation = action({
         total_votes: 0,
         ndc_votes: 0,
         apc_votes: 0,
-        pdp_votes: 0,
-        lp_votes: 0,
-        nnpp_votes: 0,
-        apga_votes: 0,
-        sdp_votes: 0,
-        ypp_votes: 0,
         adc_votes: 0,
+        others_votes: 0,
       };
     }
 
@@ -155,12 +140,12 @@ export const runSimulation = action({
 
       for (let i = offset; i < end; i++) {
         const pu = allPUs[i];
-        const regionMult = REGION_MULT[pu.region] || [1, 1, 1, 1, 1, 1, 1, 1, 1];
+        const regionMult = REGION_MULT[pu.region] || [1, 1, 1, 1];
 
         // Scale registered voters by totalVoters / total_PUs
         const avgVotersPerPU = Math.floor(totalVoters / TOTAL_PUS);
         const registeredVoters = Math.max(100, Math.round(avgVotersPerPU * (0.3 + Math.random() * 1.4)));
-        const turnoutRate = 0.3 + Math.random() * 0.5;
+        const turnoutRate = 0.85 + Math.random() * 0.10;
         const totalVotesPU = Math.max(50, Math.round(registeredVoters * turnoutRate));
         const rejected = Math.round(totalVotesPU * (0.01 + Math.random() * 0.04));
         const valid = totalVotesPU - rejected;
@@ -192,15 +177,15 @@ export const runSimulation = action({
           scenario,
         });
 
-        // Calculate party votes
+        // Calculate party votes (NDC, APC, ADC, Others)
         let remaining = valid;
         const votes: number[] = [];
-        for (let p = 0; p < 9; p++) {
+        for (let p = 0; p < 4; p++) {
           const v = Math.max(0, Math.round(valid * shares[p] * regionMult[p] * (0.7 + Math.random() * 0.6)));
           votes.push(v);
           remaining -= v;
         }
-        votes[8] = Math.max(0, votes[8] + remaining);
+        votes[3] = Math.max(0, votes[3] + remaining); // Others gets remainder
 
         // Accumulate into running aggregates
         totalVotes += totalVotesPU;
@@ -215,15 +200,10 @@ export const runSimulation = action({
         ss.total_votes += totalVotesPU;
         ss.ndc_votes += votes[0];
         ss.apc_votes += votes[1];
-        ss.pdp_votes += votes[2];
-        ss.lp_votes += votes[3];
-        ss.nnpp_votes += votes[4];
-        ss.apga_votes += votes[5];
-        ss.sdp_votes += votes[6];
-        ss.ypp_votes += votes[7];
-        ss.adc_votes += votes[8];
+        ss.adc_votes += votes[2];
+        ss.others_votes += votes[3];
 
-        for (let p = 0; p < 9; p++) {
+        for (let p = 0; p < 4; p++) {
           runningPartyTotals[PARTIES[p].abbr] += votes[p];
           batchPR.push({
             result_index: batchResults.length - 1,
@@ -307,13 +287,8 @@ export const runSimulation = action({
         total_votes: ss.total_votes,
         ndc_votes: ss.ndc_votes,
         apc_votes: ss.apc_votes,
-        pdp_votes: ss.pdp_votes,
-        lp_votes: ss.lp_votes,
-        nnpp_votes: ss.nnpp_votes,
-        apga_votes: ss.apga_votes,
-        sdp_votes: ss.sdp_votes,
-        ypp_votes: ss.ypp_votes,
         adc_votes: ss.adc_votes,
+        others_votes: ss.others_votes,
       };
     });
     await ctx.runMutation("stats:upsertStateStats" as any, { states: stateEntries });
