@@ -1,6 +1,6 @@
 /**
- * GET /api/admin/volunteers
- * List all volunteers with user info for admin management
+ * GET /api/admin/audit
+ * List audit trail entries for admin oversight
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,24 +20,25 @@ export async function GET(request: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
+    const action = searchParams.get("action");
 
-    const { data: volunteers, error } = await supabase
-      .from("volunteers")
-      .select(`
-        id, status, phone, verification_status, training_status,
-        training_completed_at, created_at,
-        user_accounts ( id, email, full_name, avatar_url ),
-        states ( name ),
-        lgas ( name )
-      `)
+    let query = supabase
+      .from("audit_log")
+      .select("id, actor_id, actor_type, action, resource_type, resource_id, metadata, created_at")
       .order("created_at", { ascending: false })
       .limit(limit);
+
+    if (action) {
+      query = query.eq("action", action);
+    }
+
+    const { data: logs, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ volunteers: volunteers || [] });
+    return NextResponse.json({ logs: logs || [] });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

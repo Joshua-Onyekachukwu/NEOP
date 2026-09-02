@@ -39,7 +39,7 @@ const AdminDashboard: React.FC = () => {
     pendingVerification: 0, totalIncidents: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "verification" | "volunteers" | "locations" | "incidents" | "simulation">("overview");
+  const [activeTab, setActiveTab] = useState<string>("overview");
   const [agentLocations, setAgentLocations] = useState<any[]>([]);
   const [results, setResults] = useState<any[]>([]);
   const [volunteers, setVolunteers] = useState<any[]>([]);
@@ -378,7 +378,7 @@ const AdminDashboard: React.FC = () => {
     fetchStats();
   };
 
-  const tabs = ["overview", "verification", "volunteers", "locations", "incidents", "simulation"] as const;
+  const tabs = ["overview", "verification", "volunteers", "agent-mgmt", "locations", "incidents", "audit", "simulation"] as const;
 
   const fetchAgentLocations = async () => {
     try {
@@ -1073,11 +1073,237 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* ── AGENT MANAGEMENT TAB ── */}
+            {activeTab === "agent-mgmt" && (
+              <AgentManagementTab />
+            )}
+
+            {/* ── AUDIT TRAIL TAB ── */}
+            {activeTab === "audit" && (
+              <AuditTrailTab />
+            )}
           </>
         )}
       </div>
     </div>
   );
 };
+
+// ── Agent Management Sub-Component ──
+
+function AgentManagementTab() {
+  const [agents, setAgents] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<string>("all");
+  const [selectedAgent, setSelectedAgent] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { fetchAgents(); }, []);
+
+  const fetchAgents = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/volunteers?limit=200`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAgents(data.volunteers || []);
+      }
+    } finally { setLoading(false); }
+  };
+
+  const handleVerify = async (id: string, status: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    await fetch(`/api/admin/volunteers/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ verification_status: status }),
+    });
+    fetchAgents();
+    if (selectedAgent?.id === id) setSelectedAgent(null);
+  };
+
+  const filtered = agents.filter((v: any) => {
+    const name = (v.user_accounts as any)?.full_name || "";
+    const email = (v.user_accounts as any)?.email || "";
+    const matchesSearch = !search || name.toLowerCase().includes(search.toLowerCase()) || email.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = filter === "all" || v.verification_status === filter;
+    return matchesSearch && matchesFilter;
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Search & Filter */}
+      <div className="flex gap-3 flex-wrap">
+        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search agents..." className="flex-1 min-w-[200px] px-3 py-2 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-green)]" />
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="px-3 py-2 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text-muted)]">
+          <option value="all">All</option>
+          <option value="VERIFIED">Verified</option>
+          <option value="PENDING">Pending</option>
+          <option value="REJECTED">Rejected</option>
+          <option value="NOT_REQUESTED">Not Requested</option>
+        </select>
+      </div>
+
+      {/* Agent List */}
+      <div className="border border-[var(--color-gray-100)] overflow-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-[var(--color-gray-100)]">
+              {["Name", "Email", "State", "Status", "Verification", "Actions"].map((h) => (
+                <th key={h} className="px-3 py-2 text-left font-mono text-[10px] text-[var(--color-text-dim)] uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((v: any) => (
+              <tr key={v.id} className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink-light)]">
+                <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{(v.user_accounts as any)?.full_name || "—"}</td>
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)]">{(v.user_accounts as any)?.email || "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{(v.states as any)?.name || "—"}</td>
+                <td className="px-3 py-2 font-mono text-[10px]">
+                  <span className={v.status === "ACTIVE" ? "text-[var(--color-green-bright)]" : "text-[var(--color-text-dim)]"}>{v.status}</span>
+                </td>
+                <td className="px-3 py-2 font-mono text-[10px]">
+                  <span className={v.verification_status === "VERIFIED" ? "text-[var(--color-green-bright)]" : v.verification_status === "PENDING" ? "text-[var(--color-amber)]" : v.verification_status === "REJECTED" ? "text-[var(--color-red)]" : "text-[var(--color-text-dim)]"}>{v.verification_status}</span>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex gap-1">
+                    {v.verification_status === "PENDING" && (
+                      <>
+                        <button onClick={() => handleVerify(v.id, "VERIFIED")} className="px-2 py-0.5 bg-[var(--color-green-dim)] text-[var(--color-green-bright)] font-mono text-[10px] hover:bg-[var(--color-green)] hover:text-white">VERIFY</button>
+                        <button onClick={() => handleVerify(v.id, "REJECTED")} className="px-2 py-0.5 bg-[var(--color-red)]/10 text-[var(--color-red)] font-mono text-[10px] hover:bg-[var(--color-red)] hover:text-white">REJECT</button>
+                      </>
+                    )}
+                    <button onClick={async () => {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const res = await fetch(`/api/admin/volunteers/${v.id}`, {
+                        headers: { Authorization: `Bearer ${session?.access_token}` },
+                      });
+                      if (res.ok) { const data = await res.json(); setSelectedAgent(data); }
+                    }} className="px-2 py-0.5 border border-[var(--color-gray-200)] text-[var(--color-text-dim)] font-mono text-[10px] hover:border-[var(--color-green)]">DETAILS</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-8 text-center font-mono text-[var(--color-text-dim)]">No agents found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Agent Detail Modal */}
+      {selectedAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedAgent(null)}>
+          <div className="bg-[var(--color-ink)] border border-[var(--color-gray-200)] max-w-lg w-full max-h-[80vh] overflow-y-auto p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-sm">Agent Details</h3>
+              <button onClick={() => setSelectedAgent(null)} className="font-mono text-xs text-[var(--color-text-dim)]">✕ Close</button>
+            </div>
+            <div className="space-y-3">
+              <div className="font-mono text-xs"><span className="text-[var(--color-text-dim)]">Name:</span> <span className="text-[var(--color-text)]">{(selectedAgent.volunteer?.user_accounts as any)?.full_name}</span></div>
+              <div className="font-mono text-xs"><span className="text-[var(--color-text-dim)]">Email:</span> <span className="text-[var(--color-text)]">{(selectedAgent.volunteer?.user_accounts as any)?.email}</span></div>
+              <div className="font-mono text-xs"><span className="text-[var(--color-text-dim)]">Status:</span> <span className="text-[var(--color-text)]">{selectedAgent.volunteer?.status}</span></div>
+              <div className="font-mono text-xs"><span className="text-[var(--color-text-dim)]">Verification:</span> <span className="text-[var(--color-text)]">{selectedAgent.volunteer?.verification_status}</span></div>
+              <div className="font-mono text-xs"><span className="text-[var(--color-text-dim)]">Training:</span> <span className="text-[var(--color-text)]">{selectedAgent.volunteer?.training_status}</span></div>
+              <hr className="border-[var(--color-gray-100)]" />
+              <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Assignments ({selectedAgent.assignments?.length || 0})</div>
+              {selectedAgent.assignments?.map((a: any) => (
+                <div key={a.id} className="p-2 border border-[var(--color-gray-100)] font-mono text-[10px]">
+                  <span className="text-[var(--color-text-muted)]">{(a.polling_units as any)?.official_code}</span> — <span className={a.status === "CHECKED_IN" ? "text-[var(--color-green-bright)]" : "text-[var(--color-text-dim)]"}>{a.status}</span>
+                </div>
+              ))}
+              <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Submissions ({selectedAgent.submissions?.length || 0})</div>
+              {selectedAgent.submissions?.map((s: any) => (
+                <div key={s.id} className="p-2 border border-[var(--color-gray-100)] font-mono text-[10px]">
+                  <span className="text-[var(--color-text-muted)]">{s.total_votes?.toLocaleString()} votes</span> — <span className={s.status === "VERIFIED" ? "text-[var(--color-green-bright)]" : "text-[var(--color-amber)]"}>{s.status}</span>
+                  <span className="text-[var(--color-text-dim)] ml-2">{s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : ""}</span>
+                </div>
+              ))}
+              <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Recent Activity ({selectedAgent.audit_log?.length || 0})</div>
+              {selectedAgent.audit_log?.slice(0, 10).map((log: any, i: number) => (
+                <div key={i} className="flex justify-between font-mono text-[10px]">
+                  <span className="text-[var(--color-text-muted)]">{log.action}</span>
+                  <span className="text-[var(--color-text-dim)]">{new Date(log.created_at).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Audit Trail Sub-Component ──
+
+function AuditTrailTab() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const url = filter ? `/api/admin/audit?action=${filter}&limit=100` : `/api/admin/audit?limit=100`;
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLogs(data.logs || []);
+        }
+      } finally { setLoading(false); }
+    };
+    fetchLogs();
+  }, [filter]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">Audit Trail</h3>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="px-3 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)]">
+          <option value="">All Actions</option>
+          <option value="RESULT_SUBMITTED">Result Submitted</option>
+          <option value="RESULT_VERIFIED">Result Verified</option>
+          <option value="VOLUNTEER_VERIFICATION_STATUS_UPDATED">Agent Verified</option>
+          <option value="AGENT_CHECKED_IN">Agent Checked In</option>
+        </select>
+      </div>
+
+      <div className="border border-[var(--color-gray-100)] overflow-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-[var(--color-gray-100)]">
+              {["Action", "Actor", "Resource", "Time", "Details"].map((h) => (
+                <th key={h} className="px-3 py-2 text-left font-mono text-[10px] text-[var(--color-text-dim)] uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((log: any) => (
+              <tr key={log.id} className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink-light)]">
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-muted)]">{log.action}</td>
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)]">{log.actor_type}</td>
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)]">{log.resource_type}</td>
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)]">{new Date(log.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2 font-mono text-[10px] text-[var(--color-text-dim)] max-w-[200px] truncate">
+                  {log.metadata ? (typeof log.metadata === "string" ? log.metadata : JSON.stringify(log.metadata)).substring(0, 60) : "—"}
+                </td>
+              </tr>
+            ))}
+            {logs.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-8 text-center font-mono text-[var(--color-text-dim)]">No audit entries</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default AdminDashboard;
