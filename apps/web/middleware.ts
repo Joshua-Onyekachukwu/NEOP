@@ -278,7 +278,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const underAttack = isUnderAttack();
 
-  // ── HTML Pages: Apply security headers only ──
+  // ── HTML Pages: Apply security headers + auth protection ──
   if (pathname.indexOf("/api/") !== 0) {
     const response = NextResponse.next();
 
@@ -288,6 +288,32 @@ export function middleware(request: NextRequest) {
         "Link",
         "</api/public/stats>; rel=preload; as=fetch, </api/public/config>; rel=preload; as=fetch"
       );
+    }
+
+    // Auth-protected pages: require Supabase session cookie
+    // Without this, anyone can access /agent/register and /agent/onboarding
+    const protectedPaths = ["/agent/register", "/agent/onboarding"];
+    if (protectedPaths.some(p => pathname.startsWith(p))) {
+      // Check for Supabase auth token in cookies
+      const supabaseAuthCookie = request.cookies.get("sb-" );
+      const hasSession = request.cookies.getAll().some(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
+      if (!hasSession) {
+        // No session — redirect to login
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/agent/login";
+        loginUrl.searchParams.set("redirect", pathname);
+        return NextResponse.redirect(loginUrl);
+      }
+    }
+
+    // Admin pages: require session + admin cookie check
+    if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
+      const hasSession = request.cookies.getAll().some(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
+      if (!hasSession) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/admin/login";
+        return NextResponse.redirect(loginUrl);
+      }
     }
 
     // Cloudflare-specific: Tell CF to cache HTML pages too
@@ -391,5 +417,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: ["/api/:path*", "/agent/:path*", "/admin/:path*"],
 };
