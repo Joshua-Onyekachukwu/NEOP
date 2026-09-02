@@ -229,17 +229,17 @@ const AdminDashboard: React.FC = () => {
     setSimRunning(true);
     setSimError("");
     setSimResult(null);
-    setSimProgress("Clearing old data and loading polling units…");
+    setSimProgress("Starting simulation via Convex engine...");
 
     // Simulate progress messages while the API works
     const progressMessages = [
-      "Clearing old data and loading polling units…",
-      "Loading 188,042 polling units across 37 states…",
-      "Applying regional vote patterns for NDC coalition…",
-      "Generating results for each polling unit…",
-      "Creating party-level vote breakdowns (9 parties)…",
-      "Inserting results into database…",
-      "This may take 5-10 minutes for 100M+ votes…",
+      "Querying Supabase for real INEC polling unit hierarchy...",
+      "Distributing voters across states based on population...",
+      "Applying regional vote patterns for NDC coalition...",
+      "Processing polling units in batches...",
+      "Computing party-level vote breakdowns (9 parties)...",
+      "Updating live aggregations in Convex...",
+      "Simulation running on Convex (fire-and-forget)...",
     ];
 
     let msgIdx = 0;
@@ -250,8 +250,8 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Use trigger endpoint — returns in under 1 second (no Vercel timeout)
-      const res = await fetch("/api/admin/simulate/trigger", {
+      // Use trigger-v2 endpoint — runs via Convex (not Supabase SQL)
+      const res = await fetch("/api/admin/simulate/trigger-v2", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -259,9 +259,15 @@ const AdminDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           scenario: simScenario,
-          duration_minutes: simDuration,
-          total_voters: simVoters * 1_000_000,
           election_type: simElectionType,
+          target_voters: simVoters * 1_000_000,
+          random_seed: Date.now(),
+          batch_size: 2000,
+          pu_failure_rate: 0.03,
+          turnout_min: 0.3,
+          turnout_max: 0.8,
+          geographic_scope: "national",
+          simulation_speed: 1,
         }),
       });
 
@@ -275,7 +281,7 @@ const AdminDashboard: React.FC = () => {
 
       const data = await res.json();
       // Simulation started — progress bar will poll for updates
-      setSimProgress("Simulation started in Postgres. Monitoring progress...");
+      setSimProgress("Simulation started on Convex. Monitoring progress...");
       fetchStats(); // refresh stats
     } catch (e: any) {
       setSimError(e.message || "Network error");

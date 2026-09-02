@@ -161,16 +161,16 @@ export default defineSchema({
   batch_log: defineTable({
     simulation_id: v.string(),
     batch_index: v.number(),
-    status: v.string(), // PENDING, RUNNING, COMPLETED, FAILED, RETRYING
+    status: v.string(),
     offset: v.number(),
     limit: v.number(),
-    results_inserted: v.number(),
-    party_results_inserted: v.number(),
-    total_votes: v.number(),
+    results_inserted: v.optional(v.number()),
+    party_results_inserted: v.optional(v.number()),
+    total_votes: v.optional(v.number()),
     error_message: v.optional(v.string()),
     started_at: v.optional(v.number()),
     completed_at: v.optional(v.number()),
-    retry_count: v.number(),
+    retry_count: v.optional(v.number()),
   })
     .index("by_simulation", ["simulation_id", "batch_index"])
     .index("by_status", ["status"]),

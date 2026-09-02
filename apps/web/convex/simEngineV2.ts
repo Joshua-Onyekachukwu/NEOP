@@ -455,30 +455,86 @@ interface PUWithVoters extends PURecord {
         }
       }
 
-      // ── Insert batch into Convex ──
+      // ── Insert batch into Convex (with idempotency) ──
       if (batchResults.length > 0) {
-        // Insert results
-        const insertRes: any = await ctx.runMutation("stats:insertResultsBatch" as any, {
-          results: batchResults,
+        // Generate deterministic batch ID for idempotency
+        const batchId = `${config.random_seed}_${batchIdx}`;
+        
+        // Check if this batch was already completed (idempotency)
+        const existingBatch = await ctx.runQuery("stats:getBatchStatus" as any, {
+          simulationId: String(config.random_seed),
+          batchIndex: batchIdx,
         });
-        const resultIds: string[] = insertRes.resultIds || [];
+        
+        if (existingBatch?.status === "COMPLETED") {
+          // Skip this batch — already done
+          console.log(`[sim-v2] Batch ${Math.floor(batchIdx / BATCH_SIZE)} already completed, skipping`);
+          continue;
+        }
+        
+        // Mark batch as running
+        await ctx.runMutation("stats:logBatch" as any, {
+          simulationId: String(config.random_seed),
+          batchIndex: batchIdx,
+          status: "RUNNING",
+          offset: batchIdx,
+          limit: batchEnd - batchIdx,
+          started_at: Date.now(),
+        });
+        
+        try {
+          // Insert results
+          const insertRes: any = await ctx.runMutation("stats:insertResultsBatch" as any, {
+            results: batchResults,
+          });
+          const resultIds: string[] = insertRes.resultIds || [];
 
-        // Insert party_results in chunks (Convex limit: 8192 array elements)
-        const CHUNK = 8000;
-        for (let ci = 0; ci < batchPR.length; ci += CHUNK) {
-          const chunk = batchPR.slice(ci, ci + CHUNK);
-          await ctx.runMutation("stats:insertPartyResultsBatch" as any, {
-            resultIds,
-            partyResults: chunk.map((pr: any) => ({
-              resultOffset: pr.result_index,
-              party_id: pr.party_id,
-              party_name: pr.party_name,
-              party_abbreviation: pr.party_abbreviation,
-              party_color: pr.party_color,
-              votes: pr.votes,
-              region: pr.region,
-              state_name: pr.state_name,
-            })),
+          // Insert party_results in chunks (Convex limit: 8192 array elements)
+          const CHUNK = 8000;
+          for (let ci = 0; ci < batchPR.length; ci += CHUNK) {
+            const chunk = batchPR.slice(ci, ci + CHUNK);
+            await ctx.runMutation("stats:insertPartyResultsBatch" as any, {
+              resultIds,
+              partyResults: chunk.map((pr: any) => ({
+                resultOffset: pr.result_index,
+                party_id: pr.party_id,
+                party_name: pr.party_name,
+                party_abbreviation: pr.party_abbreviation,
+                party_color: pr.party_color,
+                votes: pr.votes,
+                region: pr.region,
+                state_name: pr.state_name,
+              })),
+            });
+          }
+          
+          // Mark batch as completed
+          await ctx.runMutation("stats:logBatch" as any, {
+            simulationId: String(config.random_seed),
+            batchIndex: batchIdx,
+            status: "COMPLETED",
+            offset: batchIdx,
+            limit: batchEnd - batchIdx,
+            results_inserted: batchResults.length,
+            party_results_inserted: batchPR.length,
+            completed_at: Date.now(),
+          });
+        } catch (batchError: any) {
+          // Mark batch as failed for retry
+          console.error(`[sim-v2] Batch ${Math.floor(batchIdx / BATCH_SIZE)} failed:`, batchError.message);
+          await ctx.runMutation("stats:logBatch" as any, {
+            simulationId: String(config.random_seed),
+            batchIndex: batchIdx,
+            status: "FAILED",
+            offset: batchIdx,
+            limit: batchEnd - batchIdx,
+            error_message: batchError.message?.slice(0, 500),
+            completed_at: Date.now(),
+          });
+          
+          // Update failed batch count
+          await ctx.runMutation("stats:updateSimConfig" as any, {
+            batches_failed: (currentConfig?.batches_failed || 0) + 1,
           });
         }
       }
