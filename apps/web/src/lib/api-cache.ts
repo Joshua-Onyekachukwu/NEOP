@@ -160,8 +160,8 @@ function getSeededStats(totalPUCount: number) {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-/** Supabase timeout — must be under 8s (Vercel Hobby limit is 10s) */
-const SB_TIMEOUT_MS = 8_000;
+/** Supabase timeout — party totals RPC can take 6s+, so allow 15s */
+const SB_TIMEOUT_MS = 15_000;
 
 function getServiceClient(): SupabaseClient {
   return createClient(supabaseUrl, supabaseServiceKey);
@@ -301,10 +301,17 @@ export const getCachedPartyResults = unstable_cache(
           (s: number, r: any) => s + Number(r.total_votes), 0
         );
 
-        const [totalRes, verifiedRes] = await Promise.all([
-          supabase.from("result_submissions").select("*", { count: "exact", head: true }),
-          supabase.from("result_submissions").select("*", { count: "exact", head: true }).eq("status", "VERIFIED"),
-        ]);
+        // Skip slow count queries — use config data instead
+        let totalResults = 0;
+        let verifiedResults = 0;
+        try {
+          const { data: config } = await supabase
+            .from("simulation_config")
+            .select("total_results_submitted")
+            .eq("id", "00000000-0000-0000-0000-000000000001")
+            .single();
+          totalResults = config?.total_results_submitted || 0;
+        } catch {}
 
         return {
           parties: parties.map((p: any) => ({
@@ -315,8 +322,8 @@ export const getCachedPartyResults = unstable_cache(
             percentage: grandTotal > 0 ? Number(((Number(p.total_votes) / grandTotal) * 100).toFixed(1)) : 0,
           })),
           grand_total: grandTotal,
-          total_results: totalRes.count || 0,
-          verified_results: verifiedRes.count || 0,
+          total_results: totalResults,
+          verified_results: verifiedResults,
           last_updated: new Date().toISOString(),
           source: "supabase" as const,
         };
