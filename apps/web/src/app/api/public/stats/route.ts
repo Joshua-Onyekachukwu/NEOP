@@ -8,13 +8,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCachedStats } from "@/lib/api-cache";
+import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+  // Rate limiting
+  const rateResult = publicLimiter.check(request);
+  if (!rateResult.ok) return rateLimitResponse(rateResult);
+
   try {
     const stats = await getCachedStats();
-    return NextResponse.json(stats, {
+    const response = NextResponse.json(stats, {
       headers: {
         // Extra safety: route handler cache headers override middleware
         "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=120",
@@ -22,6 +27,7 @@ export async function GET(_request: NextRequest) {
         "X-Content-Type-Options": "nosniff",
       },
     });
+    return addRateLimitHeaders(response, rateResult);
   } catch (error) {
     console.error("Error in stats API:", error);
     return NextResponse.json(

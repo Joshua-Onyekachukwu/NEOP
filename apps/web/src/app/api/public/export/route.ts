@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -30,6 +31,10 @@ export const dynamic = "force-dynamic";
 const STANDARD_PARTIES = ["NDC", "APC", "PDP", "LP", "NNPP", "APGA", "SDP", "YPP", "ADC"];
 
 export async function GET(request: NextRequest) {
+  // Rate limiting
+  const rateResult = publicLimiter.check(request);
+  if (!rateResult.ok) return rateLimitResponse(rateResult);
+
   try {
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format") || "csv";
