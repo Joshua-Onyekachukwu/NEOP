@@ -55,9 +55,11 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", "00000000-0000-0000-0000-000000000001");
 
-    // Fire Convex simulation — don't await, let it run in background
+    // Fire Convex simulation — clear first, then run, fire-and-forget
     if (convexUrl && convexDeployKey) {
-      console.log("[trigger] Firing Convex simulation...");
+      console.log("[trigger] Firing Convex clear + simulation...");
+
+      // Step 1: Clear old simulation data
       fetch(`${convexUrl}/api/action`, {
         method: "POST",
         headers: {
@@ -65,16 +67,35 @@ export async function POST(request: NextRequest) {
           Authorization: `Bearer ${convexDeployKey}`,
         },
         body: JSON.stringify({
-          path: "runSimulation:runSimulation",
-          args: { scenario, electionType, totalVoters },
+          path: "clearData:clearAllData",
+          args: {},
         }),
       })
-        .then(async (res) => {
-          if (res.ok) {
-            const data = await res.json();
+        .then(async (clearRes) => {
+          if (clearRes.ok) {
+            const clearData = await clearRes.json();
+            console.log("[trigger] Convex data cleared:", JSON.stringify(clearData).slice(0, 300));
+          } else {
+            console.error("[trigger] Convex clear failed, proceeding anyway");
+          }
+
+          // Step 2: Run simulation after clearing
+          const simRes = await fetch(`${convexUrl}/api/action`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${convexDeployKey}`,
+            },
+            body: JSON.stringify({
+              path: "runSimulation:runSimulation",
+              args: { scenario, electionType, totalVoters },
+            }),
+          });
+          if (simRes.ok) {
+            const data = await simRes.json();
             console.log("[trigger] Convex simulation complete:", JSON.stringify(data).slice(0, 300));
           } else {
-            const err = await res.text();
+            const err = await simRes.text();
             console.error("[trigger] Convex simulation failed:", err.slice(0, 300));
           }
         })

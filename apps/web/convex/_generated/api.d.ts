@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as clearData from "../clearData.js";
 import type * as finalize from "../finalize.js";
 import type * as http from "../http.js";
 import type * as httpHandler from "../httpHandler.js";
@@ -24,6 +25,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  clearData: typeof clearData;
   finalize: typeof finalize;
   http: typeof http;
   httpHandler: typeof httpHandler;
