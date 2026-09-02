@@ -2,7 +2,7 @@
 # Progressive benchmark for NEOP simulation engine v2
 # Tests at increasing voter scales to find maximum capacity
 
-CONVEX_URL="https://friendly-retriever-385.convex.cloud"
+CONVEX_URL="https://rosy-crocodile-952.convex.cloud"
 DEPLOY_KEY='preview:joshua-onyekachukwu:neop|eyJ2MiI6ImMyNmQ1NWE4M2QzNDQ3ODNhYTYxNmIzNDQ1OTZjYmY3In0='
 SUPABASE_URL="https://lvtfrfrnqxqwjuematum.supabase.co"
 SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2dGZyZnJucXhxd2p1ZW1hdHVtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODI5MTA4OCwiZXhwIjoyMTAzODY3MDg4fQ.rJHjdLQidywOxL28ayn51DBEcwh5hmhzJk0bn7vSuE0"

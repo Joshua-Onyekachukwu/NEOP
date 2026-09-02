@@ -117,7 +117,7 @@ const AdminDashboard: React.FC = () => {
               description: "Simulation completed",
               duration_minutes: Math.round((data.elapsed_seconds || 0) / 60),
               target_voters: 100_000_000,
-              total_polling_units: 188042,
+              total_polling_units: 176846,
               results_created: data.total_results || 0,
               party_results_created: 0,
               total_votes: data.total_votes || 0,
@@ -264,8 +264,8 @@ const AdminDashboard: React.FC = () => {
           random_seed: Date.now(),
           batch_size: 2000,
           pu_failure_rate: 0.03,
-          turnout_min: 0.3,
-          turnout_max: 0.8,
+          turnout_min: 0.85,
+          turnout_max: 0.95,
           geographic_scope: "national",
           simulation_speed: 1,
         }),
@@ -694,7 +694,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-                        ~{Math.round(simVoters * 1_000_000 / 188042).toLocaleString()} votes per polling unit on average
+                        ~{Math.round(simVoters * 1_000_000 / 176846).toLocaleString()} votes per polling unit on average
                       </div>
                     </div>
                   </div>
@@ -702,9 +702,9 @@ const AdminDashboard: React.FC = () => {
                   {/* Scenario cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     {[
-                      { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins by 20+ points — massive coalition victory across all regions", color: "var(--color-green-bright)" },
-                      { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region except SW — Peter Obi + Kwankwaso coalition dominance", color: "var(--color-green)" },
-                      { key: "close", name: "NDC NARROW WIN", desc: "A tight race — NDC edges APC by 2-5 points in a nail-biter", color: "var(--color-amber)" },
+                      { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins big — dominant victory across all regions (NDC 45%, APC 25%, ADC 15%, Others 15%)", color: "var(--color-green-bright)" },
+                      { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region — strong coalition dominance (NDC 40%, APC 30%, ADC 15%, Others 15%)", color: "var(--color-green)" },
+                      { key: "close", name: "TIGHT RACE", desc: "A close contest between NDC and APC — every vote counts (NDC 35%, APC 33%, ADC 17%, Others 15%)", color: "var(--color-amber)" },
                     ].map((s) => (
                       <button
                         key={s.key}

@@ -7,14 +7,10 @@
 
 // Nigerian political parties with approximate strength profiles
 const PARTIES = [
-  { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", baseStrength: 0.25 },
-  { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#003DA5", baseStrength: 0.22 },
-  { abbreviation: "LP", name: "Labour Party", color: "#00FF00", baseStrength: 0.18 },
-  { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#FF0000", baseStrength: 0.10 },
-  { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#FFD700", baseStrength: 0.08 },
-  { abbreviation: "SDP", name: "Social Democratic Party", color: "#800080", baseStrength: 0.07 },
-  { abbreviation: "YPP", name: "Young Progressives Party", color: "#FF4500", baseStrength: 0.05 },
-  { abbreviation: "ADC", name: "African Democratic Congress", color: "#006400", baseStrength: 0.05 },
+  { abbreviation: "NDC", name: "Nigeria Democratic Congress", color: "#1B5E20", baseStrength: 0.40 },
+  { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", baseStrength: 0.28 },
+  { abbreviation: "ADC", name: "African Democratic Congress", color: "#00838F", baseStrength: 0.16 },
+  { abbreviation: "OTHERS", name: "Others", color: "#757575", baseStrength: 0.16 },
 ];
 
 export type ElectionType = "PRESIDENTIAL" | "HOUSE_OF_REPS" | "GOVERNORSHIP";

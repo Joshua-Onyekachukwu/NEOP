@@ -78,8 +78,8 @@ export function useGlobalStats(refreshKey?: number) {
   }, [refreshKey]);
 
   return {
-    inec_total_polling_units: restData?.inec_total_polling_units || 188042,
-    total_polling_units: restData?.total_polling_units || 188042,
+    inec_total_polling_units: restData?.inec_total_polling_units || 176846,
+    total_polling_units: restData?.total_polling_units || 176846,
     covered_polling_units: restData?.covered_polling_units || 0,
     verified_polling_units: restData?.verified_polling_units || 0,
     coverage_percent: restData?.coverage_percent || 0,

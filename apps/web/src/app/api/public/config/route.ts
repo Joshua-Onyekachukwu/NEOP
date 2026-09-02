@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const config = configResult.data;
-    const totalPUCount = puCountResult.data?.total_polling_units ?? 188042;
+    const totalPUCount = puCountResult.data?.total_polling_units ?? 176846;
     if (puCountResult.error) {
       console.warn("[config] Failed to get PU count from DB, using fallback:", puCountResult.error.message);
     }

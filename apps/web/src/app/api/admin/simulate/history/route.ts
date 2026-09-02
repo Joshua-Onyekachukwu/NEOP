@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         scenario: scenario || "random",
         election_type: election_type || "PRESIDENTIAL",
         status: status || "COMPLETED",
-        total_polling_units: total_polling_units || 188042,
+        total_polling_units: total_polling_units || 176846,
         results_created: results_created || 0,
         total_votes: total_votes || 0,
         duration_seconds: duration_seconds || 0,
