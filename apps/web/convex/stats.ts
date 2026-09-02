@@ -176,6 +176,8 @@ export const getStatusDistribution = query({
 // ── Seed/Mutations for Simulation ──
 
 // Write a batch of results (called by the simulation engine)
+// Convex limits arrays to 8192 elements, so party_results are
+// inserted via a separate mutation (insertPartyResultsBatch).
 export const insertResultsBatch = mutation({
   args: {
     results: v.array(
@@ -198,9 +200,28 @@ export const insertResultsBatch = mutation({
         scenario: v.string(),
       })
     ),
-    party_results: v.array(
+  },
+  handler: async (ctx, args) => {
+    const resultIds: string[] = [];
+    for (const r of args.results) {
+      const id = await ctx.db.insert("results", r);
+      resultIds.push(id);
+    }
+    return { inserted: resultIds.length, resultIds };
+  },
+});
+
+// Write party results for a batch of results.
+// resultIds: the Convex IDs of the results just inserted.
+// partyResults: flat array of { resultOffset, partyId, ... }
+//   where resultOffset is the index into resultIds.
+// Max 8000 entries to stay under Convex's 8192 array limit.
+export const insertPartyResultsBatch = mutation({
+  args: {
+    resultIds: v.array(v.string()),
+    partyResults: v.array(
       v.object({
-        result_index: v.number(), // index into results array
+        resultOffset: v.number(),
         party_id: v.string(),
         party_name: v.string(),
         party_abbreviation: v.string(),
@@ -212,17 +233,10 @@ export const insertResultsBatch = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    // Insert results and collect their IDs
-    const resultIds: string[] = [];
-    for (const r of args.results) {
-      const id = await ctx.db.insert("results", r);
-      resultIds.push(id);
-    }
-
-    // Insert party results with correct result IDs
-    for (const pr of args.party_results) {
+    let inserted = 0;
+    for (const pr of args.partyResults) {
       await ctx.db.insert("party_results", {
-        result_id: resultIds[pr.result_index] as any,
+        result_id: args.resultIds[pr.resultOffset] as any,
         party_id: pr.party_id,
         party_name: pr.party_name,
         party_abbreviation: pr.party_abbreviation,
@@ -231,9 +245,9 @@ export const insertResultsBatch = mutation({
         region: pr.region,
         state_name: pr.state_name,
       });
+      inserted++;
     }
-
-    return { inserted: resultIds.length };
+    return { inserted };
   },
 });
 
@@ -243,6 +257,8 @@ export const upsertGlobalStats = mutation({
     covered_polling_units: v.number(),
     verified_polling_units: v.number(),
     total_votes: v.number(),
+    valid_votes: v.number(),
+    rejected_votes: v.number(),
     active_pu_count: v.number(),
     simulation_running: v.boolean(),
     scenario: v.optional(v.string()),
@@ -386,19 +402,31 @@ export const updateSimConfig = mutation({
   },
 });
 
-// Clear all simulation data
-export const clearSimulationData = mutation({
-  args: {},
-  handler: async (ctx) => {
-    let deleted = 0;
-
-    // Delete all tables — collect and delete (Convex limits to 1 paginated query)
-    for (const table of ["results", "party_results", "state_stats", "party_totals", "live_stats", "sim_config"] as const) {
-      const docs = await ctx.db.query(table).collect();
-      for (const doc of docs) await ctx.db.delete(doc._id);
-      deleted += docs.length;
+// Clear simulation data in small batches to avoid the 32K doc read limit.
+// Deletes up to batchSize rows from the specified table.
+// Returns { deleted, hasMore } — call repeatedly until hasMore is false.
+export const clearBatch = mutation({
+  args: {
+    table: v.string(),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize || 500;
+    const validTables = ["party_results", "results", "state_stats", "party_totals", "live_stats", "sim_config"] as const;
+    if (!validTables.includes(args.table as typeof validTables[number])) {
+      return { deleted: 0, hasMore: false };
     }
 
-    return { cleared: true, deleted };
+    const docs = await ctx.db.query(args.table as typeof validTables[number]).take(batchSize);
+    for (const doc of docs) await ctx.db.delete(doc._id);
+
+    return {
+      deleted: docs.length,
+      hasMore: docs.length >= batchSize,
+    };
   },
 });
+
+// NOTE: clearSimulationData was removed because it exceeded Convex's 32K doc scan limit
+// on large tables (e.g. 419K party_results). Use clearBatch() instead — call it repeatedly
+// from an action or HTTP endpoint until hasMore=false.

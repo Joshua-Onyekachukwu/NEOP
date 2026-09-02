@@ -2,16 +2,18 @@
  * Convex Action — Run Full Election Simulation
  *
  * Runs the entire simulation in Convex, processing PUs in batches.
- * This is called by the admin trigger endpoint (fire-and-forget).
+ * Called by the admin trigger endpoint (fire-and-forget).
+ *
+ * NOTE: This action does NOT clear previous data. The admin should
+ * call clearAllData action before triggering a new simulation.
  *
  * Flow:
  *   1. Set sim_config to RUNNING
- *   2. Process PUs in batches of 2000 (stay within execution limits)
- *   3. After all batches, aggregate stats
- *   4. Mark as COMPLETED
+ *   2. Process PUs in batches of 2000
+ *   3. After each batch, update live_stats and party_totals
+ *   4. After all batches, mark as COMPLETED
  *
  * For 46,560 PUs with batch size 2000 = ~24 batches
- * Each batch takes ~2-3 seconds = ~60-70 seconds total
  */
 
 import { action } from "./_generated/server";
@@ -62,12 +64,11 @@ const STATE_DATA: [string, string, number][] = [
 ];
 
 const TOTAL_PUS = 46560;
-const BATCH_SIZE = 800; // 800 PUs × 9 parties = 7200 party_results (under 8192 limit)
+const BATCH_SIZE = 2000; // ~24 batches for 46,560 PUs
 
 /**
  * Run the full election simulation.
- * Called once by the admin trigger endpoint.
- * Processes all PUs in batches internally.
+ * Computes aggregates incrementally — no separate finalize step needed.
  */
 export const runSimulation = action({
   args: {
@@ -80,13 +81,11 @@ export const runSimulation = action({
       ? (["landslide", "sweep", "close"] as const)[Math.floor(Math.random() * 3)]
       : args.scenario;
     const electionType = args.electionType || "PRESIDENTIAL";
+    const totalVoters = args.totalVoters || 100_000_000;
 
-    console.log(`[runSimulation] Starting: scenario=${scenario}, type=${electionType}`);
+    console.log(`[runSimulation] Starting: scenario=${scenario}, type=${electionType}, voters=${totalVoters}`);
 
-    // 1. Clear existing simulation data
-    await ctx.runMutation("stats:clearSimulationData" as any, {});
-
-    // 2. Set sim_config to RUNNING
+    // Set sim_config to RUNNING
     await ctx.runMutation("stats:updateSimConfig" as any, {
       status: "RUNNING",
       scenario,
@@ -94,7 +93,6 @@ export const runSimulation = action({
       started_at: Date.now(),
     });
 
-    // 3. Process PUs in batches
     const shares = PARTY_CONFIG[scenario] || PARTY_CONFIG.landslide;
 
     // Build flat list of all PUs
@@ -105,8 +103,50 @@ export const runSimulation = action({
       }
     }
 
+    // Running aggregates (computed incrementally — no finalize needed)
+    const runningPartyTotals: Record<string, number> = {};
+    const runningStateStats: Record<string, {
+      region: string;
+      total_pus: number;
+      covered_pus: number;
+      verified_pus: number;
+      total_votes: number;
+      ndc_votes: number;
+      apc_votes: number;
+      pdp_votes: number;
+      lp_votes: number;
+      nnpp_votes: number;
+      apga_votes: number;
+      sdp_votes: number;
+      ypp_votes: number;
+      adc_votes: number;
+    }> = {};
+    for (const p of PARTIES) runningPartyTotals[p.abbr] = 0;
     let totalVotes = 0;
+    let totalValidVotes = 0;
+    let totalRejectedVotes = 0;
     let processedCount = 0;
+    let verifiedCount = 0;
+
+    // Initialize state stats
+    for (const [state, region] of STATE_DATA) {
+      runningStateStats[state] = {
+        region,
+        total_pus: 0,
+        covered_pus: 0,
+        verified_pus: 0,
+        total_votes: 0,
+        ndc_votes: 0,
+        apc_votes: 0,
+        pdp_votes: 0,
+        lp_votes: 0,
+        nnpp_votes: 0,
+        apga_votes: 0,
+        sdp_votes: 0,
+        ypp_votes: 0,
+        adc_votes: 0,
+      };
+    }
 
     for (let offset = 0; offset < TOTAL_PUS; offset += BATCH_SIZE) {
       const end = Math.min(offset + BATCH_SIZE, TOTAL_PUS);
@@ -117,9 +157,10 @@ export const runSimulation = action({
         const pu = allPUs[i];
         const regionMult = REGION_MULT[pu.region] || [1, 1, 1, 1, 1, 1, 1, 1, 1];
 
-        // Realistic vote counts based on registered voters per PU
-        const registeredVoters = 500 + Math.floor(Math.random() * 2000);
-        const turnoutRate = 0.3 + Math.random() * 0.5; // 30-80% turnout
+        // Scale registered voters by totalVoters / total_PUs
+        const avgVotersPerPU = Math.floor(totalVoters / TOTAL_PUS);
+        const registeredVoters = Math.max(100, Math.round(avgVotersPerPU * (0.3 + Math.random() * 1.4)));
+        const turnoutRate = 0.3 + Math.random() * 0.5;
         const totalVotesPU = Math.max(50, Math.round(registeredVoters * turnoutRate));
         const rejected = Math.round(totalVotesPU * (0.01 + Math.random() * 0.04));
         const valid = totalVotesPU - rejected;
@@ -161,7 +202,29 @@ export const runSimulation = action({
         }
         votes[8] = Math.max(0, votes[8] + remaining);
 
+        // Accumulate into running aggregates
+        totalVotes += totalVotesPU;
+        totalValidVotes += valid;
+        totalRejectedVotes += rejected;
+        if (status === "VERIFIED") verifiedCount++;
+
+        const ss = runningStateStats[pu.state];
+        ss.total_pus++;
+        ss.covered_pus++;
+        if (status === "VERIFIED") ss.verified_pus++;
+        ss.total_votes += totalVotesPU;
+        ss.ndc_votes += votes[0];
+        ss.apc_votes += votes[1];
+        ss.pdp_votes += votes[2];
+        ss.lp_votes += votes[3];
+        ss.nnpp_votes += votes[4];
+        ss.apga_votes += votes[5];
+        ss.sdp_votes += votes[6];
+        ss.ypp_votes += votes[7];
+        ss.adc_votes += votes[8];
+
         for (let p = 0; p < 9; p++) {
+          runningPartyTotals[PARTIES[p].abbr] += votes[p];
           batchPR.push({
             result_index: batchResults.length - 1,
             party_id: PARTIES[p].id,
@@ -173,20 +236,37 @@ export const runSimulation = action({
             state_name: pu.state,
           });
         }
-
-        totalVotes += totalVotesPU;
       }
 
-      // Insert batch into Convex
-      await ctx.runMutation("stats:insertResultsBatch" as any, {
+      // Insert batch into Convex — split results and party_results
+      const insertRes: any = await ctx.runMutation("stats:insertResultsBatch" as any, {
         results: batchResults,
-        party_results: batchPR,
       });
+      const resultIds: string[] = insertRes.resultIds || [];
+
+      // Insert party_results in chunks of 8000 (Convex array limit: 8192)
+      const CHUNK = 8000;
+      for (let ci = 0; ci < batchPR.length; ci += CHUNK) {
+        const chunk = batchPR.slice(ci, ci + CHUNK);
+        await ctx.runMutation("stats:insertPartyResultsBatch" as any, {
+          resultIds,
+          partyResults: chunk.map((pr: any) => ({
+            resultOffset: pr.result_index,
+            party_id: pr.party_id,
+            party_name: pr.party_name,
+            party_abbreviation: pr.party_abbreviation,
+            party_color: pr.party_color,
+            votes: pr.votes,
+            region: pr.region,
+            state_name: pr.state_name,
+          })),
+        });
+      }
 
       processedCount = end;
       const progress = Math.round((processedCount / TOTAL_PUS) * 100);
 
-      // Update progress
+      // Update sim_config progress
       await ctx.runMutation("stats:updateSimConfig" as any, {
         progress_percent: progress,
         results_processed: processedCount,
@@ -196,8 +276,62 @@ export const runSimulation = action({
       console.log(`[runSimulation] Batch ${Math.floor(offset / BATCH_SIZE) + 1}: ${processedCount}/${TOTAL_PUS} (${progress}%)`);
     }
 
-    // 4. Mark simulation complete
-    // (Aggregated stats computed lazily by queries, not in this action)
+    // ── Finalize aggregates in one shot (small data: 37 states + 9 parties + 1 global) ──
+
+    const grandTotal = Object.values(runningPartyTotals).reduce((s, v) => s + v, 0);
+
+    // Upsert party_totals (9 docs)
+    await ctx.runMutation("stats:upsertPartyTotals" as any, {
+      parties: PARTIES.map((p) => ({
+        party_id: p.id,
+        party_name: p.name,
+        party_abbreviation: p.abbr,
+        party_color: p.color,
+        total_votes: runningPartyTotals[p.abbr],
+        percentage: grandTotal > 0
+          ? Number(((runningPartyTotals[p.abbr] / grandTotal) * 100).toFixed(1))
+          : 0,
+      })),
+    });
+
+    // Upsert state_stats (37 docs)
+    const stateEntries = STATE_DATA.map(([state]) => {
+      const ss = runningStateStats[state];
+      return {
+        state_id: state,
+        state_name: state,
+        region: ss.region,
+        total_pus: ss.total_pus,
+        covered_pus: ss.covered_pus,
+        verified_pus: ss.verified_pus,
+        total_votes: ss.total_votes,
+        ndc_votes: ss.ndc_votes,
+        apc_votes: ss.apc_votes,
+        pdp_votes: ss.pdp_votes,
+        lp_votes: ss.lp_votes,
+        nnpp_votes: ss.nnpp_votes,
+        apga_votes: ss.apga_votes,
+        sdp_votes: ss.sdp_votes,
+        ypp_votes: ss.ypp_votes,
+        adc_votes: ss.adc_votes,
+      };
+    });
+    await ctx.runMutation("stats:upsertStateStats" as any, { states: stateEntries });
+
+    // Upsert global live_stats (1 doc)
+    await ctx.runMutation("stats:upsertGlobalStats" as any, {
+      covered_polling_units: processedCount,
+      verified_polling_units: verifiedCount,
+      total_votes: totalVotes,
+      valid_votes: totalValidVotes,
+      rejected_votes: totalRejectedVotes,
+      active_pu_count: processedCount,
+      simulation_running: false,
+      scenario,
+      election_type: electionType,
+    });
+
+    // Mark simulation complete
     await ctx.runMutation("stats:updateSimConfig" as any, {
       status: "COMPLETED",
       progress_percent: 100,
@@ -212,6 +346,7 @@ export const runSimulation = action({
       electionType,
       totalPUs: processedCount,
       totalVotes,
+      grandTotal,
     };
   },
 });
