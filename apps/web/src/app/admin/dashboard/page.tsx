@@ -58,6 +58,10 @@ const AdminDashboard: React.FC = () => {
   const [convexSyncing, setConvexSyncing] = useState(false);
   const [convexSyncResult, setConvexSyncResult] = useState<string>("");
   const [autoSyncStatus, setAutoSyncStatus] = useState<string>("");
+  // Simulation loop state
+  const [loopCount, setLoopCount] = useState<number>(5);
+  const [loopRunning, setLoopRunning] = useState(false);
+  const [loopProgress, setLoopProgress] = useState<{ current: number; total: number; scenario: string } | null>(null);
   // Live simulation progress
   const [liveProgress, setLiveProgress] = useState<{
     progress_percent: number;
@@ -264,8 +268,8 @@ const AdminDashboard: React.FC = () => {
           random_seed: Date.now(),
           batch_size: 2000,
           pu_failure_rate: 0.03,
-          turnout_min: 0.85,
-          turnout_max: 0.95,
+          turnout_min: 0.3,
+          turnout_max: 0.8,
           geographic_scope: "national",
           simulation_speed: 1,
         }),
@@ -290,6 +294,50 @@ const AdminDashboard: React.FC = () => {
     }
     // Note: simRunning stays true — the progress polling useEffect
     // will detect completion and set simRunning = false
+  };
+
+  // ── Simulation Loop ──
+  const scenarios = ["landslide", "sweep", "close"];
+  const runSimulationLoop = async () => {
+    if (loopRunning) return;
+    setLoopRunning(true);
+    setSimError("");
+
+    for (let i = 0; i < loopCount; i++) {
+      const scenario = scenarios[i % scenarios.length];
+      setLoopProgress({ current: i + 1, total: loopCount, scenario });
+      setSimScenario(scenario);
+
+      // Wait for any previous sim to finish
+      while (simRunning) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      // Set scenario and run
+      setSimScenario(scenario);
+      await runSimulation();
+
+      // Wait for sim to complete
+      while (true) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch("/api/admin/simulate/progress", {
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (!data.is_running) break;
+          }
+        } catch {}
+      }
+
+      console.log(`[loop] Completed simulation ${i + 1}/${loopCount}: ${scenario}`);
+    }
+
+    setLoopRunning(false);
+    setLoopProgress(null);
+    fetchStats();
   };
 
   const tabs = ["overview", "verification", "volunteers", "locations", "incidents", "simulation"] as const;
@@ -702,9 +750,9 @@ const AdminDashboard: React.FC = () => {
                   {/* Scenario cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     {[
-                      { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins big — dominant victory across all regions (NDC 45%, APC 25%, ADC 15%, Others 15%)", color: "var(--color-green-bright)" },
-                      { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region — strong coalition dominance (NDC 40%, APC 30%, ADC 15%, Others 15%)", color: "var(--color-green)" },
-                      { key: "close", name: "TIGHT RACE", desc: "A close contest between NDC and APC — every vote counts (NDC 35%, APC 33%, ADC 17%, Others 15%)", color: "var(--color-amber)" },
+                      { key: "landslide", name: "NDC LANDSLIDE", desc: "NDC wins by 20+ points — massive coalition victory across all regions", color: "var(--color-green-bright)" },
+                      { key: "sweep", name: "NDC SWEEP", desc: "NDC carries every region except SW — Peter Obi + Kwankwaso coalition dominance", color: "var(--color-green)" },
+                      { key: "close", name: "NDC NARROW WIN", desc: "A tight race — NDC edges APC by 2-5 points in a nail-biter", color: "var(--color-amber)" },
                     ].map((s) => (
                       <button
                         key={s.key}
@@ -963,6 +1011,58 @@ const AdminDashboard: React.FC = () => {
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* Simulation Loop */}
+                <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
+                      Simulation Loop
+                    </h3>
+                    {loopRunning && (
+                      <span className="font-mono text-[10px] px-2 py-0.5 bg-[var(--color-amber)]/20 text-[var(--color-amber)] animate-pulse">
+                        LOOP RUNNING
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-mono text-[10px] text-[var(--color-text-dim)] mb-3">
+                    Run multiple simulations back-to-back. Cycles through landslide → sweep → close scenarios.
+                  </p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Count:</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={loopCount}
+                      onChange={(e) => setLoopCount(Math.max(1, Math.min(50, Number(e.target.value))))}
+                      disabled={loopRunning || simRunning}
+                      className="w-16 px-2 py-1 bg-[var(--color-ink)] border border-[var(--color-gray-200)] text-[var(--color-text)] font-mono text-sm text-center"
+                    />
+                    <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+                      simulations ({scenarios.join(" → ")} repeated)
+                    </span>
+                  </div>
+                  {loopProgress && (
+                    <div className="mb-3 p-2 bg-[var(--color-ink)] border border-[var(--color-amber)]/30">
+                      <div className="font-mono text-[10px] text-[var(--color-amber)]">
+                        Running {loopProgress.current}/{loopProgress.total} — Scenario: {loopProgress.scenario.toUpperCase()}
+                      </div>
+                      <div className="mt-1 h-1.5 bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[var(--color-amber)] rounded-full transition-all"
+                          style={{ width: `${(loopProgress.current / loopProgress.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={runSimulationLoop}
+                    disabled={loopRunning || simRunning}
+                    className="w-full py-3 bg-[var(--color-amber)] text-white font-mono text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {loopRunning ? `⏳ Running ${loopProgress?.current || 0}/${loopCount}...` : `🔄 RUN ${loopCount} SIMULATIONS IN LOOP`}
+                  </button>
                 </div>
 
                 {/* Simulation History */}

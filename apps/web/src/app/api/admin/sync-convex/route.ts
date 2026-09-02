@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         verified_pus: Number(s.verified || 0),
         total_votes: 0, // Will be computed from party_results
         ndc_votes: 0, apc_votes: 0,
-        adc_votes: 0, others_votes: 0,
+        pdp_votes: 0, lp_votes: 0, nnpp_votes: 0, apga_votes: 0, sdp_votes: 0, ypp_votes: 0, adc_votes: 0,
       }));
       mutations.push({
         path: "stats:upsertStateStats",

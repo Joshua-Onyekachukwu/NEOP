@@ -7,8 +7,13 @@ import PartyResultsSkeleton from "@/components/live/skeletons/PartyResultsSkelet
 const PARTY_NAMES: Record<string, string> = {
   NDC: "Nigeria Democratic Congress",
   APC: "All Progressives Congress",
+  PDP: "Peoples Democratic Party",
+  LP: "Labour Party",
+  NNPP: "New Nigeria Peoples Party",
+  APGA: "All Progressives Grand Alliance",
+  SDP: "Social Democratic Party",
+  YPP: "Young Progressives Party",
   ADC: "African Democratic Congress",
-  OTHERS: "Others",
 };
 
 // ── Animated Number Hook ──
@@ -240,23 +245,22 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   if (!connected) return <PartyResultsSkeleton />;
 
-  if (parties.length === 0) {
-    return (
-      <div>
-        <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
-          <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
-            NATIONAL LEADERBOARD
-          </h3>
-        </div>
-        <div className="p-[40px] text-center">
-          <div className="text-2xl mb-[8px]">🗳</div>
-          <div className="font-mono text-sm text-[var(--color-text-dim)]">Awaiting results</div>
-        </div>
-      </div>
-    );
-  }
+  // Default placeholder parties when no simulation has run
+  const defaultParties = [
+    { abbreviation: "NDC", name: "Nigeria Democratic Congress", color: "#1B5E20", total_votes: 0, percentage: 0 },
+    { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", total_votes: 0, percentage: 0 },
+    { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#000080", total_votes: 0, percentage: 0 },
+    { abbreviation: "LP", name: "Labour Party", color: "#FF0000", total_votes: 0, percentage: 0 },
+    { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#E53935", total_votes: 0, percentage: 0 },
+    { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#FFD600", total_votes: 0, percentage: 0 },
+    { abbreviation: "SDP", name: "Social Democratic Party", color: "#1565C0", total_votes: 0, percentage: 0 },
+    { abbreviation: "YPP", name: "Young Progressives Party", color: "#6A1B9A", total_votes: 0, percentage: 0 },
+    { abbreviation: "ADC", name: "African Democratic Congress", color: "#00838F", total_votes: 0, percentage: 0 },
+  ];
 
-  const maxVotes = parties[0]?.total_votes || 1;
+  const displayParties = parties.length > 0 ? parties : defaultParties;
+
+  const maxVotes = displayParties[0]?.total_votes || 1;
 
   return (
     <div>
@@ -268,10 +272,14 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
               NATIONAL LEADERBOARD
             </h3>
             <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[2px]">
-              {source === "convex" ? (
-                <>Real-time via Convex <span className="text-[var(--color-green-bright)]">● LIVE</span></>
+              {parties.length > 0 ? (
+                source === "convex" ? (
+                  <>Real-time via Convex <span className="text-[var(--color-green-bright)]">● LIVE</span></>
+                ) : (
+                  <>Polling every 10s</>
+                )
               ) : (
-                <>Polling every 10s</>
+                <span className="text-[var(--color-amber)]">Awaiting simulation</span>
               )}
             </div>
           </div>
@@ -280,7 +288,7 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
               Total Votes
             </div>
             <div className="font-display font-bold text-lg md:text-xl text-[var(--color-green-bright)] tabular-nums">
-              {grandTotal.toLocaleString()}
+              {grandTotal > 0 ? grandTotal.toLocaleString() : "—"}
             </div>
           </div>
         </div>
@@ -288,7 +296,7 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
       {/* Party rows — animated */}
       <div className="divide-y divide-[var(--color-gray-100)]">
-        {parties.map((party: any, index: number) => (
+        {displayParties.map((party: any, index: number) => (
           <AnimatedPartyRow
             key={party.abbreviation}
             party={party}
