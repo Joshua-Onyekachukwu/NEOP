@@ -166,7 +166,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 /** Supabase timeout — must be under 8s (Vercel Hobby limit is 10s) */
-const SB_TIMEOUT_MS = 4_000;
+const SB_TIMEOUT_MS = 8_000;
 
 function getServiceClient(): SupabaseClient {
   return createClient(supabaseUrl, supabaseServiceKey);
@@ -211,8 +211,16 @@ export const getCachedStats = unstable_cache(
 
     const sbResult = await withTimeout(
       (async () => {
-        const { data, error } = await supabase.rpc("get_state_breakdown_from_results");
-        if (error) return null;
+        // Try fast JSONB-based function first
+        let data: any[] | null = null;
+        const { data: fastData, error: fastErr } = await supabase.rpc("get_state_breakdown_fast");
+        if (!fastErr && fastData && fastData.length > 0) {
+          data = fastData;
+        } else {
+          const { data: oldData, error: oldErr } = await supabase.rpc("get_state_breakdown_from_results");
+          if (oldErr || !oldData || oldData.length === 0) return null;
+          data = oldData;
+        }
 
         const breakdown = data || [];
         let totalCovered = 0;
@@ -307,8 +315,18 @@ export const getCachedPartyResults = unstable_cache(
 
     const sbResult = await withTimeout(
       (async () => {
-        const { data: rpcData, error: rpcError } = await supabase.rpc("get_party_totals");
-        if (rpcError || !rpcData || rpcData.length === 0) return null;
+        // Try the fast JSONB-based function first, then fall back to old function
+        let rpcData: any[] | null = null;
+        const { data: fastData, error: fastErr } = await supabase.rpc("get_party_totals_fast");
+        if (!fastErr && fastData && fastData.length > 0) {
+          rpcData = fastData;
+        } else {
+          const { data: oldData, error: oldErr } = await supabase.rpc("get_party_totals");
+          if (!oldErr && oldData && oldData.length > 0) {
+            rpcData = oldData;
+          }
+        }
+        if (!rpcData) return null;
 
         const deduped: Record<string, any> = {};
         for (const p of rpcData) {
