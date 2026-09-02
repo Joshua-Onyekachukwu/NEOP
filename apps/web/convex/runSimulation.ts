@@ -18,34 +18,9 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { PARTIES, PARTY_SHARES, REGION_MULT } from "./party-config";
 
-const PARTIES = [
-  { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#1B5E20" },
-  { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#00A859" },
-  { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#000080" },
-  { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF0000" },
-  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#E53935" },
-  { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#FFD600" },
-  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#1565C0" },
-  { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#6A1B9A" },
-  { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#00838F" },
-];
-
-const PARTY_CONFIG: Record<string, number[]> = {
-  landslide: [0.42, 0.22, 0.10, 0.08, 0.06, 0.04, 0.03, 0.03, 0.02],
-  sweep: [0.37, 0.25, 0.10, 0.08, 0.06, 0.04, 0.03, 0.04, 0.03],
-  close: [0.30, 0.28, 0.12, 0.08, 0.07, 0.05, 0.04, 0.03, 0.03],
-};
-
-const REGION_MULT: Record<string, number[]> = {
-  NW: [0.6, 1.4, 0.8, 0.5, 1.3, 0.7, 0.6, 0.5, 0.6],
-  NE: [0.7, 1.3, 0.9, 0.6, 1.2, 0.8, 0.7, 0.6, 0.7],
-  NC: [1.0, 1.1, 1.0, 0.8, 0.9, 0.9, 1.0, 0.8, 0.9],
-  SW: [0.5, 1.5, 1.1, 0.7, 0.8, 1.2, 0.9, 0.7, 0.8],
-  SE: [1.9, 0.3, 0.8, 1.8, 0.5, 1.5, 0.7, 0.9, 0.6],
-  SS: [1.6, 0.4, 1.2, 1.4, 0.6, 0.7, 0.8, 0.7, 0.6],
-  FC: [1.2, 1.0, 0.9, 1.1, 0.8, 0.8, 1.0, 0.9, 0.8],
-};
+const PARTY_CONFIG = PARTY_SHARES;
 
 const STATE_DATA: [string, string, number][] = [
   ["Lagos", "SW", 1200], ["Kano", "NW", 2640], ["Rivers", "SS", 1380],

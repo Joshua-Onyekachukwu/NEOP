@@ -297,46 +297,87 @@ const AdminDashboard: React.FC = () => {
   };
 
   // ── Simulation Loop ──
-  const scenarios = ["landslide", "sweep", "close"];
+  const scenarios = ["landslide", "sweep", "close"] as const;
   const runSimulationLoop = async () => {
     if (loopRunning) return;
     setLoopRunning(true);
     setSimError("");
+    let completedCount = 0;
 
     for (let i = 0; i < loopCount; i++) {
       const scenario = scenarios[i % scenarios.length];
       setLoopProgress({ current: i + 1, total: loopCount, scenario });
-      setSimScenario(scenario);
 
-      // Wait for any previous sim to finish
-      while (simRunning) {
-        await new Promise(r => setTimeout(r, 2000));
+      try {
+        // Trigger simulation via API
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/admin/simulate/trigger-v2", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            scenario,
+            election_type: simElectionType,
+            target_voters: simVoters * 1_000_000,
+            random_seed: Date.now() + i,
+            batch_size: 2000,
+            pu_failure_rate: 0.03,
+            turnout_min: 0.3,
+            turnout_max: 0.8,
+            geographic_scope: "national",
+            simulation_speed: 1,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          console.error(`[loop] Simulation ${i + 1} failed to start:`, err.error);
+          continue; // Skip this sim, try next
+        }
+
+        // Poll progress until completion        
+        let maxWait = 600; // 10 minute timeout per sim
+        while (maxWait > 0) {
+          await new Promise(r => setTimeout(r, 5000));
+          maxWait -= 5;
+          try {
+            const progressRes = await fetch("/api/admin/simulate/progress", {
+              headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (progressRes.ok) {
+              const data = await progressRes.json();
+              if (!data.is_running) {
+                completedCount++;
+                break;
+              }
+            }
+          } catch {}
+        }
+
+        if (maxWait <= 0) {
+          console.error(`[loop] Simulation ${i + 1} timed out`);
+        }
+      } catch (e: any) {
+        console.error(`[loop] Simulation ${i + 1} error:`, e.message);
       }
-
-      // Set scenario and run
-      setSimScenario(scenario);
-      await runSimulation();
-
-      // Wait for sim to complete
-      while (true) {
-        await new Promise(r => setTimeout(r, 3000));
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch("/api/admin/simulate/progress", {
-            headers: { Authorization: `Bearer ${session?.access_token}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (!data.is_running) break;
-          }
-        } catch {}
-      }
-
-      console.log(`[loop] Completed simulation ${i + 1}/${loopCount}: ${scenario}`);
     }
 
     setLoopRunning(false);
     setLoopProgress(null);
+    setSimResult({
+      scenario: "loop",
+      description: `Completed ${completedCount}/${loopCount} simulations`,
+      duration_minutes: 0,
+      target_voters: simVoters * 1_000_000,
+      total_polling_units: 176846,
+      results_created: 0,
+      party_results_created: 0,
+      total_votes: 0,
+      final_status_distribution: {},
+      ndc_wins: true,
+    });
     fetchStats();
   };
 
