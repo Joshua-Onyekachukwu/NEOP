@@ -61,7 +61,7 @@ export const getCachedStats = unstable_cache(
     const supabase = getServiceClient();
 
     // Query PU count once, reuse throughout
-    let totalPUCount = 188042; // fallback
+    let totalPUCount = 176846; // INEC 2026 official count fallback
     try {
       const { data: fastStats } = await supabase.rpc("get_fast_stats");
       if (fastStats?.total_polling_units) {
@@ -279,7 +279,7 @@ export const getCachedConfig = unstable_cache(
     const supabase = getServiceClient();
 
     // Query PU count once, reuse throughout
-    let totalPUCount = 188042; // fallback
+    let totalPUCount = 176846; // INEC 2026 official count fallback
     try {
       const { data: fastStats } = await supabase.rpc("get_fast_stats");
       if (fastStats?.total_polling_units) {

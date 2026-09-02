@@ -59,7 +59,7 @@ export async function GET(_request: NextRequest) {
       });
     }
 
-    // ── Fallback: paginated fetch (slow for 188K PUs) ──
+    // ── Fallback: paginated fetch (slow for 176K+ PUs) ──
     console.log("[polling-units] RPC not available, falling back to paginated fetch");
     const allUnits: any[] = [];
     let offset = 0;
@@ -69,8 +69,6 @@ export async function GET(_request: NextRequest) {
       const { data, error } = await supabase
         .from("polling_units")
         .select("id, official_code, name, latitude, longitude, status, state_id")
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
         .range(offset, offset + pageSize - 1);
 
       if (error || !data || data.length === 0) break;
@@ -82,22 +80,29 @@ export async function GET(_request: NextRequest) {
     const { data: states } = await supabase.from("states").select("id, name");
     const stateMap = new Map((states || []).map((s) => [s.id, s.name]));
 
+    // Only include PUs with valid coordinates in GeoJSON
     const geojson = {
       type: "FeatureCollection",
-      features: allUnits.map((pu) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [pu.longitude, pu.latitude],
-        },
-        properties: {
-          id: pu.id,
-          official_code: pu.official_code,
-          name: pu.name,
-          status: pu.status,
-          state_name: stateMap.get(pu.state_id) || "Unknown",
-        },
-      })),
+      features: allUnits
+        .filter((pu) => pu.latitude != null && pu.longitude != null)
+        .map((pu) => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [pu.longitude, pu.latitude],
+          },
+          properties: {
+            id: pu.id,
+            official_code: pu.official_code,
+            name: pu.name,
+            status: pu.status,
+            state_name: stateMap.get(pu.state_id) || "Unknown",
+          },
+        })),
+      meta: {
+        total_pu_count: allUnits.length,
+        geocoded_count: allUnits.filter((pu) => pu.latitude != null).length,
+      },
     };
 
     cachedGeoJSON = geojson;
