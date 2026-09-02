@@ -328,7 +328,10 @@ const AgentRegister: React.FC = () => {
                   {selectedPuInfo.registered_voters && (
                     <div className="flex justify-between">
                       <span className="text-[var(--color-text-dim)]">Registered Voters</span>
-                      <span className="font-mono text-[var(--color-text)]">{selectedPuInfo.registered_voters.toLocaleString()}</span>
+                      <span className="font-mono text-[var(--color-text)]">
+                        {selectedPuInfo.registered_voters.toLocaleString()}
+                        <span className="text-[9px] text-[var(--color-text-dim)] ml-1">(est.)</span>
+                      </span>
                     </div>
                   )}
                   <div className="flex justify-between">
