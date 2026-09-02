@@ -7,9 +7,7 @@
 -- ============================================================
 -- Truncate simulation tables but keep structural data (parties, elections, PUs, etc.)
 
-TRUNCATE TABLE party_results RESTART IDENTITY;
-TRUNCATE TABLE incidents RESTART IDENTITY;
-TRUNCATE TABLE result_submissions RESTART IDENTITY;
+TRUNCATE TABLE party_results, result_submissions, incidents CASCADE;
 
 -- Reset simulation config
 UPDATE simulation_config SET
@@ -69,7 +67,7 @@ DECLARE
   v_total_votes BIGINT;
 BEGIN
   -- Clear old data
-  TRUNCATE TABLE party_results, result_submissions, incidents RESTART IDENTITY;
+  TRUNCATE TABLE party_results, result_submissions, incidents CASCADE;
 
   UPDATE simulation_config SET
     status = 'RUNNING', last_tick_at = now(), total_results_submitted = 0,

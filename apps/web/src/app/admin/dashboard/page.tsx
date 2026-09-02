@@ -55,9 +55,7 @@ const AdminDashboard: React.FC = () => {
   const [simProgress, setSimProgress] = useState<string>("");
   const [simResult, setSimResult] = useState<SimResult | null>(null);
   const [simError, setSimError] = useState<string>("");
-  const [convexSyncing, setConvexSyncing] = useState(false);
-  const [convexSyncResult, setConvexSyncResult] = useState<string>("");
-  const [autoSyncStatus, setAutoSyncStatus] = useState<string>("");
+
   // Simulation loop state
   const [loopCount, setLoopCount] = useState<number>(5);
   const [loopRunning, setLoopRunning] = useState(false);
@@ -110,8 +108,7 @@ const AdminDashboard: React.FC = () => {
           const data = await res.json();
           if (active) {
             setLiveProgress(data);
-            // Track auto-sync status
-            if (data.convex_sync) setAutoSyncStatus(data.convex_sync);
+
           }
           // Detect simulation completion
           if (!data.is_running && active) {
@@ -233,7 +230,7 @@ const AdminDashboard: React.FC = () => {
     setSimRunning(true);
     setSimError("");
     setSimResult(null);
-    setSimProgress("Starting simulation via Convex engine...");
+    setSimProgress("Starting simulation via Supabase...");
 
     // Simulate progress messages while the API works
     const progressMessages = [
@@ -242,8 +239,8 @@ const AdminDashboard: React.FC = () => {
       "Applying regional vote patterns for NDC coalition...",
       "Processing polling units in batches...",
       "Computing party-level vote breakdowns (9 parties)...",
-      "Updating live aggregations in Convex...",
-      "Simulation running on Convex (fire-and-forget)...",
+      "Updating live aggregations...",
+      "Simulation running on Supabase (fire-and-forget)...",
     ];
 
     let msgIdx = 0;
@@ -254,7 +251,7 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Use trigger-v2 endpoint — runs via Convex (not Supabase SQL)
+      // Use trigger-v2 endpoint — runs via Supabase
       const res = await fetch("/api/admin/simulate/trigger-v2", {
         method: "POST",
         headers: {
@@ -285,7 +282,7 @@ const AdminDashboard: React.FC = () => {
 
       const data = await res.json();
       // Simulation started — progress bar will poll for updates
-      setSimProgress("Simulation started on Convex. Monitoring progress...");
+      setSimProgress("Simulation started on Supabase. Monitoring progress...");
       fetchStats(); // refresh stats
     } catch (e: any) {
       setSimError(e.message || "Network error");
@@ -832,36 +829,7 @@ const AdminDashboard: React.FC = () => {
                       >
                         📊 VIEW LIVE DASHBOARD
                       </a>
-                      <button
-                        onClick={async () => {
-                          setConvexSyncing(true);
-                          setConvexSyncResult("");
-                          try {
-                            const { data: { session } } = await supabase.auth.getSession();
-                            const res = await fetch("/api/admin/sync-convex", {
-                              method: "POST",
-                              headers: {
-                                "Content-Type": "application/json",
-                                ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-                              },
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              setConvexSyncResult(`Synced ${data.mutations_succeeded}/${data.mutations_sent} to Convex`);
-                            } else {
-                              setConvexSyncResult(`Error: ${data.error}`);
-                            }
-                          } catch (e: any) {
-                            setConvexSyncResult(`Error: ${e.message}`);
-                          } finally {
-                            setConvexSyncing(false);
-                          }
-                        }}
-                        disabled={convexSyncing}
-                        className="flex-1 py-3 border border-[var(--color-green)]/30 text-[var(--color-green-bright)] font-mono text-sm font-bold hover:bg-[var(--color-green)]/10 transition-colors disabled:opacity-50"
-                      >
-                        {convexSyncing ? "⏳ SYNCING..." : "⚡ SYNC TO CONVEX"}
-                      </button>
+
                       <button
                         onClick={runSimulation}
                         className="flex-1 py-3 border border-[var(--color-gray-200)] text-[var(--color-text-muted)] font-mono text-sm font-bold hover:border-[var(--color-green)] hover:text-[var(--color-green)] transition-colors"
@@ -878,12 +846,7 @@ const AdminDashboard: React.FC = () => {
                     </button>
                   )}
 
-                  {/* Convex sync result */}
-                  {convexSyncResult && (
-                    <div className="mt-2 p-2 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
-                      <span className="font-mono text-[10px] text-[var(--color-text-muted)]">{convexSyncResult}</span>
-                    </div>
-                  )}
+
 
                   {/* Live Progress Bar */}
                   {simRunning && (
@@ -957,22 +920,7 @@ const AdminDashboard: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Auto-sync indicator */}
-                      {autoSyncStatus && autoSyncStatus !== "not_needed" && (
-                        <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-gray-200)]">
-                          <div className={`w-2 h-2 rounded-full ${
-                            autoSyncStatus === "triggered" ? "bg-[var(--color-amber)] animate-pulse" :
-                            autoSyncStatus === "completed" ? "bg-[var(--color-green-bright)]" :
-                            "bg-[var(--color-gray-400)]"
-                          }`} />
-                          <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
-                            {autoSyncStatus === "triggered" && "⚡ Syncing to Convex..."}
-                            {autoSyncStatus === "already_triggered" && "✓ Sync already triggered"}
-                            {autoSyncStatus === "completed" && "✅ Synced to Convex"}
-                            {autoSyncStatus === "not_needed" && ""}
-                          </span>
-                        </div>
-                      )}
+
                     </div>
                   )}
 

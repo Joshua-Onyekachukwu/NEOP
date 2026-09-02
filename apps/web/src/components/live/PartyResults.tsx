@@ -267,10 +267,10 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
             </h3>
             <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[2px]">
               {parties.length > 0 ? (
-                source === "convex" ? (
-                  <>Real-time via Convex <span className="text-[var(--color-green-bright)]">● LIVE</span></>
+                source === "supabase" ? (
+                  <>Live data <span className="text-[var(--color-green-bright)]">● LIVE</span></>
                 ) : (
-                  <>Polling every 10s</>
+                  <>Demo data</>
                 )
               ) : (
                 <span className="text-[var(--color-amber)]">Awaiting simulation</span>
@@ -304,7 +304,7 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       {/* Footer */}
       <div className="px-[16px] md:px-[24px] py-[10px] border-t border-[var(--color-gray-100)] flex items-center justify-between bg-[var(--color-ink-light)]/50">
         <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-          {source === "convex" ? "Real-time updates • No polling" : "Polling every 10 seconds"}
+          {source === "supabase" ? "Live data from Supabase" : "Demo data"}
         </span>
         <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
           {new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" })}

@@ -6,7 +6,7 @@ import "./globals.css";
 import { Space_Grotesk, DM_Sans, JetBrains_Mono } from "next/font/google";
 import Navbar from "@/components/Layout/Navbar";
 import Footer from "@/components/Layout/Footer";
-import { ConvexProvider } from "@/lib/convex-provider";
+// Convex removed — data comes from Supabase only
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-display",
@@ -62,17 +62,15 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${dmSans.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <ConvexProvider>
-          <Navbar />
-          <a
-            href="#main-content"
-            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:bg-[var(--color-green)] focus:text-white focus:px-4 focus:py-2 focus:font-mono focus:text-sm"
-          >
-            Skip to content
-          </a>
-          {children}
-          <Footer />
-        </ConvexProvider>
+        <Navbar />
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:bg-[var(--color-green)] focus:text-white focus:px-4 focus:py-2 focus:font-mono focus:text-sm"
+        >
+          Skip to content
+        </a>
+        {children}
+        <Footer />
       </body>
     </html>
   );

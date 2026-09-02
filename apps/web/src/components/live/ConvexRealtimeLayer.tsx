@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * ConvexRealtimeLayer
+ * RealtimeLayer
  *
  * Wraps the live dashboard and provides real-time data via React context.
  * Only renders on the client side (no SSR issues).
- * Uses Convex useQuery for instant updates when available.
- * Falls back to REST API polling if Convex is unavailable.
+ * Polls Supabase REST API every 10 seconds for live data.
  */
 
 import React, {
@@ -53,7 +52,7 @@ interface RealtimeData {
   stats: GlobalStats;
   config: SimConfig;
   states: any[];
-  source: "convex" | "rest";
+  source: "supabase" | "seeded";
   connected: boolean;
 }
 
@@ -78,16 +77,13 @@ const RealtimeContext = createContext<RealtimeData>({
     total_results: 0,
   },
   states: [],
-  source: "rest",
+  source: "seeded" as const,
   connected: false,
 });
 
 export function useRealtimeData() {
   return useContext(RealtimeContext);
 }
-
-// NOTE: Convex useQuery is NOT used here — this layer uses REST polling.
-// Convex subscriptions are handled separately if needed in the future.
 
 // ── Provider ──
 
@@ -150,7 +146,7 @@ export function ConvexRealtimeLayer({
     return () => clearInterval(interval);
   }, [fetchRestData]);
 
-  // Build the context value — always use REST data (Convex is not reliable here)
+  // Build the context value from REST data
   const grandTotal = restParties.reduce(
     (sum: number, p: any) => sum + (p.total_votes || 0),
     0
@@ -177,7 +173,7 @@ export function ConvexRealtimeLayer({
       total_results: 0,
     },
     states: restStates,
-    source: "rest",
+    source: restLoaded ? "supabase" : "seeded",
     connected: restLoaded,
   };
 
