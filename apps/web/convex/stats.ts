@@ -25,8 +25,8 @@ export const getGlobalStats = query({
 
     if (!stats) {
       return {
-        inec_total_polling_units: 46560,
-        total_polling_units: 46560,
+        inec_total_polling_units: 176846,
+        total_polling_units: 176846,
         covered_polling_units: 0,
         verified_polling_units: 0,
         total_votes: 0,
@@ -39,8 +39,8 @@ export const getGlobalStats = query({
     }
 
     return {
-      inec_total_polling_units: stats.total_polling_units || 46560,
-      total_polling_units: stats.total_polling_units || 46560,
+      inec_total_polling_units: stats.total_polling_units || 176846,
+      total_polling_units: stats.total_polling_units || 176846,
       covered_polling_units: stats.covered_polling_units,
       verified_polling_units: stats.verified_polling_units,
       total_votes: stats.total_votes,
@@ -274,7 +274,7 @@ export const upsertGlobalStats = mutation({
 
     const data = {
       key: "global",
-      total_polling_units: args.total_polling_units || 46560,
+      total_polling_units: args.total_polling_units || 176846,
       covered_polling_units: args.covered_polling_units,
       verified_polling_units: args.verified_polling_units,
       total_votes: args.total_votes,
