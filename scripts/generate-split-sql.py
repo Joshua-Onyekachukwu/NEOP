@@ -57,24 +57,18 @@ with open(INPUT_FILE, 'r', encoding='utf-8', errors='replace') as f:
         ward_key = (state_name, lga_name, ward_name)
         if ward_key not in wards:
             wards[ward_key] = {"id": str(uuid.uuid4()), "name": title_case(ward_name), "code": f"{state_code}/{lga_code}/{ward_code}", "lga_id": lgas[lga_key]["id"]}
-        pus.append({"id": str(uuid.uuid4()), "name": esc(title_case(location) if location else f"PU {pu_code}"), "official_code": pu_code, "ward_id": wards[ward_key]["id"], "state_id": states[state_name]["id"]})
+        pus.append({"id": str(uuid.uuid4()), "name": esc(title_case(location) if location else f"PU {pu_code}"), "official_code": pu_code, "ward_id": wards[ward_key]["id"], "state_id": states[state_name]["id"], "lga_id": lgas[lga_key]["id"]})
 
 print(f"States: {len(states)}, LGAs: {len(lgas)}, Wards: {len(wards)}, PUs: {len(pus)}")
 
-# File 01: Setup (TRUNCATE + ALTER)
+# File 01: Setup (TRUNCATE) - no DISABLE TRIGGER (permission denied on system triggers)
 with open(f"{OUTPUT_DIR}/01_setup.sql", 'w', encoding='utf-8') as f:
     f.write("""-- INEC Migration Step 1: Setup
--- Run this FIRST in the Supabase SQL Editor
-ALTER TABLE polling_units DISABLE TRIGGER ALL;
-ALTER TABLE wards DISABLE TRIGGER ALL;
-ALTER TABLE lgas DISABLE TRIGGER ALL;
-TRUNCATE TABLE polling_units CASCADE;
-TRUNCATE TABLE wards CASCADE;
-TRUNCATE TABLE lgas CASCADE;
-TRUNCATE TABLE states CASCADE;
-SELECT 'Setup complete - tables truncated' AS result;
+-- Tables are already truncated via exec_sql TRUNCATE commands
+-- This file is just a placeholder; run 02_states.sql next
+SELECT 'Ready to load INEC data' AS result;
 """)
-print("01_setup.sql: setup")
+print("01_setup.sql: placeholder (tables already truncated)")
 
 # File 02: States
 with open(f"{OUTPUT_DIR}/02_states.sql", 'w', encoding='utf-8') as f:
@@ -114,8 +108,8 @@ for i in range(0, len(pus), 2000):
     batch = pus[i:i+2000]
     chunk_num = i // 2000 + 1
     with open(f"{OUTPUT_DIR}/05_pus_{chunk_num:02d}.sql", 'w', encoding='utf-8') as f:
-        f.write(f"-- INEC Migration Step 5: PUs (batch {chunk_num}, {len(batch)} rows)\nINSERT INTO polling_units (id, name, official_code, ward_id, state_id, status) VALUES\n")
-        vals = [f"('{p['id']}', '{p['name']}', '{p['official_code']}', '{p['ward_id']}', '{p['state_id']}', 'NOT_STARTED')" for p in batch]
+        f.write(f"-- INEC Migration Step 5: PUs (batch {chunk_num}, {len(batch)} rows)\nINSERT INTO polling_units (id, name, official_code, ward_id, state_id, lga_id, status) VALUES\n")
+        vals = [f"('{p['id']}', '{p['name']}', '{p['official_code']}', '{p['ward_id']}', '{p['state_id']}', '{p['lga_id']}', 'NOT_STARTED')" for p in batch]
         f.write(",\n".join(vals))
         f.write(";\n")
     size_kb = os.path.getsize(f"{OUTPUT_DIR}/05_pus_{chunk_num:02d}.sql") // 1024
@@ -124,15 +118,12 @@ for i in range(0, len(pus), 2000):
 # File 06: Finish
 with open(f"{OUTPUT_DIR}/06_finish.sql", 'w', encoding='utf-8') as f:
     f.write("""-- INEC Migration Step 6: Finish
-ALTER TABLE polling_units ENABLE TRIGGER ALL;
-ALTER TABLE wards ENABLE TRIGGER ALL;
-ALTER TABLE lgas ENABLE TRIGGER ALL;
 CREATE INDEX IF NOT EXISTS idx_polling_units_state ON polling_units(state_id);
+CREATE INDEX IF NOT EXISTS idx_polling_units_lga ON polling_units(lga_id);
 CREATE INDEX IF NOT EXISTS idx_polling_units_ward ON polling_units(ward_id);
 CREATE INDEX IF NOT EXISTS idx_polling_units_code ON polling_units(official_code);
 CREATE INDEX IF NOT EXISTS idx_wards_lga ON wards(lga_id);
 CREATE INDEX IF NOT EXISTS idx_lgas_state ON lgas(state_id);
-UPDATE simulation_config SET total_results = (SELECT count(*) FROM polling_units), updated_at = now() WHERE id = '00000000-0000-0000-0000-000000000001';
 SELECT 'States: ' || (SELECT count(*) FROM states) || ', LGAs: ' || (SELECT count(*) FROM lgas) || ', Wards: ' || (SELECT count(*) FROM wards) || ', PUs: ' || (SELECT count(*) FROM polling_units) AS result;
 """)
 print("06_finish.sql: indexes + verification")
