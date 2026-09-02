@@ -6,21 +6,16 @@
  *
  *   CDN cache (edge) → Serverless cache (unstable_cache) → Database
  *
- * Falls back to Convex when Supabase is unreachable or slow. This ensures
- * the live dashboard always shows data even during database outages.
+ * Falls back to seeded deterministic data when Supabase is unreachable or slow.
+ * This ensures the live dashboard always shows data even during database outages.
  *
- * CRITICAL: Supabase calls have a 4-second timeout so they never eat the
- * full Vercel 10-second function budget, leaving time for the Convex fallback.
+ * CRITICAL: Supabase calls have an 8-second timeout so they never eat the
+ * full Vercel 10-second function budget, leaving time for the seeded fallback.
  */
 
 import { unstable_cache, revalidateTag } from "next/cache";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import {
-  getConvexPartyTotals,
-  getConvexGlobalStats,
-  getConvexStateBreakdown,
-  getConvexSimConfig,
-} from "./convex-http";
+// Convex removed — all data comes from Supabase or seeded fallback
 
 // ── Seeded election data (used when Supabase + Convex are both empty/down) ──
 // Uses a deterministic PRNG so the same data appears on every request.
@@ -258,42 +253,6 @@ export const getCachedStats = unstable_cache(
 
     if (sbResult) return sbResult;
 
-    // ── Fallback: Convex (also with timeout) ──
-    const convexResult = await withTimeout(
-      (async () => {
-        const convexStats = await getConvexGlobalStats();
-        const convexStates = await getConvexStateBreakdown();
-
-        if (!convexStats || convexStats.covered_polling_units === 0) return null;
-
-        return {
-          inec_total_polling_units: totalPUCount,
-          total_polling_units: convexStats.total_polling_units,
-          covered_polling_units: convexStats.covered_polling_units,
-          verified_polling_units: convexStats.verified_polling_units,
-          state_breakdown: (convexStates || []).map((s: any) => ({
-            state_id: s.state_id,
-            state_name: s.state_name,
-            name: s.state_name,
-            total_pus: s.total_pus,
-            covered: s.covered_pus,
-            verified: s.verified_pus,
-            coverage_percent: s.total_pus > 0 ? Number(((s.covered_pus / s.total_pus) * 100).toFixed(1)) : 0,
-            verification_percent: s.total_pus > 0 ? Number(((s.verified_pus / s.total_pus) * 100).toFixed(1)) : 0,
-          })),
-          coverage_percent: convexStats.coverage_percent,
-          verification_percent: convexStats.verification_percent,
-          last_updated: new Date().toISOString(),
-          disclaimer: "These are independently collected field observations and are not official INEC election results.",
-          source: "convex" as const,
-        };
-      })(),
-      SB_TIMEOUT_MS,
-      "convex:stats"
-    );
-
-    if (convexResult) return convexResult;
-
     // ── Last resort: return seeded election data ──
     return getSeededStats(totalPUCount);
   },
@@ -368,42 +327,8 @@ export const getCachedPartyResults = unstable_cache(
 
     if (sbResult) return sbResult;
 
-    // ── Fallback: Convex ──
-    const convexResult = await withTimeout(
-      (async () => {
-        const convexParties = await getConvexPartyTotals();
-        if (!convexParties || convexParties.length === 0) return null;
-
-        const grandTotal = convexParties.reduce(
-          (sum: number, p: any) => sum + p.total_votes, 0
-        );
-
-        return {
-          parties: convexParties.map((p: any) => ({
-            name: p.name,
-            abbreviation: p.abbreviation,
-            color: p.color,
-            total_votes: p.total_votes,
-            percentage: grandTotal > 0 ? Number(((p.total_votes / grandTotal) * 100).toFixed(1)) : 0,
-          })),
-          grand_total: grandTotal,
-          total_results: 0,
-          verified_results: 0,
-          last_updated: new Date().toISOString(),
-          source: "convex" as const,
-        };
-      })(),
-      SB_TIMEOUT_MS,
-      "convex:party-results"
-    );
-
-    if (convexResult) return convexResult;
-
     // ── Last resort: return seeded election data ──
-    // When both Supabase and Convex are empty/down, show realistic data
-    // so the live site always has meaningful content.
-    const seeded = getSeededPartyResults();
-    return seeded;
+    return getSeededPartyResults();
   },
   ["party-results-v5"],
   {
@@ -462,35 +387,6 @@ export const getCachedConfig = unstable_cache(
     );
 
     if (sbResult) return sbResult;
-
-    // ── Fallback: Convex ──
-    const convexResult = await withTimeout(
-      (async () => {
-        const convexConfig = await getConvexSimConfig();
-        if (!convexConfig) return null;
-
-        const isRunning = convexConfig.status === "RUNNING";
-        return {
-          election_type: convexConfig.election_type || "PRESIDENTIAL",
-          title: convexConfig.election_type === "GOVERNORSHIP"
-            ? "Governorship & State Assembly Election"
-            : "Presidential & National Assembly Election",
-          subtitle: convexConfig.election_type === "GOVERNORSHIP"
-            ? "6 February 2027"
-            : "16 January 2027",
-          date: convexConfig.election_type === "GOVERNORSHIP" ? "2027-02-06" : "2027-01-16",
-          total_polling_units: totalPUCount,
-          display_status: isRunning ? "SIMULATION" : (convexConfig.status === "COMPLETED" ? "LIVE" : "LIVE"),
-          status_label: isRunning ? "Simulation Running" : "Live Election Data",
-          total_results: convexConfig.results_processed || 0,
-          source: "convex" as const,
-        };
-      })(),
-      SB_TIMEOUT_MS,
-      "convex:config"
-    );
-
-    if (convexResult) return convexResult;
 
     // ── Last resort: return seeded config ──
     return {

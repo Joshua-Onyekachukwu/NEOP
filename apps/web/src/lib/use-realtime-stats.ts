@@ -3,16 +3,10 @@
 /**
  * useRealtimeStats — Hybrid real-time data hook
  *
- * Strategy:
- * 1. If Convex is configured → use Convex useQuery (real-time push, no polling)
- * 2. If Convex is not configured → fall back to Supabase polling (existing behavior)
- *
- * This means the dashboard works immediately with Supabase, and gains real-time
- * push updates when Convex is connected — zero code changes needed in components.
+ * Strategy: Polls Supabase REST API every 10 seconds for live data.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useConvexContext } from "./convex-provider";
+import { useState, useEffect } from "react";
 
 // ── Types ──
 export interface LiveStats {
@@ -51,9 +45,6 @@ export interface ElectionConfig {
   total_results: number;
 }
 
-// NOTE: Convex useQuery is NOT used in this hook.
-// This hook uses REST polling for Supabase data.
-
 /**
  * Fetch data from Supabase public API with caching.
  */
@@ -71,10 +62,9 @@ async function fetchAPI<T>(path: string, ttl = 10000): Promise<T | null> {
 
 /**
  * Real-time stats hook.
- * Uses Convex if configured, otherwise polls Supabase.
+ * Polls Supabase REST API.
  */
 export function useRealtimeStats(refreshKey = 0): LiveStats | null {
-  const { isConfigured } = useConvexContext();
   const [stats, setStats] = useState<LiveStats | null>(null);
 
   // Supabase polling path
@@ -96,7 +86,6 @@ export function useRealtimeStats(refreshKey = 0): LiveStats | null {
  * Real-time party results hook.
  */
 export function useRealtimePartyResults(refreshKey = 0): PartyResultsData | null {
-  const { isConfigured } = useConvexContext();
   const [data, setData] = useState<PartyResultsData | null>(null);
 
   useEffect(() => {
