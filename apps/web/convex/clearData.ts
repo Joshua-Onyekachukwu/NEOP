@@ -21,15 +21,14 @@ export const clearAllData = action({
       let hasMore = true;
       let batchCount = 0;
       while (hasMore) {
-        const result = await ctx.runMutation("stats:clearBatch" as any, {
+        const result = await ctx.runMutation("stats:clearBatchFast" as any, {
           table,
-          batchSize: 500,
         });
         totalDeleted += result.deleted;
         hasMore = result.hasMore;
         batchCount++;
-        // Safety: max 200 batches per table (100K docs max per table)
-        if (batchCount > 200) break;
+        // Safety: max 100 batches per table (500K docs max per table)
+        if (batchCount > 100) break;
       }
       console.log(`[clearAllData] Cleared ${table}: ${batchCount} batches`);
     }

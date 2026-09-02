@@ -482,7 +482,7 @@ export const clearBatch = mutation({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize || 500;
+    const batchSize = args.batchSize || 2000; // Increased from 500 to 2000
     const validTables = ["party_results", "results", "state_stats", "party_totals", "live_stats", "sim_config"] as const;
     if (!validTables.includes(args.table as typeof validTables[number])) {
       return { deleted: 0, hasMore: false };
@@ -498,6 +498,103 @@ export const clearBatch = mutation({
   },
 });
 
+// Fast clear: deletes up to 5000 docs per call for large tables
+// Used by clearAllData action for faster clearing between simulations
+export const clearBatchFast = mutation({
+  args: {
+    table: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const BATCH = 5000;
+    const validTables = ["party_results", "results", "state_stats", "party_totals", "live_stats", "sim_config"] as const;
+    if (!validTables.includes(args.table as typeof validTables[number])) {
+      return { deleted: 0, hasMore: false };
+    }
+
+    const docs = await ctx.db.query(args.table as typeof validTables[number]).take(BATCH);
+    for (const doc of docs) await ctx.db.delete(doc._id);
+
+    return {
+      deleted: docs.length,
+      hasMore: docs.length >= BATCH,
+    };
+  },
+});
+
 // NOTE: clearSimulationData was removed because it exceeded Convex's 32K doc scan limit
 // on large tables (e.g. 419K party_results). Use clearBatch() instead — call it repeatedly
 // from an action or HTTP endpoint until hasMore=false.
+
+// ── Batch Tracking (idempotency + failure recovery) ──
+
+export const logBatch = mutation({
+  args: {
+    simulationId: v.string(),
+    batchIndex: v.number(),
+    status: v.string(),
+    offset: v.number(),
+    limit: v.number(),
+    results_inserted: v.optional(v.number()),
+    party_results_inserted: v.optional(v.number()),
+    error_message: v.optional(v.string()),
+    started_at: v.optional(v.number()),
+    completed_at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("batch_log")
+      .withIndex("by_simulation", (q) =>
+        q.eq("simulation_id", args.simulationId).eq("batch_index", args.batchIndex)
+      )
+      .first();
+
+    const data = {
+      simulation_id: args.simulationId,
+      batch_index: args.batchIndex,
+      status: args.status,
+      offset: args.offset,
+      limit: args.limit,
+      results_inserted: args.results_inserted || 0,
+      party_results_inserted: args.party_results_inserted || 0,
+      error_message: args.error_message,
+      started_at: args.started_at,
+      completed_at: args.completed_at,
+      retry_count: existing ? (existing.retry_count || 0) + (args.status === "RUNNING" ? 1 : 0) : 0,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, data);
+    } else {
+      await ctx.db.insert("batch_log", data);
+    }
+  },
+});
+
+export const getBatchStatus = query({
+  args: {
+    simulationId: v.string(),
+    batchIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db
+      .query("batch_log")
+      .withIndex("by_simulation", (q) =>
+        q.eq("simulation_id", args.simulationId).eq("batch_index", args.batchIndex)
+      )
+      .first();
+    return batch || null;
+  },
+});
+
+export const getFailedBatches = query({
+  args: {
+    simulationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const batches = await ctx.db
+      .query("batch_log")
+      .withIndex("by_status", (q) => q.eq("status", "FAILED"))
+      .collect();
+    return batches.filter((b) => b.simulation_id === args.simulationId);
+  },
+});
