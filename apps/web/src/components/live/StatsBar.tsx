@@ -12,6 +12,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const inecTotal = stats.inec_total_polling_units;
   const covered = stats.covered_polling_units;
   const verified = stats.verified_polling_units;
+  const hasData = covered > 0 || verified > 0;
 
   const coveragePercent = inecTotal > 0 ? Math.min((covered / inecTotal) * 100, 100) : 0;
   const verificationPercent = inecTotal > 0 ? Math.min((verified / inecTotal) * 100, 100) : 0;
@@ -25,7 +26,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           className="font-display font-bold text-2xl md:text-3xl text-[var(--color-green-bright)]"
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {coveragePercent.toFixed(1)}%
+          {hasData ? `${coveragePercent.toFixed(1)}%` : "—"}
         </div>
         <div className="mt-[6px] h-[3px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
           <div
@@ -34,7 +35,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           />
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[4px]">
-          {covered.toLocaleString()} of {inecTotal.toLocaleString()} PUs
+          {hasData ? `${covered.toLocaleString()} of ${inecTotal.toLocaleString()} PUs` : `Awaiting simulation data`}
         </div>
       </div>
 
@@ -45,7 +46,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]"
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {verificationPercent.toFixed(1)}%
+          {hasData ? `${verificationPercent.toFixed(1)}%` : "—"}
         </div>
         <div className="mt-[6px] h-[3px] bg-[var(--color-gray-100)] rounded-full overflow-hidden">
           <div
@@ -54,21 +55,21 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           />
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[4px]">
-          {verified.toLocaleString()} results confirmed
+          {hasData ? `${verified.toLocaleString()} results confirmed` : `No results yet`}
         </div>
       </div>
 
-      {/* Observers */}
+      {/* Total Votes */}
       <div className="py-[14px] md:py-[16px] px-[14px] md:px-[20px] border-r border-[var(--color-gray-100)]">
-        <div className="stat-label mb-[4px]">Observers</div>
+        <div className="stat-label mb-[4px]">Total Votes</div>
         <div
           className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]"
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {stats.total_votes > 0 ? Math.floor(stats.total_votes / 1000).toLocaleString() : "0"}
+          {stats.total_votes > 0 ? `${(stats.total_votes / 1_000_000).toFixed(1)}M` : "—"}
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[10px]">
-          in the field right now
+          {stats.total_votes > 0 ? `across all polling units` : `awaiting results`}
         </div>
       </div>
 

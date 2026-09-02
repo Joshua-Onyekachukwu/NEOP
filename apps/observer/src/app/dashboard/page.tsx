@@ -2,231 +2,181 @@
 
 import { useState, useEffect } from 'react';
 
-type AssignmentStatus = 'NOT_CHECKED_IN' | 'CHECKED_IN' | 'SUBMITTED';
+/**
+ * Observer Dashboard — Public live election view.
+ * Observers don't need to log in; they just view the live results.
+ */
 
-interface Assignment {
-  id: string;
-  polling_unit_name: string;
-  polling_unit_code: string;
-  state: string;
-  lga: string;
-  ward: string;
-  election_name: string;
-  observer_number: number;
-  status: AssignmentStatus;
-  has_submitted_result: boolean;
-  check_in_time: string | null;
+interface PartyResult {
+  name: string;
+  abbreviation: string;
+  color: string;
+  total_votes: number;
+  percentage: number;
 }
 
-interface QuickActionsProps {
-  assignment: Assignment;
-  onCheckIn: () => void;
-  onSubmitResult: () => void;
-  onReportIncident: () => void;
-  onFeelUnsafe: () => void;
-  onCheckOut: () => void;
+interface GlobalStats {
+  inec_total_polling_units: number;
+  covered_polling_units: number;
+  verified_polling_units: number;
+  total_votes: number;
+  coverage_percent: number;
 }
 
 export default function ObserverDashboard() {
-  const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [parties, setParties] = useState<PartyResult[]>([]);
+  const [stats, setStats] = useState<GlobalStats | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [queuedSubmissions, setQueuedSubmissions] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
 
   // Monitor online status
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     setIsOnline(navigator.onLine);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  // TODO: Load assignment from Supabase
-  // const { data: assignment } = useQuery(api.observer.getMyAssignment);
-
-  const handleCheckIn = async () => {
-    // TODO: Submit check-in with optional location
-    // await fetch('/api/me/check-in', { ... });
-    if (assignment) {
-      setAssignment({ ...assignment, status: 'CHECKED_IN', check_in_time: new Date().toISOString() });
-    }
+  // Fetch live data from public API
+  const fetchData = async () => {
+    try {
+      const [partyRes, statsRes] = await Promise.all([
+        fetch('/api/public/party-results'),
+        fetch('/api/public/stats'),
+      ]);
+      if (partyRes.ok) {
+        const data = await partyRes.json();
+        setParties(data.parties || []);
+      }
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setStats({
+          inec_total_polling_units: data.inec_total_polling_units || 176846,
+          covered_polling_units: data.covered_polling_units || 0,
+          verified_polling_units: data.verified_polling_units || 0,
+          total_votes: data.total_votes || 0,
+          coverage_percent: data.coverage_percent || 0,
+        });
+      }
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch {}
   };
 
-  const handleSubmitResult = () => {
-    window.location.href = '/submit-result';
-  };
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handleReportIncident = () => {
-    window.location.href = '/report-incident';
-  };
-
-  const handleFeelUnsafe = () => {
-    window.location.href = '/safety';
-  };
-
-  const handleCheckOut = async () => {
-    // TODO: Submit check-out
-    if (assignment) {
-      setAssignment({ ...assignment, status: 'NOT_CHECKED_IN' });
-    }
-  };
+  const grandTotal = parties.reduce((sum, p) => sum + (p.total_votes || 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Offline banner */}
       {!isOnline && (
-        <div className="offline-banner">
-          ⚠ Offline — Submissions will be queued and sent when connectivity is
-          restored
+        <div className="bg-red-600 text-white text-center py-2 text-sm font-bold">
+          ⚠ Offline — Data may not be current
         </div>
       )}
 
       {/* Header */}
-      <div className="bg-[var(--color-primary)] px-4 py-4 text-white">
+      <div className="bg-[#1B5E20] px-4 py-4 text-white">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold">My Assignment</h1>
-          <div className="flex items-center gap-2">
-            {queuedSubmissions > 0 && (
-              <div className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold">
-                {queuedSubmissions} queued
-              </div>
-            )}
-            <div
-              className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-red-400'}`}
-            />
+          <div>
+            <h1 className="text-lg font-bold">Nigeria Election Live</h1>
+            <p className="text-xs opacity-75">Presidential Election 2027</p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs opacity-75">Last updated</div>
+            <div className="text-sm font-mono">{lastUpdated || '---'}</div>
           </div>
         </div>
       </div>
 
-      {assignment ? (
-        <div className="p-4">
-          {/* Assignment Card */}
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  {assignment.polling_unit_name}
-                </h2>
-                <p className="text-sm text-gray-500">
-                  {assignment.polling_unit_code}
-                </p>
+      {/* Stats Bar */}
+      {stats && (
+        <div className="bg-white border-b border-gray-200 px-4 py-3">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="text-lg font-bold text-[#1B5E20]">
+                {stats.coverage_percent.toFixed(1)}%
               </div>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  assignment.status === 'CHECKED_IN'
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                {assignment.status === 'CHECKED_IN' ? 'CHECKED IN' : 'NOT CHECKED IN'}
-              </span>
+              <div className="text-xs text-gray-500">Coverage</div>
             </div>
-
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">State:</span>
-                <span className="font-medium">{assignment.state}</span>
+            <div>
+              <div className="text-lg font-bold">
+                {stats.covered_polling_units.toLocaleString()}
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">LGA:</span>
-                <span className="font-medium">{assignment.lga}</span>
+              <div className="text-xs text-gray-500">PUs Reported</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold">
+                {grandTotal > 0 ? (grandTotal / 1_000_000).toFixed(1) + 'M' : '0'}
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Ward:</span>
-                <span className="font-medium">{assignment.ward}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Observer:</span>
-                <span className="font-medium">#{assignment.observer_number}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Election:</span>
-                <span className="font-medium">{assignment.election_name}</span>
-              </div>
-              {assignment.check_in_time && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Checked in:</span>
-                  <span className="font-medium">
-                    {new Date(assignment.check_in_time).toLocaleTimeString()}
-                  </span>
-                </div>
-              )}
+              <div className="text-xs text-gray-500">Total Votes</div>
             </div>
           </div>
-
-          {/* Quick Actions */}
-          <div className="mt-6 space-y-3">
-            {assignment.status !== 'CHECKED_IN' ? (
-              <button
-                onClick={handleCheckIn}
-                className="w-full touch-target rounded-lg bg-[var(--color-primary)] py-4 text-base font-bold text-white shadow-sm hover:bg-[var(--color-primary-light)] active:bg-[var(--color-primary-dark)]"
-              >
-                ✓ CHECK IN
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={handleSubmitResult}
-                  className="w-full touch-target rounded-lg bg-green-600 py-4 text-base font-bold text-white shadow-sm hover:bg-green-700 active:bg-green-800"
-                >
-                  📊 SUBMIT RESULT
-                </button>
-
-                <button
-                  onClick={handleReportIncident}
-                  className="w-full touch-target rounded-lg border-2 border-orange-400 bg-white py-4 text-base font-bold text-orange-700 shadow-sm hover:bg-orange-50"
-                >
-                  ⚠ REPORT INCIDENT
-                </button>
-
-                <button
-                  onClick={handleCheckOut}
-                  className="w-full touch-target rounded-lg border border-gray-300 bg-white py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Check Out
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Safety Button */}
-          <div className="mt-8">
-            <button onClick={handleFeelUnsafe} className="emergency-btn">
-              🚨 I FEEL UNSAFE
-            </button>
-            <p className="mt-2 text-center text-xs text-gray-500">
-              This will stop your field activity and alert your coordinator
-            </p>
-          </div>
-
-          {/* Offline Status */}
-          {queuedSubmissions > 0 && (
-            <div className="mt-4">
-              <div className="queued-indicator">
-                {queuedSubmissions} submission{queuedSubmissions !== 1 ? 's' : ''}{' '}
-                queued for upload
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* No Assignment */
-        <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
-          <div className="text-4xl">📋</div>
-          <h2 className="mt-4 text-lg font-bold text-gray-900">No Assignment</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            You don&apos;t have an active polling unit assignment yet. Check back
-            closer to election day or contact your coordinator.
-          </p>
         </div>
       )}
+
+      {/* Party Results */}
+      <div className="p-4">
+        <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">
+          Party Results
+        </h2>
+        {parties.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-4xl mb-2">⏳</div>
+            <p className="text-sm">Waiting for election data...</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {parties.map((party, i) => (
+              <div key={party.abbreviation} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: party.color }}
+                    />
+                    <span className="font-bold text-gray-900">
+                      {party.abbreviation}
+                    </span>
+                    <span className="text-xs text-gray-500 hidden sm:inline">
+                      {party.name}
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold">
+                    {party.percentage}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-3">
+                  <div
+                    className="h-3 rounded-full transition-all duration-700"
+                    style={{
+                      width: `${Math.min(party.percentage, 100)}%`,
+                      backgroundColor: party.color,
+                    }}
+                  />
+                </div>
+                <div className="mt-2 text-right font-mono text-sm text-gray-600">
+                  {party.total_votes.toLocaleString()} votes
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-6 text-center text-xs text-gray-400">
+        These are independently collected field observations and are not official INEC election results.
+      </div>
     </div>
   );
 }

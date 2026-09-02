@@ -133,7 +133,7 @@ export const syncSimulationToConvex = action({
           covered_pus: 0,
           verified_pus: 0,
           total_votes: 0,
-          ndc_votes: 0, apc_votes: 0, adc_votes: 0, others_votes: 0,
+          ndc_votes: 0, apc_votes: 0, pdp_votes: 0, lp_votes: 0, nnpp_votes: 0, apga_votes: 0, sdp_votes: 0, ypp_votes: 0, adc_votes: 0,
         };
       }
 

@@ -89,8 +89,13 @@ export default defineSchema({
     turnout_percent: v.number(),
     ndc_votes: v.number(),
     apc_votes: v.number(),
+    pdp_votes: v.number(),
+    lp_votes: v.number(),
+    nnpp_votes: v.number(),
+    apga_votes: v.number(),
+    sdp_votes: v.number(),
+    ypp_votes: v.number(),
     adc_votes: v.number(),
-    others_votes: v.number(),
     updated_at: v.number(),
   })
     .index("by_state", ["state_name"])
