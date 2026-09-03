@@ -165,26 +165,9 @@ $$;
 GRANT EXECUTE ON FUNCTION run_sim_upgraded(TEXT, BIGINT) TO service_role;
 
 
--- STEP 3: How to run it
+-- STEP 3: Run the simulation
 -- ============================================================
--- Run this SELECT in SQL Editor:
---
--- SELECT run_sim_upgraded('landslide', 20000000);
---
--- Or for a close race:
--- SELECT run_sim_upgraded('close', 20000000);
---
--- Expected output:
--- {
---   "success": true,
---   "scenario": "landslide",
---   "total_pus": 176846,
---   "active_pus": 162703,
---   "disrupted_pus": 14143,
---   "results_created": 176846,
---   "total_votes": ~18000000,
---   "avg_turnout": "85-95%"
--- }
+SELECT run_sim_upgraded('landslide', 20000000);
 
 
 -- STEP 4: Verify the results
