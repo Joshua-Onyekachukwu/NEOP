@@ -193,11 +193,12 @@ GRANT EXECUTE ON FUNCTION run_sim_upgraded(TEXT, BIGINT) TO service_role;
 
 -- Total votes and party breakdown
 SELECT
-  (jsonb_each_text(party_votes)).key AS party,
-  SUM((jsonb_each_text(party_votes)).value::BIGINT) AS total_votes
-FROM result_submissions
+  f.party,
+  SUM(f.votes::BIGINT) AS total_votes
+FROM result_submissions,
+  LATERAL jsonb_each_text(party_votes) AS f(party, votes)
 WHERE party_votes IS NOT NULL
-GROUP BY (jsonb_each_text(party_votes)).key
+GROUP BY f.party
 ORDER BY total_votes DESC;
 
 -- PU status breakdown

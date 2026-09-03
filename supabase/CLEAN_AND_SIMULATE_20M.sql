@@ -200,13 +200,13 @@ SELECT sum(total_votes) AS total_votes FROM result_submissions;
 
 -- Party breakdown
 SELECT
-  key AS party,
-  sum(value::BIGINT) AS total_votes,
-  ROUND(sum(value::BIGINT) * 100.0 / (SELECT sum(total_votes) FROM result_submissions WHERE party_votes IS NOT NULL), 1) AS pct
+  f.party,
+  sum(f.votes::BIGINT) AS total_votes,
+  ROUND(sum(f.votes::BIGINT) * 100.0 / (SELECT sum(total_votes) FROM result_submissions WHERE party_votes IS NOT NULL), 1) AS pct
 FROM result_submissions,
-  jsonb_each_text(party_votes)
+  LATERAL jsonb_each_text(party_votes) AS f(party, votes)
 WHERE party_votes IS NOT NULL
-GROUP BY key
+GROUP BY f.party
 ORDER BY total_votes DESC;
 
 -- Simulation config
