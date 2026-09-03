@@ -2,12 +2,10 @@
 
 ## Current Status
 - **Live Site:** https://ngeop.vercel.app/
-- **Convex (new):** https://proper-panda-143.convex.cloud
-- **Convex (old - still on live):** https://blessed-caribou-851.convex.cloud
 - **Supabase:** https://lvtfrfrnqxqwjuematum.supabase.co
 
-## Issue
-The live site is using the **old Convex deployment** (`blessed-caribou-851`) which only has 46,560 PUs. The new deployment (`proper-panda-143`) has 176,846 PUs with coordinates and simulation data.
+## Architecture
+All data lives in Supabase. Simulation engine runs as SQL functions. No external services required.
 
 ## Deployment Options
 
@@ -44,8 +42,6 @@ VERCEL_TOKEN=your_token npx vercel --yes --prod
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://lvtfrfrnqxqwjuematum.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | (from Supabase dashboard) |
 | `SUPABASE_SERVICE_ROLE_KEY` | (from Supabase dashboard) |
-| `NEXT_PUBLIC_CONVEX_URL` | `https://proper-panda-143.convex.cloud` |
-| `CONVEX_DEPLOY_KEY` | `preview:joshua-onyekachukwu:neop\|eyJ2MiI6...` |
 
 ## After Deployment
 
