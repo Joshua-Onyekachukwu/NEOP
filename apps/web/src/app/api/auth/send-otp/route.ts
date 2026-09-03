@@ -40,19 +40,8 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('OTP send error:', error.message);
-      // Fall back to generating our own OTP and storing it
-      // This handles cases where Supabase phone provider isn't configured
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // Store OTP with 5-minute expiry in a simple table or memory
-      // For now, return success with the OTP for testing
-      return NextResponse.json({
-        success: true,
-        phone: normalizedPhone,
-        message: 'OTP sent successfully',
-        // In production, remove this — only for testing
-        _testOtp: otp,
-      });
+      // Phone provider not configured — fail securely
+      return NextResponse.json({ error: 'Phone verification not configured' }, { status: 503 });
     }
 
     return NextResponse.json({
