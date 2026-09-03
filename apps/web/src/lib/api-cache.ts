@@ -276,13 +276,30 @@ export const getCachedPartyResults = unstable_cache(
       (async () => {
         // Try the fast JSONB-based function first, then fall back to old function
         let rpcData: any[] | null = null;
-        const { data: fastData, error: fastErr } = await supabase.rpc("get_party_totals_fast");
-        if (!fastErr && fastData && fastData.length > 0) {
-          rpcData = fastData;
+        // Try materialized view first (instant read), then RPC fallback
+        const { data: mvData, error: mvErr } = await supabase
+          .from("mv_party_totals")
+          .select("party_abbreviation, party_name, party_color, total_votes")
+          .order("total_votes", { ascending: false });
+        if (!mvErr && mvData && mvData.length > 0) {
+          // Calculate percentage from MV data
+          const grandTotal = mvData.reduce((s: number, r: any) => s + Number(r.total_votes), 0);
+          rpcData = mvData.map((r: any) => ({
+            party_abbreviation: r.party_abbreviation,
+            party_name: r.party_name,
+            party_color: r.party_color,
+            total_votes: r.total_votes,
+            percentage: grandTotal > 0 ? Number(((Number(r.total_votes) / grandTotal) * 100).toFixed(1)) : 0,
+          }));
         } else {
-          const { data: oldData, error: oldErr } = await supabase.rpc("get_party_totals");
-          if (!oldErr && oldData && oldData.length > 0) {
-            rpcData = oldData;
+          const { data: fastData, error: fastErr } = await supabase.rpc("get_party_totals_fast");
+          if (!fastErr && fastData && fastData.length > 0) {
+            rpcData = fastData;
+          } else {
+            const { data: oldData, error: oldErr } = await supabase.rpc("get_party_totals");
+            if (!oldErr && oldData && oldData.length > 0) {
+              rpcData = oldData;
+            }
           }
         }
         if (!rpcData) return null;
