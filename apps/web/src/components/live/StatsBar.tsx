@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useRealtimeData } from "@/components/live/ConvexRealtimeLayer";
+import { useRealtimeData } from "@/components/live/RealtimeLayer";
 import StatsBarSkeleton from "@/components/live/skeletons/StatsBarSkeleton";
 
 const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
