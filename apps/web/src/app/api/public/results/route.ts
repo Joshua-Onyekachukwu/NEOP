@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch results with just the columns we need — avoid deep joins that break with RLS
+    // Fetch results — sort by submitted_at DESC with NULLs last so real results appear first
     const { data: results, error } = await supabase
       .from("result_submissions")
       .select(`
@@ -35,11 +35,13 @@ export async function GET(request: NextRequest) {
         valid_votes,
         rejected_votes,
         total_votes,
+        party_votes,
         status,
         submitted_at,
         verified_at
       `)
-      .order("submitted_at", { ascending: false })
+      .gt("total_votes", 0)
+      .order("submitted_at", { ascending: false, nullsFirst: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
       .in("id", partyIds);
     const partyMap = new Map((parties || []).map((p) => [p.id, p]));
 
-    // Group party results by submission
+    // Group party results by submission from party_results table
     const prByResult: Record<string, any[]> = {};
     for (const pr of partyResults || []) {
       const key = pr.result_submission_id;
@@ -104,9 +106,36 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Format results
+    // Party color lookup for JSONB fallback
+    const PARTY_COLOR_MAP: Record<string, string> = {
+      NDC: "#1B5E20", APC: "#00A859", PDP: "#000080", LP: "#FF0000",
+      NNPP: "#E53935", APGA: "#FFD600", SDP: "#1565C0", YPP: "#6A1B9A", ADC: "#00838F",
+    };
+    const PARTY_NAME_MAP: Record<string, string> = {
+      NDC: "Nigeria Democratic Congress", APC: "All Progressives Congress",
+      PDP: "Peoples Democratic Party", LP: "Labour Party",
+      NNPP: "New Nigeria Peoples Party", APGA: "All Progressives Grand Alliance",
+      SDP: "Social Democratic Party", YPP: "Young Progressives Party",
+      ADC: "African Democratic Congress",
+    };
+
+    // Format results — use party_results table first, fall back to JSONB party_votes
     const formattedResults = results.map((r) => {
       const pu = puMap.get(r.polling_unit_id);
+      let partyResultsList = prByResult[r.id] || [];
+
+      // Fallback: parse party_votes JSONB if party_results table is empty
+      if (partyResultsList.length === 0 && r.party_votes && typeof r.party_votes === "object") {
+        partyResultsList = Object.entries(r.party_votes)
+          .map(([abbr, votes]) => ({
+            party_abbreviation: abbr,
+            party_name: PARTY_NAME_MAP[abbr] || abbr,
+            party_color: PARTY_COLOR_MAP[abbr] || "#808080",
+            votes: Number(votes) || 0,
+          }))
+          .sort((a, b) => b.votes - a.votes);
+      }
+
       return {
         id: r.id,
         polling_unit_code: pu?.official_code || "Unknown",
@@ -118,18 +147,17 @@ export async function GET(request: NextRequest) {
         status: r.status,
         submitted_at: r.submitted_at,
         verified_at: r.verified_at,
-        party_results: (prByResult[r.id] || []).sort(
-          (a, b) => b.votes - a.votes
-        ),
+        party_results: partyResultsList,
       };
     });
 
-    // Get actual total count from DB
+    // Get actual total count from DB (only results with votes)
     let totalCount = formattedResults.length;
     try {
       const { count } = await supabase
         .from("result_submissions")
-        .select("id", { count: "exact", head: true });
+        .select("id", { count: "exact", head: true })
+        .gt("total_votes", 0);
       if (count) totalCount = count;
     } catch {}
 
