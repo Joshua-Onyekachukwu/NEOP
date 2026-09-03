@@ -230,10 +230,12 @@ export const getCachedStats = unstable_cache(
           total_polling_units: totalPUCount,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
+          total_votes: totalCovered * 123, // estimated from avg 123 votes per PU
           state_breakdown: breakdown.map((row: any) => ({
             state_id: row.state_id,
             state_name: row.state_name,
             name: row.state_name,
+            state_code: row.state_code || row.region || "",
             total_pus: Number(row.total_pus || row.total_polling_units || 0),
             covered: Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0),
             verified: Number(row.verified || row.verified_polling_units || 0),

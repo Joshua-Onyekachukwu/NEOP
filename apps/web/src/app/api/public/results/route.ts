@@ -124,12 +124,21 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Get actual total count from DB
+    let totalCount = formattedResults.length;
+    try {
+      const { count } = await supabase
+        .from("result_submissions")
+        .select("id", { count: "exact", head: true });
+      if (count) totalCount = count;
+    } catch {}
+
     const response = NextResponse.json({
       results: formattedResults,
       pagination: {
         limit,
         offset,
-        total: formattedResults.length,
+        total: totalCount,
       },
       disclaimer:
         "These are independently collected field observations and are not official INEC election results.",

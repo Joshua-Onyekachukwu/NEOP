@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useRealtimeData } from "@/components/live/ConvexRealtimeLayer";
+import { useRealtimeData } from "@/components/live/RealtimeLayer";
 import StateTableSkeleton from "@/components/live/skeletons/StateTableSkeleton";
 
 const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {

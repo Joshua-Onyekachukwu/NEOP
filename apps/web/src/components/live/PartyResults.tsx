@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { useRealtimeData } from "@/components/live/ConvexRealtimeLayer";
+import { useRealtimeData } from "@/components/live/RealtimeLayer";
 import PartyResultsSkeleton from "@/components/live/skeletons/PartyResultsSkeleton";
 import { PARTIES } from "@/lib/party-config";
 

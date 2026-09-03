@@ -179,22 +179,22 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
               </div>
 
               {/* Totals */}
-              <div className="flex items-center gap-[12px] font-mono text-xs">
+              <div className="flex items-center gap-[14px] font-mono text-xs">
                 <span className="text-[var(--color-text-dim)]">
-                  V:
-                  <span className="text-[var(--color-text-muted)] ml-[2px]">
+                  Valid:
+                  <span className="text-[var(--color-text-muted)] ml-[3px]">
                     {result.valid_votes.toLocaleString()}
                   </span>
                 </span>
                 <span className="text-[var(--color-text-dim)]">
-                  R:
-                  <span className="text-[var(--color-text-muted)] ml-[2px]">
+                  Rejected:
+                  <span className="text-[var(--color-text-muted)] ml-[3px]">
                     {result.rejected_votes.toLocaleString()}
                   </span>
                 </span>
                 <span className="text-[var(--color-text-dim)]">
-                  T:
-                  <span className="text-[var(--color-text)] font-bold ml-[2px]">
+                  Total:
+                  <span className="text-[var(--color-text)] font-bold ml-[3px]">
                     {result.total_votes.toLocaleString()}
                   </span>
                 </span>

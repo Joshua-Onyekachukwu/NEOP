@@ -6,7 +6,7 @@ import "./globals.css";
 import { Space_Grotesk, DM_Sans, JetBrains_Mono } from "next/font/google";
 import Navbar from "@/components/Layout/Navbar";
 import Footer from "@/components/Layout/Footer";
-// Convex removed — data comes from Supabase only
+import { RealtimeLayer } from "@/components/live/RealtimeLayer";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-display",
@@ -69,7 +69,9 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        {children}
+        <RealtimeLayer>
+          {children}
+        </RealtimeLayer>
         <Footer />
       </body>
     </html>
