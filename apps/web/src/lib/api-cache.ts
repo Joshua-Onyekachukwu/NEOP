@@ -225,12 +225,23 @@ export const getCachedStats = unstable_cache(
           totalVerified += Number(row.verified || row.verified_polling_units || 0);
         }
 
+        // Get real total votes from MV or estimate
+        let realTotalVotes = 0;
+        try {
+          const { data: mvData } = await supabase
+            .from("mv_party_totals")
+            .select("total_votes");
+          if (mvData && mvData.length > 0) {
+            realTotalVotes = mvData.reduce((sum: number, r: any) => sum + Number(r.total_votes || 0), 0);
+          }
+        } catch {}
+
         return {
           inec_total_polling_units: totalPUCount,
           total_polling_units: totalPUCount,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
-          total_votes: totalCovered * 123, // estimated from avg 123 votes per PU
+          total_votes: realTotalVotes || totalCovered * 123, // use MV total, fallback to estimate
           state_breakdown: breakdown.map((row: any) => ({
             state_id: row.state_id,
             state_name: row.state_name,
