@@ -36,16 +36,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      // For testing: accept any 6-digit code
-      if (/^\d{6}$/.test(token)) {
-        return NextResponse.json({
-          success: true,
-          phone: normalizedPhone,
-          verified: true,
-          message: 'Phone verified successfully',
-        });
-      }
-      return NextResponse.json({ error: 'Invalid OTP code' }, { status: 400 });
+      console.error('OTP verification error:', error.message);
+      return NextResponse.json({ error: 'Invalid or expired OTP code' }, { status: 400 });
     }
 
     return NextResponse.json({

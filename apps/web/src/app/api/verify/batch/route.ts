@@ -86,6 +86,10 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    // Require admin auth for viewing verification counts
+    const auth = await requireAdmin(request);
+    if (!isAdminSuccess(auth)) return auth.error;
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { count } = await supabase

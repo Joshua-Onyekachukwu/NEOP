@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    // Require admin auth for viewing verification details
+    const auth = await requireAdmin(request);
+    if (!isAdminSuccess(auth)) return auth.error;
+
     const resultId = request.nextUrl.searchParams.get('result_id');
     if (!resultId) {
       return NextResponse.json({ error: 'result_id is required' }, { status: 400 });
