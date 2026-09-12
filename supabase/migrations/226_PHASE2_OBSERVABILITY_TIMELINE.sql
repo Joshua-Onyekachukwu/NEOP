@@ -1,3 +1,9 @@
+-- ====================================================================
+-- DEPENDENCY ORDER: Run AFTER 223_CANONICAL_RESULTS_VERIFICATIONS_SYSCONFIG.sql
+--                   AND AFTER 224_PHASE2_DEAD_LETTER_RLS_IDOR.sql
+-- Requires tables: verifications, canonical_pu_results, result_submissions,
+--                  dead_letter_jobs (optional — trigger wrapped IF EXISTS)
+-- ====================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS verification_timeline_events (
@@ -231,10 +237,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE TRIGGER trg_dead_letter_timeline
-AFTER INSERT OR UPDATE OF retry_count ON dead_letter_jobs
-FOR EACH ROW
-EXECUTE FUNCTION fn_trg_dead_letter_timeline();
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dead_letter_jobs') THEN
+    CREATE TRIGGER trg_dead_letter_timeline
+    AFTER INSERT OR UPDATE OF retry_count ON dead_letter_jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_trg_dead_letter_timeline();
+  END IF;
+END $$;
 
 DROP VIEW IF EXISTS mv_observability_pipeline_dashboard;
 CREATE VIEW mv_observability_pipeline_dashboard AS

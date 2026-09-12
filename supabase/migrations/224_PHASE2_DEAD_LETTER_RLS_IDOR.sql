@@ -1,3 +1,7 @@
+-- ====================================================================
+-- DEPENDENCY ORDER: Run AFTER 223_CANONICAL_RESULTS_VERIFICATIONS_SYSCONFIG.sql
+-- Requires tables: canonical_pu_results, verifications, admin_users
+-- ====================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS dead_letter_jobs (
@@ -100,13 +104,23 @@ SELECT 'canonical_pu_results' AS table_name,
        COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
                  FROM (SELECT cr_inner.id, cr_inner.created_at FROM canonical_pu_results cr_inner
                        WHERE cr_inner.status NOT IN ('PUBLISHED','SUPERSEDED','REJECTED')
-                         AND cr_inner.published_by IS NOT NULL
-                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = cr_inner.published_by AND au.is_active = true)
+                         AND (cr_inner.source_submission_1 IS NOT NULL OR cr_inner.source_submission_2 IS NOT NULL)
+                         AND EXISTS (
+                           SELECT 1 FROM result_submissions rs1
+                           LEFT JOIN agent_assignments aa1 ON aa1.id = rs1.assignment_id
+                           WHERE rs1.id = cr_inner.source_submission_1
+                             AND (aa1.id IS NULL OR rs1.volunteer_id <> aa1.volunteer_id)
+                         )
                        ORDER BY cr_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM canonical_pu_results cr
 WHERE cr.status NOT IN ('PUBLISHED','SUPERSEDED','REJECTED')
-  AND cr.published_by IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = cr.published_by AND au.is_active = true)
+  AND (cr.source_submission_1 IS NOT NULL OR cr.source_submission_2 IS NOT NULL)
+  AND EXISTS (
+    SELECT 1 FROM result_submissions rs1
+    LEFT JOIN agent_assignments aa1 ON aa1.id = rs1.assignment_id
+    WHERE rs1.id = cr.source_submission_1
+      AND (aa1.id IS NULL OR rs1.volunteer_id <> aa1.volunteer_id)
+  )
 UNION ALL
 SELECT 'verifications' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
@@ -114,12 +128,12 @@ SELECT 'verifications' AS table_name,
                  FROM (SELECT v_inner.id, v_inner.created_at FROM verifications v_inner
                        WHERE v_inner.status IN ('MATCH','DISCREPANCY','RESOLVED_ADMIN')
                          AND v_inner.decided_by IS NOT NULL
-                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = v_inner.decided_by AND au.is_active = true)
+                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.user_id = v_inner.decided_by AND au.is_active = true)
                        ORDER BY v_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM verifications v
 WHERE v.status IN ('MATCH','DISCREPANCY','RESOLVED_ADMIN')
   AND v.decided_by IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = v.decided_by AND au.is_active = true)
+  AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.user_id = v.decided_by AND au.is_active = true)
 UNION ALL
 SELECT 'dead_letter_jobs' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
@@ -136,12 +150,12 @@ SELECT 'audit_log' AS table_name,
                  FROM (SELECT al_inner.id, al_inner.created_at FROM audit_log al_inner
                        WHERE al_inner.actor_type = 'ADMIN'
                          AND al_inner.actor_id IS NOT NULL
-                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = al_inner.actor_id AND au.is_active = true)
+                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.user_id = al_inner.actor_id AND au.is_active = true)
                        ORDER BY al_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM audit_log al
 WHERE al.actor_type = 'ADMIN'
   AND al.actor_id IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = al.actor_id AND au.is_active = true);
+  AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.user_id = al.actor_id AND au.is_active = true);
 
 DROP TRIGGER IF EXISTS trg_dead_letter_immutable_completed ON dead_letter_jobs;
 DROP FUNCTION IF EXISTS fn_trg_dead_letter_immutable_completed();

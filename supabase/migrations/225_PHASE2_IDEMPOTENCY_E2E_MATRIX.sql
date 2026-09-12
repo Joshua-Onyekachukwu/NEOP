@@ -1,3 +1,11 @@
+-- ====================================================================
+-- DEPENDENCY ORDER: Run AFTER 223_CANONICAL_RESULTS_VERIFICATIONS_SYSCONFIG.sql
+--                    Run AFTER 224_PHASE2_DEAD_LETTER_RLS_IDOR.sql
+-- Requires tables: canonical_pu_results, canonical_party_results, verifications,
+--                  elections, polling_units, parties, volunteers, agent_assignments,
+--                  user_accounts, admin_users, result_submissions
+-- Diagnostic-only — audit tool: run_idempotency_matrix_simulation() 6-scenario E2E
+-- ====================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 DROP FUNCTION IF EXISTS run_idempotency_matrix_simulation();

@@ -1,3 +1,13 @@
+-- ====================================================================
+-- ORDER 1/4 — RUN THIS FIRST
+-- Creates: system_config, canonical_pu_results (with EXCLUDE 1-PU constraint),
+--          canonical_party_results, verifications pairing table,
+--          RLS policies (anon PUBLISHED only, volunteer self, admin ALL),
+--          RPC publish_canonical_result, VIEW mv_public_published_results,
+--          publish audit trigger
+-- Prereqs: 222 and earlier migrations (elections, polling_units, parties,
+--          result_submissions, volunteers, agent_assignments, admin_users, audit_log)
+-- ====================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "btree_gist";
 
