@@ -1,0 +1,15 @@
+   ▲ Next.js 15.3.6
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.199:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 4.7s
+ ✓ Compiled /middleware in 163ms (108 modules)
+ ○ Compiling /api/auth/verify-otp ...
+ ✓ Compiled /api/auth/verify-otp in 710ms (407 modules)
+OTP verification error: Token has expired or is invalid
+ POST /api/auth/verify-otp 400 in 1981ms
+ ✓ Compiled /api/auth/send-otp in 442ms (409 modules)
+OTP send error: Unsupported phone provider
+ POST /api/auth/send-otp 503 in 3358ms

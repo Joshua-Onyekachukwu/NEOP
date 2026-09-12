@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@layer base {
+  /* Mobile-first: larger fonts, bigger touch targets */
+  html {
+    font-size: 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* High contrast for outdoor visibility */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Offline banner */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background-color: #c53030;
+  color: white;
+  text-align: center;
+  padding: 0.75rem;
+  z-index: 9999;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+/* Large touch targets - minimum 48px */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* Emergency button */
+.emergency-btn {
+  background-color: #c53030;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 1rem 1.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  width: 100%;
+  min-height: 56px;
+  cursor: pointer;
+}
+
+.emergency-btn:hover {
+  background-color: #9b2c2c;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .btn-primary {
+    border: 2px solid currentColor;
+  }
+  .card {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Safe area for mobile notches */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Loading spinner */
+.spinner {
+  border: 3px solid #e2e8f0;
+  border-top: 3px solid #1e3a5f;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Queued submission indicator */
+.queued-indicator {
+  background-color: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #92400e;
+}

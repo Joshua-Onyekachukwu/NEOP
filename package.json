@@ -1,0 +1,19 @@
+{
+  "name": "nigeria-election-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:observer": "npm run dev -w apps/observer",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "db:migrate": "supabase db push",
+    "db:generate": "supabase gen types typescript --local > packages/database/src/types.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
