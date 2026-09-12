@@ -1,0 +1,81 @@
+[2026-09-12T16:05:51.176Z] START
+[2026-09-12T16:05:51.180Z] CWD=c:\Users\Administrator\Webstrom\NEOP
+[2026-09-12T16:05:51.183Z] GITHUB_TOKEN set? NO
+[2026-09-12T16:05:51.186Z] has .git directory? true
+[2026-09-12T16:05:51.190Z] 
+=== git status: git.exe status --porcelain=v1
+[2026-09-12T16:05:51.658Z]   exit=0
+[2026-09-12T16:05:51.661Z]    M _logs/git-push-1789229096486.log
+[2026-09-12T16:05:51.664Z]   ?? _logs/git-push-1789229151174.log
+[2026-09-12T16:05:51.667Z]   ?? _logs/git-push-out-1789229096486.json
+[2026-09-12T16:05:51.670Z]   ?? _logs/spawn-err.log
+[2026-09-12T16:05:51.672Z]   ?? _logs/spawn-git-push.log
+[2026-09-12T16:05:51.675Z]   ?? _logs/spawn-out.log
+[2026-09-12T16:05:51.678Z] 
+=== git config user: git.exe config user.email neop-bot@neop.ng
+[2026-09-12T16:05:51.923Z]   exit=0
+[2026-09-12T16:05:51.926Z] 
+=== git config user.name: git.exe config user.name NEOP Bot
+[2026-09-12T16:05:52.233Z]   exit=0
+[2026-09-12T16:05:52.238Z] 
+=== git remote -v: git.exe remote -v
+[2026-09-12T16:05:52.553Z]   exit=0
+[2026-09-12T16:05:52.556Z]   origin	https://github.com/Joshua-Onyekachukwu/NEOP.git (fetch)
+[2026-09-12T16:05:52.559Z]   origin	https://github.com/Joshua-Onyekachukwu/NEOP.git (push)
+[2026-09-12T16:05:52.562Z] 
+=== git remote set-url origin: git.exe remote set-url origin https://github.com/Joshua-Onyekachukwu/NEOP.git
+[2026-09-12T16:05:52.843Z]   exit=0
+[2026-09-12T16:05:52.846Z] 
+=== git fetch origin main: git.exe fetch --depth=1 origin main
+[2026-09-12T16:05:55.496Z]   exit=0
+[2026-09-12T16:05:55.499Z]   From https://github.com/Joshua-Onyekachukwu/NEOP
+[2026-09-12T16:05:55.503Z]    * branch            main       -> FETCH_HEAD
+[2026-09-12T16:05:55.507Z] 
+=== git show --stat FETCH_HEAD --oneline | head -5: git.exe show --stat FETCH_HEAD --oneline -n 5
+[2026-09-12T16:05:57.848Z]   exit=0
+[2026-09-12T16:05:57.851Z]    supabase/migrations/inec_chunks_batched/PU_21.sql  |   6009 +
+[2026-09-12T16:05:57.853Z]    supabase/migrations/inec_chunks_batched/PU_22.sql  |   6009 +
+[2026-09-12T16:05:57.858Z]    supabase/migrations/inec_chunks_batched/PU_23.sql  |   6010 +
+[2026-09-12T16:05:57.861Z]    supabase/migrations/inec_chunks_batched/PU_24.sql  |   6010 +
+[2026-09-12T16:05:57.864Z]    supabase/migrations/inec_chunks_batched/PU_25.sql  |   6010 +
+[2026-09-12T16:05:57.866Z]    supabase/migrations/inec_chunks_batched/PU_26.sql  |   6012 +
+[2026-09-12T16:05:57.868Z]    supabase/migrations/inec_chunks_batched/PU_27.sql  |   6009 +
+[2026-09-12T16:05:57.871Z]    supabase/migrations/inec_chunks_batched/PU_28.sql  |   6009 +
+[2026-09-12T16:05:57.873Z]    supabase/migrations/inec_chunks_batched/PU_29.sql  |   6010 +
+[2026-09-12T16:05:57.876Z]    supabase/migrations/inec_chunks_batched/PU_30.sql  |   2852 +
+[2026-09-12T16:05:57.878Z]    supabase/schema.sql                                |    393 +
+[2026-09-12T16:05:57.880Z]    vercel.json                                        |     19 +
+[2026-09-12T16:05:57.883Z]    workers/ddos-protection/package.json               |     14 +
+[2026-09-12T16:05:57.885Z]    workers/ddos-protection/src/index.ts               |    269 +
+[2026-09-12T16:05:57.887Z]    workers/ddos-protection/wrangler.toml              |     12 +
+[2026-09-12T16:05:57.889Z]    workers/verification/app/__init__.py               |      0
+[2026-09-12T16:05:57.892Z]    workers/verification/app/config.py                 |     43 +
+[2026-09-12T16:05:57.895Z]    workers/verification/app/main.py                   |    429 +
+[2026-09-12T16:05:57.897Z]    workers/verification/requirements.txt              |     21 +
+[2026-09-12T16:05:57.899Z]    483 files changed, 796732 insertions(+)
+[2026-09-12T16:05:57.913Z] backed up .vercel/project.json -> _git-backup-1789229157902\.vercel\project.json
+[2026-09-12T16:05:57.927Z] backed up apps/web/.vercel/project.json -> _git-backup-1789229157902\apps\web\.vercel\project.json
+[2026-09-12T16:05:57.950Z] backed up apps/web/src/app/api/admin/verify/route.ts -> _git-backup-1789229157902\apps\web\src\app\api\admin\verify\route.ts
+[2026-09-12T16:05:57.960Z] backed up apps/web/src/app/api/me/result/route.ts -> _git-backup-1789229157902\apps\web\src\app\api\me\result\route.ts
+[2026-09-12T16:05:57.972Z] backed up apps/web/src/app/api/public/results/route.ts -> _git-backup-1789229157902\apps\web\src\app\api\public\results\route.ts
+[2026-09-12T16:05:57.983Z] backed up apps/web/src/app/api/public/disruptions/route.ts -> _git-backup-1789229157902\apps\web\src\app\api\public\disruptions\route.ts
+[2026-09-12T16:05:57.995Z] backed up apps/web/src/lib/api-cache.ts -> _git-backup-1789229157902\apps\web\src\lib\api-cache.ts
+[2026-09-12T16:05:58.014Z] backed up apps/web/middleware.ts -> _git-backup-1789229157902\apps\web\middleware.ts
+[2026-09-12T16:05:58.029Z] backed up apps/web/src/app/api/auth/verify-otp/route.ts -> _git-backup-1789229157902\apps\web\src\app\api\auth\verify-otp\route.ts
+[2026-09-12T16:05:58.041Z] backed up supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql -> _git-backup-1789229157902\supabase\migrations\900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T16:05:58.043Z] 
+=== git reset --hard FETCH_HEAD: git.exe reset --hard FETCH_HEAD
+[2026-09-12T16:05:58.576Z]   exit=0
+[2026-09-12T16:05:58.579Z]   HEAD is now at 1a0b02b neop: p0+222 + p1-1/2/3 completion audit wave
+[2026-09-12T16:05:58.588Z] restored overlay: .vercel/project.json
+[2026-09-12T16:05:58.607Z] restored overlay: apps/web/.vercel/project.json
+[2026-09-12T16:05:58.617Z] restored overlay: apps/web/src/app/api/admin/verify/route.ts
+[2026-09-12T16:05:58.628Z] restored overlay: apps/web/src/app/api/me/result/route.ts
+[2026-09-12T16:05:58.645Z] restored overlay: apps/web/src/app/api/public/results/route.ts
+[2026-09-12T16:05:58.658Z] restored overlay: apps/web/src/app/api/public/disruptions/route.ts
+[2026-09-12T16:05:58.671Z] restored overlay: apps/web/src/lib/api-cache.ts
+[2026-09-12T16:05:58.686Z] restored overlay: apps/web/middleware.ts
+[2026-09-12T16:05:58.696Z] restored overlay: apps/web/src/app/api/auth/verify-otp/route.ts
+[2026-09-12T16:05:58.714Z] restored overlay: supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T16:05:58.735Z] 
+=== git add: git.exe add --all

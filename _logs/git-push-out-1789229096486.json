@@ -1,0 +1,113 @@
+{
+  "log": "c:\\Users\\Administrator\\Webstrom\\NEOP\\_logs\\git-push-1789229096486.log",
+  "token": "UNSET",
+  "fetched": true,
+  "backupDir": "_git-backup-1789229131794",
+  "steps": [
+    {
+      "step": "git status",
+      "exit": 0,
+      "last": [
+        "?? _logs/git-commit-p3.log",
+        "?? _logs/git-push-1789229096486.log",
+        "?? _logs/ng-deploy-1789228667882.log",
+        "?? _logs/ng-deploy-out-1789228667882.json",
+        "?? _logs/p1-build-1789229095300.log"
+      ]
+    },
+    {
+      "step": "git config user",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git config user.name",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git remote -v",
+      "exit": 0,
+      "last": [
+        "origin\thttps://github.com/Joshua-Onyekachukwu/NEOP (fetch)",
+        "origin\thttps://github.com/Joshua-Onyekachukwu/NEOP (push)"
+      ]
+    },
+    {
+      "step": "git remote set-url origin",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git fetch origin main",
+      "exit": 0,
+      "last": [
+        "From https://github.com/Joshua-Onyekachukwu/NEOP",
+        " * branch            main       -> FETCH_HEAD"
+      ]
+    },
+    {
+      "step": "git show --stat FETCH_HEAD --oneline | head -5",
+      "exit": 0,
+      "last": [
+        " workers/verification/app/__init__.py               |      0",
+        " workers/verification/app/config.py                 |     43 +",
+        " workers/verification/app/main.py                   |    429 +",
+        " workers/verification/requirements.txt              |     21 +",
+        " 464 files changed, 794387 insertions(+)"
+      ]
+    },
+    {
+      "step": "git reset --hard FETCH_HEAD",
+      "exit": 0,
+      "last": [
+        "HEAD is now at e0e5f27 NEOP P0/P1/P2 wave: election tomorrow readiness"
+      ]
+    },
+    {
+      "step": "git add",
+      "exit": 0,
+      "last": [
+        "warning: in the working copy of '_logs/build-p1-out.log', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/git-push-1789229096486.log', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/ng-deploy-1789228667882.log', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/ng-deploy-out-1789228667882.json', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/p1-build-1789229095300.log', LF will be replaced by CRLF the next time Git touches it"
+      ]
+    },
+    {
+      "step": "git status --short",
+      "exit": 0,
+      "last": [
+        "A  _logs/git-commit-p3.log",
+        "AM _logs/git-push-1789229096486.log",
+        "A  _logs/ng-deploy-1789228667882.log",
+        "A  _logs/ng-deploy-out-1789228667882.json",
+        "A  _logs/p1-build-1789229095300.log"
+      ]
+    },
+    {
+      "step": "git commit",
+      "exit": 0,
+      "last": [
+        " create mode 100644 _logs/git-commit-p3.log",
+        " create mode 100644 _logs/git-push-1789229096486.log",
+        " create mode 100644 _logs/ng-deploy-1789228667882.log",
+        " create mode 100644 _logs/ng-deploy-out-1789228667882.json",
+        " create mode 100644 _logs/p1-build-1789229095300.log"
+      ]
+    },
+    {
+      "step": "git push -u origin main",
+      "exit": 0,
+      "last": [
+        "branch 'main' set up to track 'origin/main'.",
+        "To https://github.com/Joshua-Onyekachukwu/NEOP.git",
+        "   e0e5f27..1a0b02b  main -> main"
+      ]
+    }
+  ],
+  "pushExit": 0,
+  "commitDone": true,
+  "ok": true
+}

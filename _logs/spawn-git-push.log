@@ -1,0 +1,7 @@
+starting spawn 2026-09-12T16:05:50.903Z
+ROOT=c:\Users\Administrator\Webstrom\NEOP
+CWD=c:\Users\Administrator\Webstrom\NEOP
+SCRIPT=c:\Users\Administrator\Webstrom\NEOP\_scripts\git-push-safe.cjs
+EXISTS SCRIPT? true
+GITHUB_TOKEN=NOT SET
+GH_TOKEN=NOT SET
