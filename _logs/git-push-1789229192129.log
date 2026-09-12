@@ -1,0 +1,79 @@
+[2026-09-12T16:06:32.139Z] START
+[2026-09-12T16:06:32.142Z] CWD=c:\Users\Administrator\Webstrom\NEOP
+[2026-09-12T16:06:32.146Z] GITHUB_TOKEN set? NO
+[2026-09-12T16:06:32.149Z] has .git directory? true
+[2026-09-12T16:06:32.152Z] 
+=== git status: git.exe status --porcelain=v1
+[2026-09-12T16:06:34.808Z]   exit=0
+[2026-09-12T16:06:34.822Z]    M _logs/git-push-1789229151174.log
+[2026-09-12T16:06:34.838Z]    M _logs/spawn-git-push.log
+[2026-09-12T16:06:34.844Z]   ?? _logs/git-push-1789229192129.log
+[2026-09-12T16:06:34.847Z]   ?? _logs/git-push-out-1789229151174.json
+[2026-09-12T16:06:34.886Z] 
+=== git config user: git.exe config user.email neop-bot@neop.ng
+[2026-09-12T16:06:35.341Z]   exit=0
+[2026-09-12T16:06:35.420Z] 
+=== git config user.name: git.exe config user.name NEOP Bot
+[2026-09-12T16:06:36.450Z]   exit=0
+[2026-09-12T16:06:36.453Z] 
+=== git remote -v: git.exe remote -v
+[2026-09-12T16:06:36.815Z]   exit=0
+[2026-09-12T16:06:36.819Z]   origin	https://github.com/Joshua-Onyekachukwu/NEOP.git (fetch)
+[2026-09-12T16:06:36.824Z]   origin	https://github.com/Joshua-Onyekachukwu/NEOP.git (push)
+[2026-09-12T16:06:36.831Z] 
+=== git remote set-url origin: git.exe remote set-url origin https://github.com/Joshua-Onyekachukwu/NEOP.git
+[2026-09-12T16:06:37.130Z]   exit=0
+[2026-09-12T16:06:37.133Z] 
+=== git fetch origin main: git.exe fetch --depth=1 origin main
+[2026-09-12T16:06:40.184Z]   exit=0
+[2026-09-12T16:06:40.188Z]   From https://github.com/Joshua-Onyekachukwu/NEOP
+[2026-09-12T16:06:40.191Z]    * branch            main       -> FETCH_HEAD
+[2026-09-12T16:06:40.199Z] 
+=== git show --stat FETCH_HEAD --oneline | head -5: git.exe show --stat FETCH_HEAD --oneline -n 5
+[2026-09-12T16:06:43.124Z]   exit=0
+[2026-09-12T16:06:43.130Z]    supabase/migrations/inec_chunks_batched/PU_21.sql  |   6009 +
+[2026-09-12T16:06:43.161Z]    supabase/migrations/inec_chunks_batched/PU_22.sql  |   6009 +
+[2026-09-12T16:06:43.183Z]    supabase/migrations/inec_chunks_batched/PU_23.sql  |   6010 +
+[2026-09-12T16:06:43.250Z]    supabase/migrations/inec_chunks_batched/PU_24.sql  |   6010 +
+[2026-09-12T16:06:43.261Z]    supabase/migrations/inec_chunks_batched/PU_25.sql  |   6010 +
+[2026-09-12T16:06:43.271Z]    supabase/migrations/inec_chunks_batched/PU_26.sql  |   6012 +
+[2026-09-12T16:06:43.285Z]    supabase/migrations/inec_chunks_batched/PU_27.sql  |   6009 +
+[2026-09-12T16:06:43.296Z]    supabase/migrations/inec_chunks_batched/PU_28.sql  |   6009 +
+[2026-09-12T16:06:43.320Z]    supabase/migrations/inec_chunks_batched/PU_29.sql  |   6010 +
+[2026-09-12T16:06:43.360Z]    supabase/migrations/inec_chunks_batched/PU_30.sql  |   2852 +
+[2026-09-12T16:06:43.404Z]    supabase/schema.sql                                |    393 +
+[2026-09-12T16:06:43.466Z]    vercel.json                                        |     19 +
+[2026-09-12T16:06:43.483Z]    workers/ddos-protection/package.json               |     14 +
+[2026-09-12T16:06:43.495Z]    workers/ddos-protection/src/index.ts               |    269 +
+[2026-09-12T16:06:43.506Z]    workers/ddos-protection/wrangler.toml              |     12 +
+[2026-09-12T16:06:43.522Z]    workers/verification/app/__init__.py               |      0
+[2026-09-12T16:06:43.537Z]    workers/verification/app/config.py                 |     43 +
+[2026-09-12T16:06:43.579Z]    workers/verification/app/main.py                   |    429 +
+[2026-09-12T16:06:43.668Z]    workers/verification/requirements.txt              |     21 +
+[2026-09-12T16:06:43.683Z]    498 files changed, 799070 insertions(+)
+[2026-09-12T16:06:43.823Z] backed up .vercel/project.json -> _git-backup-1789229203701\.vercel\project.json
+[2026-09-12T16:06:43.880Z] backed up apps/web/.vercel/project.json -> _git-backup-1789229203701\apps\web\.vercel\project.json
+[2026-09-12T16:06:43.925Z] backed up apps/web/src/app/api/admin/verify/route.ts -> _git-backup-1789229203701\apps\web\src\app\api\admin\verify\route.ts
+[2026-09-12T16:06:43.938Z] backed up apps/web/src/app/api/me/result/route.ts -> _git-backup-1789229203701\apps\web\src\app\api\me\result\route.ts
+[2026-09-12T16:06:43.954Z] backed up apps/web/src/app/api/public/results/route.ts -> _git-backup-1789229203701\apps\web\src\app\api\public\results\route.ts
+[2026-09-12T16:06:43.969Z] backed up apps/web/src/app/api/public/disruptions/route.ts -> _git-backup-1789229203701\apps\web\src\app\api\public\disruptions\route.ts
+[2026-09-12T16:06:43.982Z] backed up apps/web/src/lib/api-cache.ts -> _git-backup-1789229203701\apps\web\src\lib\api-cache.ts
+[2026-09-12T16:06:43.993Z] backed up apps/web/middleware.ts -> _git-backup-1789229203701\apps\web\middleware.ts
+[2026-09-12T16:06:44.010Z] backed up apps/web/src/app/api/auth/verify-otp/route.ts -> _git-backup-1789229203701\apps\web\src\app\api\auth\verify-otp\route.ts
+[2026-09-12T16:06:44.025Z] backed up supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql -> _git-backup-1789229203701\supabase\migrations\900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T16:06:44.028Z] 
+=== git reset --hard FETCH_HEAD: git.exe reset --hard FETCH_HEAD
+[2026-09-12T16:06:44.714Z]   exit=0
+[2026-09-12T16:06:44.717Z]   HEAD is now at 6f45cde neop: p0+222 + p1-1/2/3 completion audit wave
+[2026-09-12T16:06:44.729Z] restored overlay: .vercel/project.json
+[2026-09-12T16:06:44.741Z] restored overlay: apps/web/.vercel/project.json
+[2026-09-12T16:06:44.750Z] restored overlay: apps/web/src/app/api/admin/verify/route.ts
+[2026-09-12T16:06:44.761Z] restored overlay: apps/web/src/app/api/me/result/route.ts
+[2026-09-12T16:06:44.775Z] restored overlay: apps/web/src/app/api/public/results/route.ts
+[2026-09-12T16:06:44.785Z] restored overlay: apps/web/src/app/api/public/disruptions/route.ts
+[2026-09-12T16:06:44.795Z] restored overlay: apps/web/src/lib/api-cache.ts
+[2026-09-12T16:06:44.812Z] restored overlay: apps/web/middleware.ts
+[2026-09-12T16:06:44.833Z] restored overlay: apps/web/src/app/api/auth/verify-otp/route.ts
+[2026-09-12T16:06:44.847Z] restored overlay: supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T16:06:44.850Z] 
+=== git add: git.exe add --all
