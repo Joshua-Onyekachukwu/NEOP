@@ -44,9 +44,9 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       if (data.results) {
         const formatted: Result[] = data.results.map((r: any) => ({
           id: r.id,
-          polling_unit_code: r.polling_unit_code || "—",
-          polling_unit_name: r.polling_unit_name || "—",
-          state_name: r.state || "—",
+          polling_unit_code: r.polling_unit_code || "â€”",
+          polling_unit_name: r.polling_unit_name || "â€”",
+          state_name: r.state || "â€”",
           valid_votes: r.valid_votes,
           rejected_votes: r.rejected_votes,
           total_votes: r.total_votes,
@@ -65,7 +65,17 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
                 ? "UNDER_REVIEW"
                 : "MEDIUM",
         }));
-        setResults(formatted);
+        const seen = new Set<string>();
+        const deduped: Result[] = [];
+        for (const r of formatted) {
+          const key = r.polling_unit_code || r.id;
+          if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(r);
+          }
+          if (deduped.length >= 50) break;
+        }
+        setResults(deduped.slice(0, 50));
         setLastUpdate(
           new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" })
         );

@@ -70,6 +70,171 @@ const AdminDashboard: React.FC = () => {
     is_running: boolean;
   } | null>(null);
 
+  const [vqData, setVqData] = useState<any>(null);
+  const [obsData, setObsData] = useState<any>(null);
+  const [simV2, setSimV2] = useState<any>(null);
+  const [systemConfig, setSystemConfig] = useState<any>(null);
+  const [electionsList, setElectionsList] = useState<any[]>([]);
+  const [simV2Cfg, setSimV2Cfg] = useState({
+    mode: "CONTROLLED",
+    speed: "NORMAL",
+    pu_count: 50,
+    disc_rate: 0.05,
+  });
+  const [resolveOpen, setResolveOpen] = useState<any>(null);
+  const [resolveDecision, setResolveDecision] = useState<string>("ACCEPT_AGENT_1");
+  const [resolveReason, setResolveReason] = useState<string>("");
+  const [resolveManualValues, setResolveManualValues] = useState<any>({
+    valid_votes: 0, rejected_votes: 0, total_votes: 0, party_votes: [],
+  });
+
+  const fetchVQData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch("/api/admin/verification-queue", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVqData(data);
+      }
+    } catch {}
+  };
+
+  const fetchObsData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch("/api/admin/observability?hours_ago=24&limit=500", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObsData(data);
+      }
+    } catch {}
+  };
+
+  const fetchElections = async () => {
+    try {
+      const { data } = await supabase
+        .from("elections")
+        .select("id, name, type, status")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (data) setElectionsList(data);
+    } catch {}
+  };
+
+  const handleResolve = async () => {
+    if (!resolveOpen || !resolveReason.trim()) {
+      alert("Please provide a reason");
+      return;
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const body: any = {
+        verification_id: resolveOpen.verification_id,
+        decision: resolveDecision,
+        reason: resolveReason,
+      };
+      if (resolveDecision === "MANUAL_VALUES") {
+        body.manual_values = resolveManualValues;
+      }
+      const res = await fetch("/api/admin/verification/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setResolveOpen(null);
+        setResolveReason("");
+        fetchVQData();
+        fetchStats();
+      }
+    } catch {}
+  };
+
+  const fetchSystemConfig = async () => {
+    try {
+      const { data } = await supabase
+        .from("system_config")
+        .select("data_mode, active_election_id, last_updated_at")
+        .eq("id", "00000000-0000-0000-0000-000000000001")
+        .single();
+      if (data) setSystemConfig(data);
+    } catch {}
+  };
+
+  const handleSetDataMode = async (mode: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch("/api/admin/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ data_mode: mode }),
+      });
+      fetchSystemConfig();
+    } catch {}
+  };
+
+  const handleSetActiveElection = async (eid: string) => {
+    if (!eid) return;
+    if (!window.confirm("Set this as the active election?")) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch("/api/admin/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ active_election_id: eid }),
+      });
+      fetchSystemConfig();
+    } catch {}
+  };
+
+  const handleStartSimV2 = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      setSimV2({ status: "STARTING", progress_pct: 0, total_pus: simV2Cfg.pu_count });
+      const res = await fetch("/api/admin/simulate/v2-pipeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          mode: simV2Cfg.mode,
+          speed: simV2Cfg.speed,
+          pu_count: simV2Cfg.pu_count,
+          discrepancy_rate: simV2Cfg.disc_rate,
+          require_ai: false,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSimV2({
+          status: "RUNNING",
+          sim_election_id: data.sim_election_id,
+          total_pus: data.total_pus,
+          expected_submissions: data.expected_submissions,
+          start_time: data.start_time,
+          progress_pct: 5,
+          submitted: 0,
+          verified: 0,
+          disputed: 0,
+          published: 0,
+          errors: [],
+          elapsed_seconds: 0,
+        });
+        fetchStats();
+      }
+    } catch (e: any) {
+      setSimV2((prev: any) => ({ ...(prev || {}), status: "ERROR", errors: [...((prev as any)?.errors || []), { message: e?.message || "Start failed" }] }));
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       const session = await waitForSession();
@@ -87,6 +252,8 @@ const AdminDashboard: React.FC = () => {
       if (!adminCheck.data) { router.push("/admin/login"); return; }
       if (configCheck.data?.election_type) setSimElectionType(configCheck.data.election_type);
       fetchStats();
+      fetchElections();
+      fetchSystemConfig();
     };
     init();  }, []);
 
@@ -141,6 +308,8 @@ const AdminDashboard: React.FC = () => {
     if (activeTab === "verification") fetchResults();
     if (activeTab === "volunteers") fetchVolunteers();
     if (activeTab === "incidents") fetchIncidents();
+    if (activeTab === "verification-queue") fetchVQData();
+    if (activeTab === "observability") fetchObsData();
   }, [activeTab]);
 
   const fetchStats = async () => {
@@ -378,7 +547,7 @@ const AdminDashboard: React.FC = () => {
     fetchStats();
   };
 
-  const tabs = ["overview", "verification", "volunteers", "agent-mgmt", "import-agents", "locations", "incidents", "audit", "simulation"] as const;
+  const tabs = ["overview", "verification-queue", "verification", "volunteers", "agent-mgmt", "import-agents", "locations", "incidents", "audit", "observability", "simulation"] as const;
 
   const fetchAgentLocations = async () => {
     try {
@@ -459,7 +628,253 @@ const AdminDashboard: React.FC = () => {
               <div className="mt-4">
                 <ExportPanel variant="admin" />
               </div>
+              <div className="mt-4 border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">System Data Mode</h3>
+                  <span className={`font-mono text-[10px] px-2 py-0.5 ${
+                    systemConfig?.data_mode === "LIVE_ELECTION" ? "bg-[var(--color-red)]/20 text-[var(--color-red)]"
+                    : systemConfig?.data_mode === "SIMULATED" ? "bg-[var(--color-amber)]/20 text-[var(--color-amber)]"
+                    : "bg-[var(--color-gray-200)] text-[var(--color-text-dim)]"
+                  }`}>
+                    {(systemConfig?.data_mode || "AWAITING_DATA").replace(/_/g, " ")}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[
+                    { key: "AWAITING_DATA", label: "AWAITING DATA", cls: "border-[var(--color-gray-200)] text-[var(--color-text-dim)] hover:border-[var(--color-text-dim)]" },
+                    { key: "SIMULATED", label: "SIMULATED", cls: "border-[var(--color-amber)]/50 text-[var(--color-amber)] hover:border-[var(--color-amber)]" },
+                    { key: "LIVE_ELECTION", label: "LIVE ELECTION", cls: "border-[var(--color-red)]/50 text-[var(--color-red)] hover:border-[var(--color-red)]" },
+                  ].map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => handleSetDataMode(m.key)}
+                      className={`px-2 py-2 border font-mono text-[10px] uppercase transition-colors ${
+                        systemConfig?.data_mode === m.key ? "bg-[var(--color-ink)] font-bold" : ""
+                      } ${m.cls}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Active Election:</label>
+                  <select
+                    value={systemConfig?.active_election_id || ""}
+                    onChange={(e) => handleSetActiveElection(e.target.value)}
+                    className="flex-1 px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] font-mono text-[11px] text-[var(--color-text-muted)]"
+                  >
+                    <option value="">— Select —</option>
+                    {electionsList.map((el: any) => (
+                      <option key={el.id} value={el.id}>{el.name} [{el.type}/{el.status}]</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               </>
+            )}
+
+            {/* Verification Queue */}
+            {activeTab === "verification-queue" && (
+              <div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                  {[
+                    { label: "AWAITING 2ND AGENT", val: vqData?.buckets?.awaiting_second_agent ?? 0, cls: "text-[var(--color-amber)]" },
+                    { label: "VERIFYING", val: vqData?.buckets?.verifying ?? 0, cls: "text-[var(--color-blue)]" },
+                    { label: "FLAGGED AI", val: vqData?.buckets?.flagged_ai ?? 0, cls: "text-[var(--color-red)]" },
+                    { label: "HUMAN REVIEW", val: vqData?.buckets?.human_review ?? 0, cls: "text-[var(--color-red)]" },
+                    { label: "PUBLISHED", val: vqData?.buckets?.published ?? 0, cls: "text-[var(--color-green-bright)]" },
+                  ].map((b, i) => (
+                    <div key={i} className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">{b.label}</div>
+                      <div className={`font-display font-bold text-2xl mt-1 ${b.cls}`}>{b.val}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">Verification Queue</h3>
+                  <button
+                    onClick={fetchVQData}
+                    className="px-3 py-1.5 border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)] hover:border-[var(--color-green)] hover:text-[var(--color-green-bright)]"
+                  >
+                    ↻ REFRESH
+                  </button>
+                </div>
+                <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+                  {(vqData?.items || []).map((item: any, idx: number) => (
+                    <div key={idx} className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-[var(--color-green-bright)] font-bold">{item.polling_unit_code || item.pu_code}</span>
+                          <span className="font-mono text-[10px] text-[var(--color-text-dim)]">{item.state_name || ""} · {item.lga_name || ""}</span>
+                        </div>
+                        <span className={`font-mono text-[10px] px-2 py-0.5 ${
+                          item.status_flag === "FLAGGED_AI" ? "bg-[var(--color-red)]/20 text-[var(--color-red)]"
+                          : item.status_flag === "DISCREPANCY" || item.status_flag === "HUMAN_REVIEW" ? "bg-[var(--color-orange)]/20 text-[var(--color-orange)]"
+                          : item.status_flag === "AWAITING_SECOND" ? "bg-[var(--color-amber)]/20 text-[var(--color-amber)]"
+                          : "bg-[var(--color-gray-200)] text-[var(--color-text-dim)]"
+                        }`}>
+                          {(item.status_flag || "UNKNOWN").replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      {item.agent_1 && item.agent_2 ? (
+                        <div className="grid grid-cols-3 gap-2 items-start mb-2">
+                          <div className="p-2 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
+                            <div className="font-mono text-[10px] text-[var(--color-blue)] uppercase mb-1 font-bold">AGENT 1</div>
+                            <div className="font-mono text-[10px] text-[var(--color-text)]">{item.agent_1.volunteer_name || "—"}</div>
+                            <div className="font-mono text-[10px] text-[var(--color-text-dim)]">{item.agent_1.volunteer_email || ""}</div>
+                            <div className="grid grid-cols-3 gap-1 mt-2 font-mono text-[10px]">
+                              <div><span className="text-[var(--color-text-dim)]">V</span> <span className="text-[var(--color-text)] font-bold">{item.agent_1.valid}</span></div>
+                              <div><span className="text-[var(--color-text-dim)]">R</span> <span className="text-[var(--color-text)] font-bold">{item.agent_1.rejected}</span></div>
+                              <div><span className="text-[var(--color-text-dim)]">T</span> <span className="text-[var(--color-text)] font-bold">{item.agent_1.total}</span></div>
+                            </div>
+                            <div className="mt-1 space-y-0.5">
+                              {(item.agent_1.parties || []).slice(0, 5).map((p: any, pi: number) => (
+                                <div key={pi} className="flex justify-between font-mono text-[9px]">
+                                  <span className="text-[var(--color-text-dim)]">{p.abbr}</span>
+                                  <span className="text-[var(--color-text)] font-bold">{p.votes}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="p-2 border border-dashed border-[var(--color-gray-200)]">
+                            <div className="font-mono text-[10px] text-[var(--color-amber)] uppercase mb-1 font-bold text-center">DIFF</div>
+                            <div className="text-center font-display font-bold text-xl mb-1" style={{ color: (item.diff?.max_diff || 0) <= 2 ? "var(--color-green-bright)" : "var(--color-red)" }}>
+                              {item.diff?.max_diff ?? 0}
+                            </div>
+                            <div className="font-mono text-[9px] text-center text-[var(--color-text-dim)] mb-1">MAX DIFF</div>
+                            <div className="grid grid-cols-2 gap-1 font-mono text-[9px]">
+                              <div className="text-center"><span className="text-[var(--color-text-dim)]">V:</span> <span className="text-[var(--color-text)]">{item.diff?.valid_diff ?? 0}</span></div>
+                              <div className="text-center"><span className="text-[var(--color-text-dim)]">R:</span> <span className="text-[var(--color-text)]">{item.diff?.rejected_diff ?? 0}</span></div>
+                            </div>
+                            <div className="mt-1 space-y-0.5 max-h-[120px] overflow-y-auto">
+                              {(item.diff?.party_diffs || []).map((p: any, pi: number) => (
+                                <div key={pi} className="flex justify-between font-mono text-[9px]">
+                                  <span className="text-[var(--color-text-dim)]">{p.abbr}</span>
+                                  <span className={Math.abs(p.diff || 0) > 0 ? "text-[var(--color-red)] font-bold" : "text-[var(--color-text-muted)]"}>
+                                    {p.diff >= 0 ? "+" : ""}{p.diff ?? 0}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="p-2 bg-[var(--color-ink)] border border-[var(--color-gray-200)]">
+                            <div className="font-mono text-[10px] text-[var(--color-purple)] uppercase mb-1 font-bold">AGENT 2</div>
+                            <div className="font-mono text-[10px] text-[var(--color-text)]">{item.agent_2.volunteer_name || "—"}</div>
+                            <div className="font-mono text-[10px] text-[var(--color-text-dim)]">{item.agent_2.volunteer_email || ""}</div>
+                            <div className="grid grid-cols-3 gap-1 mt-2 font-mono text-[10px]">
+                              <div><span className="text-[var(--color-text-dim)]">V</span> <span className="text-[var(--color-text)] font-bold">{item.agent_2.valid}</span></div>
+                              <div><span className="text-[var(--color-text-dim)]">R</span> <span className="text-[var(--color-text)] font-bold">{item.agent_2.rejected}</span></div>
+                              <div><span className="text-[var(--color-text-dim)]">T</span> <span className="text-[var(--color-text)] font-bold">{item.agent_2.total}</span></div>
+                            </div>
+                            <div className="mt-1 space-y-0.5">
+                              {(item.agent_2.parties || []).slice(0, 5).map((p: any, pi: number) => (
+                                <div key={pi} className="flex justify-between font-mono text-[9px]">
+                                  <span className="text-[var(--color-text-dim)]">{p.abbr}</span>
+                                  <span className="text-[var(--color-text)] font-bold">{p.votes}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                      {item.verification_id && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-gray-100)]">
+                          <select
+                            value={resolveDecision}
+                            onChange={(e) => setResolveDecision(e.target.value)}
+                            className="flex-1 px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)]"
+                          >
+                            <option value="ACCEPT_AGENT_1">ACCEPT AGENT 1</option>
+                            <option value="ACCEPT_AGENT_2">ACCEPT AGENT 2</option>
+                            <option value="MANUAL_VALUES">ENTER MANUAL VALUES</option>
+                          </select>
+                          <button
+                            onClick={() => { setResolveOpen(item); setResolveDecision("ACCEPT_AGENT_1"); setResolveReason(""); }}
+                            className="px-3 py-1.5 bg-[var(--color-green)] text-white font-mono text-[10px] font-bold hover:opacity-90"
+                          >
+                            RESOLVE
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {(!vqData?.items || vqData.items.length === 0) && (
+                    <div className="text-center py-12 font-mono text-[11px] text-[var(--color-text-dim)]">
+                      {vqData ? "No items in queue" : "Loading verification queue…"}
+                    </div>
+                  )}
+                </div>
+                {resolveOpen && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setResolveOpen(null)}>
+                    <div className="bg-[var(--color-ink)] border border-[var(--color-gray-200)] max-w-lg w-full max-h-[85vh] overflow-y-auto p-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-display font-bold text-sm text-[var(--color-text)]">Resolve Discrepancy</h3>
+                        <button onClick={() => setResolveOpen(null)} className="font-mono text-xs text-[var(--color-text-dim)]">✕ CLOSE</button>
+                      </div>
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] mb-1">PU: <span className="text-[var(--color-green-bright)] font-bold">{resolveOpen.polling_unit_code || resolveOpen.pu_code}</span></div>
+                      <div className="space-y-3 mt-3">
+                        <div>
+                          <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Decision</label>
+                          <select
+                            value={resolveDecision}
+                            onChange={(e) => setResolveDecision(e.target.value)}
+                            className="w-full mt-1 px-2 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text-muted)]"
+                          >
+                            <option value="ACCEPT_AGENT_1">ACCEPT AGENT 1</option>
+                            <option value="ACCEPT_AGENT_2">ACCEPT AGENT 2</option>
+                            <option value="MANUAL_VALUES">ENTER MANUAL VALUES</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Reason</label>
+                          <textarea
+                            value={resolveReason}
+                            onChange={(e) => setResolveReason(e.target.value)}
+                            rows={3}
+                            placeholder="Enter resolution reason..."
+                            className="w-full mt-1 px-2 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text)] resize-none"
+                          />
+                        </div>
+                        {resolveDecision === "MANUAL_VALUES" && (
+                          <div className="space-y-2 p-2 border border-[var(--color-amber)]/50 bg-[var(--color-amber)]/5">
+                            <div className="grid grid-cols-3 gap-2">
+                              {["valid_votes", "rejected_votes", "total_votes"].map((f) => (
+                                <div key={f}>
+                                  <label className="font-mono text-[9px] text-[var(--color-text-dim)] uppercase">{f.replace(/_/g, " ")}</label>
+                                  <input
+                                    type="number"
+                                    value={(resolveManualValues as any)[f] || 0}
+                                    onChange={(e) => setResolveManualValues((p: any) => ({ ...(p || {}), [f]: Number(e.target.value) || 0 }))}
+                                    className="w-full mt-0.5 px-2 py-1 bg-[var(--color-ink)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text)]"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <div>
+                              <label className="font-mono text-[9px] text-[var(--color-text-dim)] uppercase">Party Votes (JSON)</label>
+                              <textarea
+                                value={JSON.stringify(resolveManualValues?.party_votes || [], null, 2)}
+                                onChange={(e) => {
+                                  try { setResolveManualValues((p: any) => ({ ...(p || {}), party_votes: JSON.parse(e.target.value) })); } catch {}
+                                }}
+                                rows={5}
+                                className="w-full mt-0.5 px-2 py-1 bg-[var(--color-ink)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text)] resize-none font-mono"
+                              />
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={handleResolve}
+                          disabled={!resolveReason.trim()}
+                          className="w-full py-2.5 bg-[var(--color-green)] text-white font-mono text-xs font-bold hover:opacity-90 disabled:opacity-40"
+                        >
+                          CONFIRM RESOLUTION
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Verification */}
@@ -667,6 +1082,170 @@ const AdminDashboard: React.FC = () => {
             {/* ── SIMULATION TAB ── */}
             {activeTab === "simulation" && (
               <div className="space-y-4">
+                <div className="border border-[var(--color-green)]/30 bg-[var(--color-green)]/5 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-display font-bold text-sm text-[var(--color-green-bright)]">⚡ SIMULATION V2 — PIPELINE CONTROL CENTER</h3>
+                    <span className={`font-mono text-[10px] px-2 py-0.5 ${
+                      simV2?.status === "RUNNING" ? "bg-[var(--color-green)]/20 text-[var(--color-green-bright)] animate-pulse"
+                      : simV2?.status === "ERROR" ? "bg-[var(--color-red)]/20 text-[var(--color-red)]"
+                      : "bg-[var(--color-gray-200)] text-[var(--color-text-dim)]"
+                    }`}>
+                      {(simV2?.status || "IDLE").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {[
+                      { l: "POLLING UNITS", v: simV2Cfg.pu_count, c: "text-[var(--color-blue)]" },
+                      { l: "AGENTS (N+S)", v: simV2Cfg.pu_count * 2, c: "text-[var(--color-purple)]" },
+                      { l: "SUBMITTED", v: simV2?.submitted ?? 0, c: "text-[var(--color-text)]" },
+                      { l: "AWAIT 2ND", v: vqData?.buckets?.awaiting_second_agent ?? 0, c: "text-[var(--color-amber)]" },
+                      { l: "VERIFYING", v: vqData?.buckets?.verifying ?? 0, c: "text-[var(--color-blue)]" },
+                      { l: "VERIFIED", v: simV2?.verified ?? 0, c: "text-[var(--color-green-bright)]" },
+                      { l: "DISPUTED", v: simV2?.disputed ?? vqData?.buckets?.human_review ?? 0, c: "text-[var(--color-orange)]" },
+                      { l: "PUBLISHED", v: vqData?.buckets?.published ?? 0, c: "text-[var(--color-green)]" },
+                      { l: "ELAPSED (s)", v: simV2?.elapsed_seconds ?? 0, c: "text-[var(--color-text-dim)]" },
+                    ].map((m, i) => (
+                      <div key={i} className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-2.5">
+                        <div className="font-mono text-[9px] text-[var(--color-text-dim)] uppercase leading-tight min-h-[22px]">{m.l}</div>
+                        <div className={`font-display font-bold text-xl mt-0.5 ${m.c}`}>{m.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1 block">Mode</label>
+                      <select
+                        value={simV2Cfg.mode}
+                        onChange={(e) => setSimV2Cfg((p) => ({ ...p, mode: e.target.value }))}
+                        className="w-full px-2 py-1.5 bg-[var(--color-ink)] border border-[var(--color-gray-200)] font-mono text-xs text-[var(--color-text-muted)]"
+                      >
+                        {["CONTROLLED", "REHEARSAL", "STRESS", "FAILURE", "FULL_SYSTEM"].map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1 block">Speed</label>
+                      <div className="grid grid-cols-4 gap-1">
+                        {([["SLOW", 2500], ["NORMAL", 1000], ["FAST", 300], ["STRESS", 0]] as const).map(([sp]) => (
+                          <button
+                            key={sp}
+                            onClick={() => setSimV2Cfg((p) => ({ ...p, speed: sp }))}
+                            className={`px-2 py-1.5 border font-mono text-[10px] uppercase transition-colors ${
+                              simV2Cfg.speed === sp
+                                ? "bg-[var(--color-green)]/10 border-[var(--color-green)] text-[var(--color-green-bright)] font-bold"
+                                : "border-[var(--color-gray-200)] text-[var(--color-text-dim)] hover:border-[var(--color-text-dim)]"
+                            }`}
+                          >
+                            {sp}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3 mb-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Polling Units</label>
+                        <span className="font-mono text-[10px] text-[var(--color-text)] font-bold">{simV2Cfg.pu_count} PUs</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={5}
+                        max={500}
+                        step={5}
+                        value={simV2Cfg.pu_count}
+                        onChange={(e) => setSimV2Cfg((p) => ({ ...p, pu_count: Number(e.target.value) }))}
+                        className="w-full accent-[var(--color-green)]"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Discrepancy Rate</label>
+                        <span className="font-mono text-[10px] text-[var(--color-text)] font-bold">{Math.round(simV2Cfg.disc_rate * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={0.5}
+                        step={0.01}
+                        value={simV2Cfg.disc_rate}
+                        onChange={(e) => setSimV2Cfg((p) => ({ ...p, disc_rate: Number(e.target.value) }))}
+                        className="w-full accent-[var(--color-amber)]"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <button
+                      onClick={handleStartSimV2}
+                      disabled={simV2?.status === "RUNNING"}
+                      className="flex-1 min-w-[120px] px-3 py-2 bg-[var(--color-green)] text-white font-mono text-xs font-bold hover:opacity-90 disabled:opacity-40"
+                    >
+                      ▶ START SIMULATION
+                    </button>
+                    <button
+                      onClick={() => {}}
+                      disabled={simV2?.status !== "RUNNING"}
+                      className="px-3 py-2 border border-[var(--color-amber)]/50 text-[var(--color-amber)] font-mono text-xs hover:bg-[var(--color-amber)]/10 disabled:opacity-40"
+                    >
+                      ⏸ PAUSE
+                    </button>
+                    <button
+                      onClick={() => {}}
+                      disabled={simV2?.status !== "RUNNING"}
+                      className="px-3 py-2 border border-[var(--color-red)]/50 text-[var(--color-red)] font-mono text-xs hover:bg-[var(--color-red)]/10 disabled:opacity-40"
+                    >
+                      ■ STOP
+                    </button>
+                    <button
+                      onClick={() => { setSimV2(null); fetchVQData(); }}
+                      className="px-3 py-2 border border-[var(--color-gray-200)] text-[var(--color-text-dim)] font-mono text-xs hover:border-[var(--color-text-dim)]"
+                    >
+                      ↺ RESET
+                    </button>
+                  </div>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase">Progress</span>
+                      <span className="font-mono text-[10px] text-[var(--color-text)] font-bold">{simV2?.progress_pct ?? 0}%</span>
+                    </div>
+                    <div className="h-2 bg-[var(--color-gray-100)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[var(--color-green)] rounded-full transition-all duration-300"
+                        style={{ width: `${simV2?.progress_pct ?? 0}%` }}
+                      />
+                    </div>
+                  </div>
+                  {simV2?.errors && simV2.errors.length > 0 && (
+                    <div className="border border-[var(--color-red)]/30 bg-[var(--color-red)]/5">
+                      <div className="px-3 py-2 border-b border-[var(--color-red)]/20">
+                        <span className="font-mono text-[10px] text-[var(--color-red)] uppercase font-bold">Errors ({simV2.errors.length})</span>
+                      </div>
+                      <div className="overflow-x-auto max-h-[180px] overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-[var(--color-ink-light)] sticky top-0">
+                            <tr className="border-b border-[var(--color-gray-100)]">
+                              {["PU", "STEP", "AGENT", "MESSAGE"].map((h) => (
+                                <th key={h} className="px-2 py-1 text-left font-mono text-[9px] text-[var(--color-text-dim)] uppercase">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {simV2.errors.slice(0, 20).map((er: any, i: number) => (
+                              <tr key={i} className="border-b border-[var(--color-gray-100)]">
+                                <td className="px-2 py-1 font-mono text-[9px] text-[var(--color-green-bright)]">{er.pu_code || "—"}</td>
+                                <td className="px-2 py-1 font-mono text-[9px] text-[var(--color-text-muted)]">{er.step || "—"}</td>
+                                <td className="px-2 py-1 font-mono text-[9px] text-[var(--color-blue)]">{er.agent || "—"}</td>
+                                <td className="px-2 py-1 font-mono text-[9px] text-[var(--color-red)]">{er.message || String(er).slice(0, 80)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Election Type Selector */}
                 <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -1087,6 +1666,71 @@ const AdminDashboard: React.FC = () => {
             {/* ── AUDIT TRAIL TAB ── */}
             {activeTab === "audit" && (
               <AuditTrailTab />
+            )}
+
+            {/* Observability */}
+            {activeTab === "observability" && (
+              <div>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {(() => {
+                    const types = ["SUBMISSION_CREATED", "CANONICAL_UPSERTED", "VERIFICATION_STARTED", "DETERMINISTIC_CHECKS", "AI_VISION_CALLED", "AI_ANOMALY_CALLED", "AI_CONSISTENCY_CALLED", "AI_EVIDENCE_CALLED", "DECISION_MATCH", "DECISION_DISCREPANCY", "CANONICAL_PUBLISHED", "ADMIN_RESOLVED"];
+                    const counts: Record<string, number> = {};
+                    (obsData?.dashboard_hourly || []).forEach((row: any) => {
+                      counts[row.event_type] = (counts[row.event_type] || 0) + (Number(row.count) || 0);
+                    });
+                    return types.map((et, i) => (
+                      <div key={i} className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3">
+                        <div className="font-mono text-[9px] text-[var(--color-text-dim)] uppercase min-h-[28px] leading-tight">{et.replace(/_/g, " ")}</div>
+                        <div className="font-display font-bold text-2xl mt-1 text-[var(--color-text)]">{counts[et] || 0}</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
+                  <div className="flex items-center justify-between p-3 border-b border-[var(--color-gray-100)]">
+                    <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">Timeline Events (Last 50)</h3>
+                    <button
+                      onClick={fetchObsData}
+                      className="px-3 py-1.5 border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)] hover:border-[var(--color-green)] hover:text-[var(--color-green-bright)]"
+                    >
+                      ↻ REFRESH
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-[var(--color-ink-light)]">
+                        <tr className="border-b border-[var(--color-gray-100)]">
+                          {["TIME", "EVENT TYPE", "ACTOR", "VERIFICATION", "METADATA"].map((h) => (
+                            <th key={h} className="px-3 py-2 text-left font-mono text-[10px] text-[var(--color-text-dim)] uppercase">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const flat: any[] = [];
+                          Object.values(obsData?.events || {}).forEach((arr: any) => flat.push(...(arr || [])));
+                          flat.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+                          return flat.slice(0, 50).map((ev: any, i) => (
+                            <tr key={i} className="border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink)]">
+                              <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)] whitespace-nowrap">{new Date(ev.created_at).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-green-bright)] uppercase whitespace-nowrap">{ev.event_type}</td>
+                              <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">{ev.actor_id || "—"}</td>
+                              <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)]">{ev.verification_id || ev.canonical_id || "—"}</td>
+                              <td className="px-3 py-1.5 font-mono text-[9px] text-[var(--color-text-muted)] max-w-[300px] truncate">{JSON.stringify(ev.metadata || {})}</td>
+                            </tr>
+                          ));
+                        })()}
+                        {!obsData && (
+                          <tr><td colSpan={5} className="px-3 py-8 text-center font-mono text-[11px] text-[var(--color-text-dim)]">Loading observability data…</td></tr>
+                        )}
+                        {obsData && (!obsData.events || Object.keys(obsData.events).length === 0) && (
+                          <tr><td colSpan={5} className="px-3 py-8 text-center font-mono text-[11px] text-[var(--color-text-dim)]">No events in the last 24 hours</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             )}
           </>
         )}

@@ -81,3 +81,192 @@
 [2026-09-12T21:00:35.411Z] restored overlay: supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
 [2026-09-12T21:00:35.442Z] 
 === git add: git.exe add --all
+[2026-09-12T21:00:36.435Z]   exit=0
+[2026-09-12T21:00:36.438Z]   warning: in the working copy of 'apps/web/src/lib/api-cache.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.440Z]   warning: in the working copy of '_git-backup-1789246833382/.vercel/project.json', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.447Z]   warning: in the working copy of '_git-backup-1789246833382/apps/web/middleware.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.450Z]   warning: in the working copy of '_git-backup-1789246833382/apps/web/src/app/api/auth/verify-otp/route.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.454Z]   warning: in the working copy of '_git-backup-1789246833382/apps/web/src/app/api/me/result/route.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.457Z]   warning: in the working copy of '_git-backup-1789246833382/apps/web/src/app/api/public/results/route.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.459Z]   warning: in the working copy of '_git-backup-1789246833382/apps/web/src/lib/api-cache.ts', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.463Z]   warning: in the working copy of '_git-backup-1789246833382/supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.471Z]   warning: in the working copy of '_logs/git-push-1789246819836.log', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.477Z]   warning: in the working copy of '_logs/git-push-out-1789229192129.json', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.480Z]   warning: in the working copy of '_logs/hello.txt', LF will be replaced by CRLF the next time Git touches it
+[2026-09-12T21:00:36.483Z] 
+=== git status --short: git.exe status --short
+[2026-09-12T21:00:37.139Z]   exit=0
+[2026-09-12T21:00:37.142Z]   A  _git-backup-1789246833382/.vercel/project.json
+[2026-09-12T21:00:37.146Z]   A  _git-backup-1789246833382/apps/web/.vercel/project.json
+[2026-09-12T21:00:37.150Z]   A  _git-backup-1789246833382/apps/web/middleware.ts
+[2026-09-12T21:00:37.154Z]   A  _git-backup-1789246833382/apps/web/src/app/api/admin/verify/route.ts
+[2026-09-12T21:00:37.159Z]   A  _git-backup-1789246833382/apps/web/src/app/api/auth/verify-otp/route.ts
+[2026-09-12T21:00:37.171Z]   A  _git-backup-1789246833382/apps/web/src/app/api/me/result/route.ts
+[2026-09-12T21:00:37.174Z]   A  _git-backup-1789246833382/apps/web/src/app/api/public/disruptions/route.ts
+[2026-09-12T21:00:37.181Z]   A  _git-backup-1789246833382/apps/web/src/app/api/public/results/route.ts
+[2026-09-12T21:00:37.185Z]   A  _git-backup-1789246833382/apps/web/src/lib/api-cache.ts
+[2026-09-12T21:00:37.191Z]   A  _git-backup-1789246833382/supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T21:00:37.195Z]   A  _logs/build-final.log
+[2026-09-12T21:00:37.198Z]   A  _logs/build-web-post-p2.log
+[2026-09-12T21:00:37.201Z]   AM _logs/git-push-1789246819836.log
+[2026-09-12T21:00:37.205Z]   A  _logs/git-push-out-1789229192129.json
+[2026-09-12T21:00:37.208Z]   A  _logs/hello-out.log
+[2026-09-12T21:00:37.212Z]   A  _logs/hello.txt
+[2026-09-12T21:00:37.216Z]   M  apps/web/src/lib/api-cache.ts
+[2026-09-12T21:00:37.221Z] number of changes staged: 17
+[2026-09-12T21:00:37.224Z] 
+=== git commit: git.exe commit -m neop: p0+222 + p1-1/2/3 completion audit wave
+
+p0: 219 fix columns submit_atomic, 220 fix ambiguous idempotency + remove metadata
+    221 manual party_row_count (GET DIAGNOSTICS was last-only). 222 P1-1 DB-level
+    assignment ownership/CHECKED_IN/PU/election 5 asserts inside submit_result_atomic.
+p1-2: revalidateTag stats/party-results + revalidatePath / results live on
+    admin verify write AND agent first-time submission write.
+p1-3: admin rejection route now writes SUPERSEDED (not REJECTED) so
+    uq_single_active constraint allows correction resubmission; reopens assignment
+    status=CHECKED_IN -> ASSIGNED; two audit events (RESULT_REJECTED +
+    ASSIGNMENT_REJECTED_REOPENED) captured.
+other: public results removed party_votes nonexistent from select.
+    public disruptions belt-and-suspenders removed agent_safe/what_observed select.
+    api-cache stats coverage_pct real math (no SEEDED_STATES.length fake fallbacks).
+    me/result zod both shapes, server randomUUID idempotency fallback,
+    suspended 403 status list, rpc 9-param p_idem out_* destructuring.
+    900 diagnostic: verify migrations + counts + RLS + fn param count.
+[2026-09-12T21:00:38.389Z]   exit=0
+[2026-09-12T21:00:38.392Z]   [main 60942ce] neop: p0+222 + p1-1/2/3 completion audit wave
+[2026-09-12T21:00:38.395Z]    17 files changed, 2715 insertions(+), 174 deletions(-)
+[2026-09-12T21:00:38.397Z]    create mode 100644 _git-backup-1789246833382/.vercel/project.json
+[2026-09-12T21:00:38.400Z]    create mode 100644 _git-backup-1789246833382/apps/web/.vercel/project.json
+[2026-09-12T21:00:38.402Z]    create mode 100644 _git-backup-1789246833382/apps/web/middleware.ts
+[2026-09-12T21:00:38.404Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/app/api/admin/verify/route.ts
+[2026-09-12T21:00:38.407Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/app/api/auth/verify-otp/route.ts
+[2026-09-12T21:00:38.409Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/app/api/me/result/route.ts
+[2026-09-12T21:00:38.411Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/app/api/public/disruptions/route.ts
+[2026-09-12T21:00:38.413Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/app/api/public/results/route.ts
+[2026-09-12T21:00:38.419Z]    create mode 100644 _git-backup-1789246833382/apps/web/src/lib/api-cache.ts
+[2026-09-12T21:00:38.423Z]    create mode 100644 _git-backup-1789246833382/supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql
+[2026-09-12T21:00:38.425Z]    create mode 100644 _logs/build-final.log
+[2026-09-12T21:00:38.427Z]    create mode 100644 _logs/build-web-post-p2.log
+[2026-09-12T21:00:38.429Z]    create mode 100644 _logs/git-push-1789246819836.log
+[2026-09-12T21:00:38.431Z]    create mode 100644 _logs/git-push-out-1789229192129.json
+[2026-09-12T21:00:38.433Z]    create mode 100644 _logs/hello-out.log
+[2026-09-12T21:00:38.437Z]    create mode 100644 _logs/hello.txt
+[2026-09-12T21:00:38.439Z] 
+=== git push -u origin main: git.exe push -u origin main
+[2026-09-12T21:00:54.516Z]   exit=0
+[2026-09-12T21:00:54.518Z]   branch 'main' set up to track 'origin/main'.
+[2026-09-12T21:00:54.520Z]   To https://github.com/Joshua-Onyekachukwu/NEOP.git
+[2026-09-12T21:00:54.522Z]      6e8ab3a..60942ce  main -> main
+[2026-09-12T21:00:54.526Z] DONE. {
+  "log": "c:\\Users\\Administrator\\Webstrom\\NEOP\\_logs\\git-push-1789246819836.log",
+  "token": "UNSET",
+  "fetched": true,
+  "backupDir": "_git-backup-1789246833382",
+  "steps": [
+    {
+      "step": "git status",
+      "exit": 0,
+      "last": [
+        "?? _logs/build-web-post-p2.log",
+        "?? _logs/git-push-1789246819836.log",
+        "?? _logs/git-push-out-1789229192129.json",
+        "?? _logs/hello-out.log",
+        "?? _logs/hello.txt"
+      ]
+    },
+    {
+      "step": "git config user",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git config user.name",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git remote -v",
+      "exit": 0,
+      "last": [
+        "origin\thttps://github.com/Joshua-Onyekachukwu/NEOP.git (fetch)",
+        "origin\thttps://github.com/Joshua-Onyekachukwu/NEOP.git (push)"
+      ]
+    },
+    {
+      "step": "git remote set-url origin",
+      "exit": 0,
+      "last": []
+    },
+    {
+      "step": "git fetch origin main",
+      "exit": 0,
+      "last": [
+        "From https://github.com/Joshua-Onyekachukwu/NEOP",
+        " * branch            main       -> FETCH_HEAD"
+      ]
+    },
+    {
+      "step": "git show --stat FETCH_HEAD --oneline | head -5",
+      "exit": 0,
+      "last": [
+        " workers/verification/app/__init__.py               |      0",
+        " workers/verification/app/config.py                 |     43 +",
+        " workers/verification/app/main.py                   |    429 +",
+        " workers/verification/requirements.txt              |     21 +",
+        " 510 files changed, 801399 insertions(+)"
+      ]
+    },
+    {
+      "step": "git reset --hard FETCH_HEAD",
+      "exit": 0,
+      "last": [
+        "HEAD is now at 6e8ab3a neop: p0+222 + p1-1/2/3 completion audit wave"
+      ]
+    },
+    {
+      "step": "git add",
+      "exit": 0,
+      "last": [
+        "warning: in the working copy of '_git-backup-1789246833382/apps/web/src/lib/api-cache.ts', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_git-backup-1789246833382/supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/git-push-1789246819836.log', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/git-push-out-1789229192129.json', LF will be replaced by CRLF the next time Git touches it",
+        "warning: in the working copy of '_logs/hello.txt', LF will be replaced by CRLF the next time Git touches it"
+      ]
+    },
+    {
+      "step": "git status --short",
+      "exit": 0,
+      "last": [
+        "AM _logs/git-push-1789246819836.log",
+        "A  _logs/git-push-out-1789229192129.json",
+        "A  _logs/hello-out.log",
+        "A  _logs/hello.txt",
+        "M  apps/web/src/lib/api-cache.ts"
+      ]
+    },
+    {
+      "step": "git commit",
+      "exit": 0,
+      "last": [
+        " create mode 100644 _logs/build-web-post-p2.log",
+        " create mode 100644 _logs/git-push-1789246819836.log",
+        " create mode 100644 _logs/git-push-out-1789229192129.json",
+        " create mode 100644 _logs/hello-out.log",
+        " create mode 100644 _logs/hello.txt"
+      ]
+    },
+    {
+      "step": "git push -u origin main",
+      "exit": 0,
+      "last": [
+        "branch 'main' set up to track 'origin/main'.",
+        "To https://github.com/Joshua-Onyekachukwu/NEOP.git",
+        "   6e8ab3a..60942ce  main -> main"
+      ]
+    }
+  ],
+  "pushExit": 0,
+  "commitDone": true,
+  "ok": true
+}

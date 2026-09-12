@@ -25,6 +25,14 @@ const STATUS_COLORS: Record<string, string> = {
   DISRUPTED: "#EF4444",
   ELECTION_NOT_HELD: "#374151",
   NO_REPORT: "#4B5563",
+  AWAITING_AGENTS: "#6B7280",
+  ONE_SUBMISSION: "#F59E0B",
+  VERIFYING: "#3B82F6",
+  FLAGGED: "#EF4444",
+  HUMAN_REVIEW: "#F97316",
+  PUBLISHED: "#16A34A",
+  SUPERSEDED: "#9CA3AF",
+  REJECTED: "#7F1D1D",
 };
 
 const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {

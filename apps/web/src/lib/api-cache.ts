@@ -196,7 +196,7 @@ export const getCachedStats = unstable_cache(
         try {
           const { count: coveredCount, error: coveredErr } = await supabase
             .from("canonical_pu_results")
-            .select("polling_unit_id", { count: "exact", head: true })
+            .select("pu_id", { count: "exact", head: true })
             .in("status", ["ONE_SUBMISSION", "VERIFYING", "VERIFIED", "FLAGGED", "HUMAN_REVIEW", "PUBLISHED"]);
           if (!coveredErr) {
             totalCovered = Number(coveredCount || 0);
@@ -206,7 +206,7 @@ export const getCachedStats = unstable_cache(
         try {
           const { count: verifiedCount, error: verifiedErr } = await supabase
             .from("canonical_pu_results")
-            .select("polling_unit_id", { count: "exact", head: true })
+            .select("pu_id", { count: "exact", head: true })
             .in("status", ["VERIFIED", "PUBLISHED"]);
           if (!verifiedErr) {
             totalVerified = Number(verifiedCount || 0);
@@ -308,7 +308,7 @@ export const getCachedStats = unstable_cache(
 
     return getSeededStats(totalPUCount);
   },
-  ["stats-v5"],
+  ["stats"],
   {
     revalidate: 30,
     tags: ["stats"],
@@ -427,7 +427,7 @@ export const getCachedPartyResults = unstable_cache(
 
     return getSeededPartyResults();
   },
-  ["party-results-v5"],
+  ["party-results"],
   {
     revalidate: 30,
     tags: ["party-results"],
@@ -653,7 +653,7 @@ export const getCachedPublicResults = unstable_cache(
       refreshed_at: new Date().toISOString(),
     };
   },
-  ["public-results-v1"],
+  ["public-results"],
   {
     revalidate: 30,
     tags: ["public-results"],
