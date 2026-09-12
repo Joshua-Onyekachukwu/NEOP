@@ -93,7 +93,7 @@ export interface VerificationSignal {
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -187,88 +187,15 @@ export function compareObservers(
 // --- OCR Processing (NVIDIA API) ---
 
 export async function processOcr(imageUrl: string): Promise<OcrResult> {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
-    return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: 'NVIDIA_API_KEY not configured' };
-  }
-
-  try {
-    // Download image
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: 'Failed to download image' };
-    }
-
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const base64 = Buffer.from(imageBuffer).toString('base64');
-
-    // Call NVIDIA Build API
-    const nvidiaUrl = process.env.NVIDIA_API_URL || 'https://integrate.api.nvidia.com/v1';
-    const response = await fetch(`${nvidiaUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'meta/llama-4-scout-17b-16e-instruct',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Extract all text from this Nigerian election result sheet (Form EC8A). Return ONLY a JSON object with these fields:
-{
-  "parties": {"APC": 182, "PDP": 143, "LP": 37, "NNPP": 12},
-  "valid_votes": 362,
-  "rejected_votes": 5,
-  "total_votes": 367
-}
-If you cannot read certain fields, use null. Do not include any text outside the JSON.`,
-              },
-              {
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${base64}` },
-              },
-            ],
-          },
-        ],
-        max_tokens: 1024,
-      }),
-    });
-
-    if (!response.ok) {
-      return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: `NVIDIA API error: ${response.status}` };
-    }
-
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content || '';
-
-    // Parse JSON from response
-    try {
-      // Try to extract JSON from the response (might be wrapped in markdown)
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: 'No JSON found in OCR response', rawText: content };
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        success: true,
-        extractedParties: parsed.parties || {},
-        extractedValidVotes: parsed.valid_votes || 0,
-        extractedRejectedVotes: parsed.rejected_votes || 0,
-        extractedTotalVotes: parsed.total_votes || 0,
-        confidence: 0.85,
-        rawText: content,
-      };
-    } catch {
-      return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: 'Failed to parse OCR response', rawText: content };
-    }
-  } catch (error) {
-    return { success: false, extractedParties: {}, extractedValidVotes: 0, extractedRejectedVotes: 0, extractedTotalVotes: 0, confidence: 0, error: String(error) };
-  }
+  return {
+    success: false,
+    extractedParties: {},
+    extractedValidVotes: 0,
+    extractedRejectedVotes: 0,
+    extractedTotalVotes: 0,
+    confidence: 0,
+    error: 'OCR processing unavailable. Use /api/verify/run-pairing pipeline.',
+  };
 }
 
 // --- Compare OCR with Agent Submission ---

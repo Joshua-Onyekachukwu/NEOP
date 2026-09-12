@@ -65,7 +65,13 @@ DROP VIEW IF EXISTS mv_rls_idor_audit;
 CREATE VIEW mv_rls_idor_audit AS
 SELECT 'agent_assignments' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(aa.id ORDER BY aa.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT aa_inner.id, aa_inner.created_at FROM agent_assignments aa_inner
+                       LEFT JOIN volunteers v_inner ON v_inner.id = aa_inner.volunteer_id
+                       LEFT JOIN result_submissions rs_inner ON rs_inner.assignment_id = aa_inner.id AND rs_inner.volunteer_id = v_inner.id
+                       WHERE v_inner.id IS NULL
+                          OR (rs_inner.id IS NOT NULL AND rs_inner.volunteer_id <> v_inner.id)
+                       ORDER BY aa_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM agent_assignments aa
 LEFT JOIN volunteers v ON v.id = aa.volunteer_id
 LEFT JOIN result_submissions rs ON rs.assignment_id = aa.id AND rs.volunteer_id = v.id
@@ -74,7 +80,14 @@ WHERE v.id IS NULL
 UNION ALL
 SELECT 'result_submissions' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(rs.id ORDER BY rs.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT rs_inner.id, rs_inner.created_at FROM result_submissions rs_inner
+                       LEFT JOIN agent_assignments aa_inner ON aa_inner.id = rs_inner.assignment_id
+                       WHERE aa_inner.id IS NULL
+                          OR rs_inner.volunteer_id <> aa_inner.volunteer_id
+                          OR rs_inner.election_id <> aa_inner.election_id
+                          OR rs_inner.polling_unit_id <> aa_inner.polling_unit_id
+                       ORDER BY rs_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM result_submissions rs
 LEFT JOIN agent_assignments aa ON aa.id = rs.assignment_id
 WHERE aa.id IS NULL
@@ -84,7 +97,12 @@ WHERE aa.id IS NULL
 UNION ALL
 SELECT 'canonical_pu_results' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(cr.id ORDER BY cr.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT cr_inner.id, cr_inner.created_at FROM canonical_pu_results cr_inner
+                       WHERE cr_inner.status NOT IN ('PUBLISHED','SUPERSEDED','REJECTED')
+                         AND cr_inner.published_by IS NOT NULL
+                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = cr_inner.published_by AND au.is_active = true)
+                       ORDER BY cr_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM canonical_pu_results cr
 WHERE cr.status NOT IN ('PUBLISHED','SUPERSEDED','REJECTED')
   AND cr.published_by IS NOT NULL
@@ -92,7 +110,12 @@ WHERE cr.status NOT IN ('PUBLISHED','SUPERSEDED','REJECTED')
 UNION ALL
 SELECT 'verifications' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(v.id ORDER BY v.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT v_inner.id, v_inner.created_at FROM verifications v_inner
+                       WHERE v_inner.status IN ('MATCH','DISCREPANCY','RESOLVED_ADMIN')
+                         AND v_inner.decided_by IS NOT NULL
+                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = v_inner.decided_by AND au.is_active = true)
+                       ORDER BY v_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM verifications v
 WHERE v.status IN ('MATCH','DISCREPANCY','RESOLVED_ADMIN')
   AND v.decided_by IS NOT NULL
@@ -100,13 +123,21 @@ WHERE v.status IN ('MATCH','DISCREPANCY','RESOLVED_ADMIN')
 UNION ALL
 SELECT 'dead_letter_jobs' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(dl.id ORDER BY dl.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT dl_inner.id, dl_inner.created_at FROM dead_letter_jobs dl_inner
+                       WHERE dl_inner.status NOT IN ('COMPLETED','FAILED','CANCELLED')
+                       ORDER BY dl_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM dead_letter_jobs dl
 WHERE dl.status NOT IN ('COMPLETED','FAILED','CANCELLED')
 UNION ALL
 SELECT 'audit_log' AS table_name,
        COUNT(*)::BIGINT AS potential_idor_rows,
-       jsonb_agg(al.id ORDER BY al.created_at LIMIT 5) AS sample_ids
+       COALESCE((SELECT jsonb_agg(q.id ORDER BY q.created_at)
+                 FROM (SELECT al_inner.id, al_inner.created_at FROM audit_log al_inner
+                       WHERE al_inner.actor_type = 'ADMIN'
+                         AND al_inner.actor_id IS NOT NULL
+                         AND NOT EXISTS (SELECT 1 FROM admin_users au WHERE au.id = al_inner.actor_id AND au.is_active = true)
+                       ORDER BY al_inner.created_at LIMIT 5) q), '[]'::JSONB) AS sample_ids
 FROM audit_log al
 WHERE al.actor_type = 'ADMIN'
   AND al.actor_id IS NOT NULL
