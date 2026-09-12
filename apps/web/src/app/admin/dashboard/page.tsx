@@ -378,7 +378,7 @@ const AdminDashboard: React.FC = () => {
     fetchStats();
   };
 
-  const tabs = ["overview", "verification", "volunteers", "agent-mgmt", "locations", "incidents", "audit", "simulation"] as const;
+  const tabs = ["overview", "verification", "volunteers", "agent-mgmt", "import-agents", "locations", "incidents", "audit", "simulation"] as const;
 
   const fetchAgentLocations = async () => {
     try {
@@ -1079,6 +1079,11 @@ const AdminDashboard: React.FC = () => {
               <AgentManagementTab />
             )}
 
+            {/* ── IMPORT AGENTS TAB (P2-3b CSV UPLOAD UI) ── */}
+            {activeTab === "import-agents" && (
+              <ImportAgentsTab onImported={fetchStats} />
+            )}
+
             {/* ── AUDIT TRAIL TAB ── */}
             {activeTab === "audit" && (
               <AuditTrailTab />
@@ -1232,6 +1237,239 @@ function AgentManagementTab() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Import Agents (CSV Upload) Sub-Component (P2-3b) ──
+
+function ImportAgentsTab({ onImported }: { onImported?: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<string>("");
+  const [dryRun, setDryRun] = useState(true);
+  const [electionId, setElectionId] = useState<string>("");
+  const [elections, setElections] = useState<any[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from("elections").select("id, name, is_active, status")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (data) {
+          setElections(data);
+          const firstActive = data.find((e) => e.is_active === true || e.status === "ACTIVE");
+          if (firstActive) setElectionId(firstActive.id);
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!file) { setCsvPreview(""); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = (reader.result as string).slice(0, 2000);
+      setCsvPreview(text.length >= 2000 ? text + "\n... (truncated preview, full file will be sent)" : text);
+    };
+    reader.readAsText(file);
+  }, [file]);
+
+  const submit = async () => {
+    if (!file) { setError("Select a CSV file first"); return; }
+    setSubmitting(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const fd = new FormData();
+      fd.append("csv", file);
+      fd.append("dry_run", String(dryRun));
+      if (electionId) fd.append("election_id", electionId);
+
+      const res = await fetch("/api/admin/import-agents", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setResult(json);
+      if (json.success && !dryRun && onImported) onImported();
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const summary = result?.summary as
+    | { rows_parsed: number; volunteer_inserted: number; volunteer_skipped: number; volunteer_errors: number;
+        assignment_inserted: number; assignment_skipped: number; assignment_skipped_pu_full: number;
+        assignment_errors: number; errors?: Array<{ row: number; phone?: string; error: string }>; dry_run?: boolean }
+    | undefined;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">Agent CSV Import</h3>
+          <p className="mt-1 font-mono text-[11px] text-[var(--color-text-dim)] max-w-2xl">
+            Bulk upload volunteers + polling-unit assignments from a CSV file.  Flexible header aliases
+            (phone/mobile/whatsapp, state/state_code/state_id, pu/pu_code/official_code, ward/lga/election).
+            Max 2 observers per polling unit. Phone is the dedup key (auto-normalized to +234…).
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--color-green-bright)]"
+            />
+            <span className="font-mono text-[11px] text-[var(--color-text-muted)]">Dry run (no rows written)</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
+            Election
+          </label>
+          <select
+            value={electionId}
+            onChange={(e) => setElectionId(e.target.value)}
+            className="w-full px-3 py-2 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[11px] text-[var(--color-text-muted)]"
+          >
+            <option value="">(use election column in CSV)</option>
+            {elections.map((e) => (
+              <option key={e.id} value={e.id}>{e.name} {e.is_active ? "★" : ""}</option>
+            ))}
+          </select>
+          <p className="font-mono text-[9px] text-[var(--color-text-dim)]">
+            If set, overrides per-row election column. Falls back to first ACTIVE election when empty.
+          </p>
+        </div>
+
+        <div className="md:col-span-2 space-y-2">
+          <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
+            CSV File
+          </label>
+          <div className="flex items-stretch gap-2">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setError(null); }}
+              className="flex-1 block w-full px-3 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)] file:mr-3 file:px-3 file:py-1.5 file:-mx-3 file:-my-1.5 file:mr-3 file:border-0 file:bg-[var(--color-gray-100)] file:font-mono file:text-[10px] file:text-[var(--color-text-muted)]"
+            />
+            <button
+              onClick={submit}
+              disabled={!file || submitting}
+              className="px-4 py-2 bg-[var(--color-green)] text-white font-mono text-[11px] uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105 transition"
+            >
+              {submitting ? (dryRun ? "Running dry-run…" : "Importing…") : (dryRun ? "Dry-run" : "Import")}
+            </button>
+          </div>
+          {error && (
+            <div className="px-3 py-2 bg-red-50 border border-red-200 font-mono text-[11px] text-red-700">
+              ERROR: {error}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CSV PREVIEW */}
+      {csvPreview && (
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
+              Preview — {file?.name} · {(file?.size ?? 0).toLocaleString()} bytes
+            </span>
+          </div>
+          <pre className="max-h-40 overflow-auto border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3 font-mono text-[10px] leading-snug text-[var(--color-text-muted)] whitespace-pre-wrap break-all">
+{csvPreview}
+          </pre>
+        </div>
+      )}
+
+      {/* RESULT SUMMARY */}
+      {summary && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-[var(--color-ink-light)] border border-[var(--color-gray-100)]">
+              <div className="font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Rows parsed</div>
+              <div className="mt-1 font-display text-xl text-[var(--color-text)]">{summary.rows_parsed}</div>
+            </div>
+            <div className="p-3 bg-emerald-50 border border-emerald-200">
+              <div className="font-mono text-[9px] uppercase text-emerald-700">Volunteers inserted</div>
+              <div className="mt-1 font-display text-xl text-emerald-800">{summary.volunteer_inserted}</div>
+            </div>
+            <div className="p-3 bg-slate-50 border border-slate-200">
+              <div className="font-mono text-[9px] uppercase text-slate-600">Volunteers skipped</div>
+              <div className="mt-1 font-display text-xl text-slate-700">{summary.volunteer_skipped}</div>
+            </div>
+            <div className="p-3 bg-rose-50 border border-rose-200">
+              <div className="font-mono text-[9px] uppercase text-rose-600">Volunteer errors</div>
+              <div className="mt-1 font-display text-xl text-rose-700">{summary.volunteer_errors}</div>
+            </div>
+            <div className="p-3 bg-blue-50 border border-blue-200">
+              <div className="font-mono text-[9px] uppercase text-blue-700">Assignments inserted</div>
+              <div className="mt-1 font-display text-xl text-blue-800">{summary.assignment_inserted}</div>
+            </div>
+            <div className="p-3 bg-slate-50 border border-slate-200">
+              <div className="font-mono text-[9px] uppercase text-slate-600">Assignments skipped</div>
+              <div className="mt-1 font-display text-xl text-slate-700">{summary.assignment_skipped}</div>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200">
+              <div className="font-mono text-[9px] uppercase text-amber-700">PU full (skipped)</div>
+              <div className="mt-1 font-display text-xl text-amber-800">{summary.assignment_skipped_pu_full}</div>
+            </div>
+            <div className="p-3 bg-rose-50 border border-rose-200">
+              <div className="font-mono text-[9px] uppercase text-rose-600">Assignment errors</div>
+              <div className="mt-1 font-display text-xl text-rose-700">{summary.assignment_errors}</div>
+            </div>
+          </div>
+          {summary.dry_run && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 font-mono text-[11px] text-amber-800">
+              ⚠ DRY RUN — above numbers are what WOULD happen. Untick "Dry run" checkbox and re-submit to commit rows.
+            </div>
+          )}
+          {summary.errors && summary.errors.length > 0 && (
+            <div>
+              <div className="mb-1 font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
+                Errors ({summary.errors.length})
+              </div>
+              <div className="max-h-56 overflow-auto border border-[var(--color-gray-100)]">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-[var(--color-ink-light)]">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Row</th>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Phone</th>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.errors.slice(0, 100).map((e, i) => (
+                      <tr key={i} className="border-t border-[var(--color-gray-100)]">
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{e.row}</td>
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{e.phone ?? "—"}</td>
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-rose-700">{e.error}</td>
+                      </tr>
+                    ))}
+                    {summary.errors.length > 100 && (
+                      <tr><td colSpan={3} className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)]">
+                        …and {summary.errors.length - 100} more (truncated)
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

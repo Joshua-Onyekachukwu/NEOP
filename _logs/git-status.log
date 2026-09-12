@@ -1,0 +1,52 @@
+﻿ M .vercel/project.json
+ M _logs/dev3002-stderr.log
+ M _logs/dev3002-stdout.log
+ M apps/web/middleware.ts
+ M apps/web/src/app/admin/dashboard/page.tsx
+ D apps/web/src/app/api/admin/simulate/trigger/route.ts
+ M apps/web/src/app/api/admin/verify/route.ts
+ M apps/web/src/app/api/auth/verify-otp/route.ts
+ M apps/web/src/app/api/me/result/route.ts
+ M apps/web/src/app/api/public/disruptions/route.ts
+ M apps/web/src/app/api/public/results/route.ts
+ M apps/web/src/app/api/verify/batch/route.ts
+ M apps/web/src/lib/api-cache.ts
+ M apps/web/vercel.json
+ M package.json
+ M packages/database/package.json
+ M packages/ui/package.json
+ M packages/validation/package.json
+ M vercel.json
+?? .vercel-cache/
+?? "NEXT PHASE 2.MD"
+?? "NEXT PHASE.MD"
+?? _logs/build-final-p23b.log
+?? _logs/build-web-216.log
+?? _logs/build-web-final.log
+?? _logs/build-web.log
+?? _logs/dev-3002-err.log
+?? _logs/dev-3002-out.log
+?? _logs/dev-3002-stderr.log
+?? _logs/dev-3002-stdout.log
+?? _logs/dev-3002.log
+?? _logs/git-init.log
+?? _logs/git-status.log
+?? _logs/root-build.log
+?? _logs/vercel-deploy-nowait.log
+?? _logs/vercel-ls-2.json
+?? _logs/vercel-ls.json
+?? _scripts/
+?? apps/web/src/app/api/admin/import-agents/
+?? docs/ARCHITECTURE_RUNBOOK.md
+?? docs/ELECTION_TOMORROW_AUDIT.md
+?? supabase/migrations/213_RLS_PUBLIC_SAFETY.sql
+?? supabase/migrations/214_RESULT_STATE_MACHINE.sql
+?? supabase/migrations/215_RESULT_ATOMIC_SUBMIT.sql
+?? supabase/migrations/216_AGGREGATION_DEDUP_PU_ELECTION.sql
+?? supabase/migrations/217_PITR_BACKUP_VERIFY.sql
+?? supabase/migrations/218_E2E_DIAGNOSTIC_ROLLBACK.sql
+?? supabase/migrations/219_PATCH_SUBMIT_ATOMIC_COLUMNS.sql
+?? supabase/migrations/220_PATCH_TRIGGER_RPC_AMBIGUOUS.sql
+?? supabase/migrations/221_PATCH_PARTY_ROW_COUNT.sql
+?? supabase/migrations/222_P1_ASSIGNMENT_OWNERSHIP_CHECK.sql
+?? supabase/migrations/900_DIAGNOSTIC_CHECK_SUPABASE_PROJECT.sql

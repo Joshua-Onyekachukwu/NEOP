@@ -5,6 +5,7 @@
   "main": "./src/schemas.ts",
   "types": "./src/schemas.ts",
   "scripts": {
+    "build": "echo 'validation package (no build required)'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

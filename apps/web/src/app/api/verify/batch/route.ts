@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyResult } from '@/lib/domain/verification';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdmin, isAdminSuccess } from '@/lib/admin-auth';
+import { invalidateAllCaches } from '@/lib/api-cache';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -53,17 +54,25 @@ export async function POST(request: NextRequest) {
     let verified = 0;
     let disputed = 0;
     let failed = 0;
+    let anyChanged = false;
 
     for (const { id } of pendingResults) {
       const result = await verifyResult(id);
       results.push({ id, ...result });
 
       if (result.success) {
+        anyChanged = true;
         if (result.score?.overall === 'HIGH') verified++;
         else if (result.score?.overall === 'DISPUTED') disputed++;
       } else {
         failed++;
       }
+    }
+
+    // P2-2: Batch verification touches many rows → clear all public caches.
+    // (stats, party-results, public-results, disruptions, config, ISR pages / live / results)
+    if (anyChanged) {
+      try { invalidateAllCaches(); } catch (e) { console.warn('[batch verify] cache invalidate failed:', e); }
     }
 
     return NextResponse.json({
@@ -72,6 +81,7 @@ export async function POST(request: NextRequest) {
       verified,
       disputed,
       failed,
+      cache_invalidated: anyChanged,
       results,
     });
   } catch (error) {

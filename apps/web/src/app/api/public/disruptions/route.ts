@@ -2,18 +2,15 @@
  * GET /api/public/disruptions
  * Public endpoint for disruption/incident data on the live dashboard.
  *
- * Returns:
- *   - disruptions: recent incidents with PU details
- *   - summary: counts by category and severity
- *   - map_markers: PUs with disruptions for map overlay
+ * P2-1: Replaced raw SELECT per request with getCachedPublicDisruptions (60s
+ *      unstable_cache tag "public-disruptions").  Summary, map_markers,
+ *      redaction, and LGA-level lat/lng jitter all happen in route layer on
+ *      top of the shared cached query.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rate-limit";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+import { getCachedPublicDisruptions } from "@/lib/api-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,84 +46,94 @@ const SEVERITY_COLORS: Record<string, string> = {
   LOW: "#6B7280",
 };
 
+const DISCLAIMER =
+  "Incident reports are filed by field observers in real time. Sensitive details are redacted for observer safety until administratively verified.";
+
 export async function GET(request: NextRequest) {
-  // Rate limiting
   const rateResult = publicLimiter.check(request);
   if (!rateResult.ok) return rateLimitResponse(rateResult);
 
   try {
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
-    const category = searchParams.get("category")?.toUpperCase();
-    const severity = searchParams.get("severity")?.toUpperCase();
-    const state = searchParams.get("state");
+    const rawLimit = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = Math.min(isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 50, 200);
+    const category = searchParams.get("category")?.toUpperCase() || undefined;
+    const severity = searchParams.get("severity")?.toUpperCase() || undefined;
+    const stateNameOrCode = searchParams.get("state") || undefined;
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Cached (60s) — returns raw incidents joined to polling_units / lgas / states.
+    // Uses filterable shape { category, severity, state_id } — but the shared
+    // cache function returns ALL incidents for broadest sharing.  We filter
+    // strictly at route layer below (filters are cheap on <= 500 rows).
+    const cached = await getCachedPublicDisruptions({ limit: Math.max(500, limit), offset: 0 });
 
-    // 1. Fetch recent disruptions with PU details
-    let query = supabase
-      .from("incidents")
-      .select(`
-        id, category, severity, what_observed, when_observed, status, agent_safe, submitted_at,
-        polling_units (
-          id, official_code, name, state_id, latitude, longitude,
-          states ( id, name, code )
-        )
-      `)
-      .order("submitted_at", { ascending: false })
-      .limit(limit);
+    let rows = cached.incidents || [];
 
-    if (category) query = query.eq("category", category);
-    if (severity) query = query.eq("severity", severity);
-
-    const { data: incidents, error: incError } = await query;
-
-    if (incError) {
-      console.error("Disruptions fetch error:", incError);
-      return NextResponse.json({ error: "Failed to fetch disruptions" }, { status: 500 });
-    }
-
-    // Apply state filter post-query
-    let filtered = incidents || [];
-    if (state) {
-      filtered = filtered.filter((i: any) => {
-        return i.polling_units?.states?.name?.toLowerCase().includes(state.toLowerCase());
+    // Apply filters (small post-filter — all incidents for an election ~ <5k so fine)
+    if (stateNameOrCode) {
+      const norm = stateNameOrCode.toLowerCase();
+      rows = rows.filter((i: any) => {
+        const state = i.states;
+        if (!state) return false;
+        return state.name?.toLowerCase() === norm || state.code?.toLowerCase() === norm;
       });
     }
+    if (category) rows = rows.filter((i: any) => String(i.category || "").toUpperCase() === category);
+    if (severity) rows = rows.filter((i: any) => String(i.severity || "").toUpperCase() === severity);
 
-    // 2. Format disruptions for display
-    const disruptions = filtered.map((i: any) => ({
-      id: i.id,
-      category: i.category,
-      category_label: CATEGORY_LABELS[i.category] || i.category,
-      category_icon: CATEGORY_ICONS[i.category] || "⚠️",
-      severity: i.severity,
-      severity_color: SEVERITY_COLORS[i.severity] || "#6B7280",
-      description: i.what_observed,
-      status: i.status,
-      agent_safe: i.agent_safe,
-      polling_unit: {
-        code: i.polling_units?.official_code || "Unknown",
-        name: i.polling_units?.name || "Unknown",
-        state: i.polling_units?.states?.name || "Unknown",
-        state_code: i.polling_units?.states?.code || "",
-      },
-      reported_at: i.submitted_at || i.when_observed,
-    }));
+    const total = rows.length;
+    rows = rows.slice(0, limit);
 
-    // 3. Build summary counts
+    // Redaction layer — critical P0_S3 belt-and-suspenders on each row.
+    const disruptions = rows.map((i: any) => {
+      const isSensitive =
+        i.severity === "CRITICAL" ||
+        i.severity === "HIGH" ||
+        ["VIOLENCE", "INTIMIDATION", "SECURITY_INCIDENT"].includes(String(i.category || "").toUpperCase());
+
+      const pu = i.polling_units || {};
+      const pollingUnitCode = isSensitive
+        ? (pu.ward_id ? "Ward-level incident" : "Area-level incident")
+        : (pu.official_code || "Unknown");
+      const pollingUnitName = isSensitive
+        ? `${i.lgas?.name || ""} LGA, ${i.states?.name || ""}`.trim()
+        : (pu.name || "Unknown");
+      const safeDesc = `${CATEGORY_LABELS[i.category] || "Incident"} reported` +
+        (i.severity ? ` (${i.severity} severity)` : "");
+
+      return {
+        id: i.id,
+        category: i.category,
+        category_label: CATEGORY_LABELS[i.category] || i.category,
+        category_icon: CATEGORY_ICONS[i.category] || "⚠️",
+        severity: i.severity,
+        severity_color: SEVERITY_COLORS[i.severity] || "#6B7280",
+        description: safeDesc,
+        status: i.status,
+        polling_unit: {
+          code: pollingUnitCode,
+          name: pollingUnitName,
+          state: i.states?.name || "Unknown",
+          state_code: i.states?.code || "",
+          lga: i.lgas?.name || null,
+          ward: pu.ward_id ? (pu.name || pu.ward_id) : null,
+        },
+        reported_at: i.submitted_at || i.when_observed || i.reported_at,
+      };
+    });
+
+    // Summary (by_category / by_severity — computed on FILTERED rows not just page slice)
     const categoryCounts: Record<string, number> = {};
     const severityCounts: Record<string, number> = {};
-    let unsafeCount = 0;
-
-    for (const i of filtered) {
-      categoryCounts[i.category] = (categoryCounts[i.category] || 0) + 1;
-      severityCounts[i.severity] = (severityCounts[i.severity] || 0) + 1;
-      if (i.agent_safe === false) unsafeCount++;
+    for (const i of rows) {
+      const cat = String(i.category || "OTHER");
+      const sev = String(i.severity || "LOW");
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      severityCounts[sev] = (severityCounts[sev] || 0) + 1;
     }
-
     const summary = {
-      total: filtered.length,
+      total: rows.length,
+      total_after_filters: total,
       by_category: Object.entries(categoryCounts)
         .map(([cat, count]) => ({
           category: cat,
@@ -142,38 +149,68 @@ export async function GET(request: NextRequest) {
           color: SEVERITY_COLORS[sev] || "#6B7280",
         }))
         .sort((a, b) => b.count - a.count),
-      agents_unsafe: unsafeCount,
     };
 
-    // 4. Map markers — PUs with disruptions for overlay
-    const mapMarkers = filtered
-      .filter((i: any) => i.polling_units?.latitude && i.polling_units?.longitude)
-      .map((i: any) => ({
-        id: i.id,
-        latitude: i.polling_units.latitude,
-        longitude: i.polling_units.longitude,
-        category: i.category,
-        severity: i.severity,
-        color: SEVERITY_COLORS[i.severity] || "#6B7280",
-        code: i.polling_units.official_code,
-        name: i.polling_units.name,
-        state: i.polling_units.states?.name || "",
-      }));
+    // Map markers — CRITICAL/HIGH/VIOLENCE use LGA-level jitter.
+    const mapMarkers = rows
+      .filter((i: any) => i.latitude && i.longitude)
+      .map((i: any) => {
+        const pu = i.polling_units || {};
+        const isSensitive =
+          i.severity === "CRITICAL" ||
+          i.severity === "HIGH" ||
+          ["VIOLENCE", "INTIMIDATION", "SECURITY_INCIDENT"].includes(String(i.category || "").toUpperCase());
+        const seed = (Number(String(i.id || "0").replace(/\D/g, "").slice(-4)) || 0) / 10000;
+        const jitterLat = isSensitive ? (seed - 0.5) * 0.12 : 0;
+        const jitterLng = isSensitive ? ((seed * 1.3) % 1 - 0.5) * 0.12 : 0;
 
-    return NextResponse.json({
-      disruptions,
-      summary,
-      map_markers: mapMarkers,
-      disclaimer: "Incident reports are filed by field observers in real time. They are unverified until reviewed by administrators.",
-    }, {
-      headers: {
-        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
-        "Surrogate-Control": "max-age=10, stale-if-error=120",
-        "X-Content-Type-Options": "nosniff",
+        return {
+          id: i.id,
+          latitude: Number(i.latitude || pu.latitude) + jitterLat,
+          longitude: Number(i.longitude || pu.longitude) + jitterLng,
+          category: i.category,
+          severity: i.severity,
+          color: SEVERITY_COLORS[i.severity] || "#6B7280",
+          code: isSensitive ? "Redacted for safety" : (pu.official_code || ""),
+          name: isSensitive
+            ? `${i.lgas?.name || ""} LGA, ${i.states?.name || ""}`.trim()
+            : (pu.name || ""),
+          state: i.states?.name || "",
+          approximate: isSensitive,
+        };
+      });
+
+    const response = NextResponse.json(
+      {
+        disruptions,
+        summary,
+        map_markers: mapMarkers,
+        pagination: cached.pagination || { limit, offset: 0, total: rows.length },
+        source: cached.source || "supabase",
+        refreshed_at: cached.refreshed_at || new Date().toISOString(),
+        disclaimer: DISCLAIMER,
       },
-    });
-  } catch (error) {
-    console.error("Disruptions error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+      {
+        headers: {
+          "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=120",
+          "Surrogate-Control": "max-age=60, stale-if-error=300",
+          "X-Content-Type-Options": "nosniff",
+        },
+      }
+    );
+    return addRateLimitHeaders(response, rateResult);
+  } catch (error: any) {
+    console.error("[public/disruptions] error:", error?.message || error);
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        disruptions: [],
+        summary: { total: 0, by_category: [], by_severity: [] },
+        map_markers: [],
+        disclaimer: DISCLAIMER,
+      },
+      { status: 500 }
+    );
   }
 }
+

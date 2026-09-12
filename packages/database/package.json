@@ -5,6 +5,7 @@
   "main": "./src/types.ts",
   "types": "./src/types.ts",
   "scripts": {
+    "build": "echo 'database package (no build required)'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

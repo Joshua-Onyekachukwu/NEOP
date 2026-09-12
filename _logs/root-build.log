@@ -1,0 +1,97 @@
+﻿
+> build
+> npm run build --workspaces
+
+
+> observer@0.1.0 build
+> next build
+
+   Γû▓ Next.js 15.3.6
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully in 71s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/9) ...
+   Generating static pages (2/9) 
+   Generating static pages (4/9) 
+   Generating static pages (6/9) 
+ Γ£ô Generating static pages (9/9)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+Γöî Γùï /                                      137 B         102 kB
+Γö£ Γùï /_not-found                            975 B         103 kB
+Γö£ Γùï /dashboard                           1.56 kB         103 kB
+Γö£ Γùï /login                                 547 B         102 kB
+Γö£ Γùï /report-incident                     2.21 kB         107 kB
+Γö£ Γùï /safety                              1.43 kB         106 kB
+Γöö Γùï /submit-result                       2.56 kB         108 kB
++ First Load JS shared by all             102 kB
+  Γö£ chunks/315-18b2bebcd92ada89.js       46.4 kB
+  Γö£ chunks/87c73c54-26eb8a7f016325cb.js  53.2 kB
+  Γöö other shared chunks (total)          1.99 kB
+
+
+Γùï  (Static)  prerendered as static content
+
+
+> nigeria-election-platform@0.1.0 build
+> next build
+
+   Γû▓ Next.js 15.3.6
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully in 22.0s
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/34) ...
+   Generating static pages (8/34) 
+   Generating static pages (16/34) 
+   Generating static pages (25/34) 
+ Γ£ô Generating static pages (34/34)
+   Finalizing page optimization ...
+   Collecting build traces ...
+npm.cmd : [Error: ENOENT: no such file or directory, open 'C:\Users\Administrat
+or\Webstrom\NEOP\apps\web\.next\server\app\api\admin\assignments\route.js.nft.j
+son'] {
+At line:1 char:5
++ & { npm.cmd run build 2>&1 | Out-File -FilePath "_logs\root-build.log ...
++     ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([Error: ENOENT:...js.nft.json'] { 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\Administrator\\Webstrom\\NEOP\\apps\\web\\.next\\server\\ap
+p\\api\\admin\\assignments\\route.js.nft.json'
+}
+npm error Lifecycle script `build` failed with error:
+npm error code 1
+npm error path C:\Users\Administrator\Webstrom\NEOP\apps\web
+npm error workspace nigeria-election-platform@0.1.0
+npm error location C:\Users\Administrator\Webstrom\NEOP\apps\web
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c next build
+
+
+> @platform/database@0.1.0 build
+> echo 'database package (no build required)'
+
+'database package (no build required)'
+
+> @platform/ui@0.1.0 build
+> echo 'ui package (no build required)'
+
+'ui package (no build required)'
+
+> @platform/validation@0.1.0 build
+> echo 'validation package (no build required)'
+
+'validation package (no build required)'

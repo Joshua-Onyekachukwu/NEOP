@@ -5,3 +5,10 @@
 
  ✓ Starting...
  ✓ Ready in 11.3s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 1717ms (108 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /api/public/stats in 38.9s (988 modules)
+ GET /@vite/client 404 in 40376ms
+ GET /api/public/stats 200 in 21170ms
+ GET /@vite/client 404 in 70ms

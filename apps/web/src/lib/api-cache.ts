@@ -221,29 +221,51 @@ export const getCachedStats = unstable_cache(
         let totalCovered = 0;
         let totalVerified = 0;
         for (const row of breakdown) {
-          totalCovered += Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0);
+          totalCovered += Number(row.covered_pus || row.covered_polling_units || 0);
           totalVerified += Number(row.verified || row.verified_polling_units || 0);
         }
+
+        let totalVotes = 0;
+        try {
+          const { data: votesRows, error: votesErr } = await supabase
+            .from("result_submissions")
+            .select("valid_votes, rejected_votes, polling_unit_id, election_id, status");
+          if (!votesErr && votesRows) {
+            const seen = new Set<string>();
+            for (const r of votesRows) {
+              const key = `${r.polling_unit_id}|${r.election_id}`;
+              if (seen.has(key)) continue;
+              if (!r.status || ["SUPERSEDED","REJECTED"].includes(r.status)) continue;
+              seen.add(key);
+              totalVotes += Number(r.valid_votes || 0) + Number(r.rejected_votes || 0);
+            }
+          }
+        } catch {}
 
         return {
           inec_total_polling_units: totalPUCount,
           total_polling_units: totalPUCount,
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
-          total_votes: totalCovered * 123, // estimated from avg 123 votes per PU
-          state_breakdown: breakdown.map((row: any) => ({
-            state_id: row.state_id,
-            state_name: row.state_name,
-            name: row.state_name,
-            state_code: row.state_code || row.region || "",
-            total_pus: Number(row.total_pus || row.total_polling_units || 0),
-            covered: Number(row.total_pus || row.total_polling_units || row.covered_polling_units || 0),
-            verified: Number(row.verified || row.verified_polling_units || 0),
-            coverage_percent: Number(row.coverage_percent || 0),
-            verification_percent: Number(row.verification_percent || 0),
-          })),
+          total_votes: totalVotes,
+          state_breakdown: breakdown.map((row: any) => {
+            const stateTotal = Number(row.total_pus || row.total_polling_units || 0);
+            const stateCovered = Number(row.covered_pus || row.covered_polling_units || 0);
+            const stateVerified = Number(row.verified || row.verified_polling_units || 0);
+            return {
+              state_id: row.state_id,
+              state_name: row.state_name,
+              name: row.state_name,
+              state_code: row.state_code || row.region || "",
+              total_pus: stateTotal,
+              covered: stateCovered,
+              verified: stateVerified,
+              coverage_percent: stateTotal > 0 ? Number(((stateCovered / stateTotal) * 100).toFixed(1)) : 0,
+              verification_percent: stateCovered > 0 ? Number(((stateVerified / stateCovered) * 100).toFixed(1)) : (stateTotal > 0 ? Number(((stateVerified / stateTotal) * 100).toFixed(1)) : 0),
+            };
+          }),
           coverage_percent: totalPUCount > 0 ? Number(((totalCovered / totalPUCount) * 100).toFixed(1)) : 0,
-          verification_percent: totalPUCount > 0 ? Number(((totalVerified / totalPUCount) * 100).toFixed(1)) : 0,
+          verification_percent: totalCovered > 0 ? Number(((totalVerified / totalCovered) * 100).toFixed(1)) : (totalPUCount > 0 ? Number(((totalVerified / totalPUCount) * 100).toFixed(1)) : 0),
           last_updated: new Date().toISOString(),
           disclaimer: "These are independently collected field observations and are not official INEC election results.",
           source: "supabase" as const,
@@ -441,4 +463,219 @@ export function invalidateAllCaches() {
   revalidateTag("stats");
   revalidateTag("party-results");
   revalidateTag("config");
+  revalidateTag("public-results");
+  revalidateTag("public-disruptions");
+  revalidatePath("/");
+  revalidatePath("/live");
+  revalidatePath("/results");
 }
+
+// ─────────────────────────────────────────────────────
+// Cached public results feed — refreshed every 30 seconds
+// (P2-1 cache — same pattern as stats/party-results)
+// ─────────────────────────────────────────────────────
+
+const PUBLIC_STATUSES = ["VERIFIED", "PARTIALLY_VERIFIED", "APPROVED"];
+
+/**
+ * Retrieve public results (paginated) — returned rows for latest
+ * VERIFIED/PARTIALLY_VERIFIED/APPROVED submissions.  Returns full
+ * shape used by /api/public/results route including pagination totals
+ * and embedded party breakdown.
+ */
+export const getCachedPublicResults = unstable_cache(
+  async (params: { limit: number; offset: number; state_id?: string; lga_id?: string; ward_id?: string; polling_unit_id?: string }) => {
+    const { limit, offset } = params;
+    const supabase = getServiceClient();
+
+    const sbResult = await withTimeout(
+      (async () => {
+        // Base query: count total (matching filters) first so pagination is accurate
+        const countQuery = supabase
+          .from("result_submissions")
+          .select("id", { count: "exact", head: true })
+          .in("status", PUBLIC_STATUSES);
+
+        if (params.state_id) countQuery.eq("state_id", params.state_id);
+        if (params.lga_id) countQuery.eq("lga_id", params.lga_id);
+        if (params.ward_id) countQuery.eq("ward_id", params.ward_id);
+        if (params.polling_unit_id) countQuery.eq("polling_unit_id", params.polling_unit_id);
+
+        const { count } = await countQuery;
+        const total = Number(count || 0);
+
+        if (total === 0) {
+          return { results: [], pagination: { limit, offset, total: 0, has_next: false, has_prev: false }, source: "supabase" as const };
+        }
+
+        // Pull actual rows — include polling unit data, party breakdown,
+        // NEVER include volunteer_id or audit columns.
+        const { data: rows, error } = await supabase
+          .from("result_submissions")
+          .select(`
+            id,
+            submitted_at,
+            verified_at,
+            status,
+            valid_votes,
+            rejected_votes,
+            total_votes,
+            election_id,
+            polling_unit_id,
+            polling_units (id, official_code, name, ward_id, lga_id, state_id, latitude, longitude, registered_voters),
+            party_results (votes, parties (id, name, abbreviation, color))
+          `)
+          .in("status", PUBLIC_STATUSES)
+          .order("submitted_at", { ascending: false, nullsFirst: false })
+          .range(offset, offset + limit - 1)
+          .returns<any[]>();
+
+        if (error) {
+          console.warn("[api-cache] public results query failed:", error.message);
+          return null;
+        }
+
+        const normalized = (rows || []).map((r) => ({
+          id: r.id,
+          submitted_at: r.submitted_at,
+          verified_at: r.verified_at,
+          status: r.status,
+          valid_votes: Number(r.valid_votes || 0),
+          rejected_votes: Number(r.rejected_votes || 0),
+          total_votes: Number(r.total_votes || 0),
+          election_id: r.election_id,
+          polling_unit: r.polling_units ? {
+            id: r.polling_units.id,
+            official_code: r.polling_units.official_code,
+            name: r.polling_units.name,
+            ward_id: r.polling_units.ward_id,
+            lga_id: r.polling_units.lga_id,
+            state_id: r.polling_units.state_id,
+            latitude: r.polling_units.latitude,
+            longitude: r.polling_units.longitude,
+            registered_voters: Number(r.polling_units.registered_voters || 0),
+          } : null,
+          party_results: (r.party_results || []).map((pr: any) => ({
+            votes: Number(pr.votes || 0),
+            party: pr.parties ? {
+              id: pr.parties.id,
+              name: pr.parties.name,
+              abbreviation: pr.parties.abbreviation,
+              color: pr.parties.color,
+            } : null,
+          })),
+        }));
+
+        return {
+          results: normalized,
+          pagination: {
+            limit,
+            offset,
+            total,
+            has_next: offset + limit < total,
+            has_prev: offset > 0,
+          },
+          source: "supabase" as const,
+          refreshed_at: new Date().toISOString(),
+        };
+      })(),
+      SB_TIMEOUT_MS,
+      "supabase:public-results"
+    );
+
+    if (sbResult) return sbResult;
+
+    // Fallback: empty results instead of failing
+    return {
+      results: [],
+      pagination: { limit, offset, total: 0, has_next: false, has_prev: false },
+      source: "fallback" as const,
+      refreshed_at: new Date().toISOString(),
+    };
+  },
+  ["public-results-v1"],
+  {
+    revalidate: 30,
+    tags: ["public-results"],
+  }
+);
+
+// ─────────────────────────────────────────────────────
+// Cached public disruptions — refreshed every 60 seconds
+// (P2-1 cache — redaction already applied by DB select in route)
+// ─────────────────────────────────────────────────────
+
+export const getCachedPublicDisruptions = unstable_cache(
+  async (params: { limit: number; offset: number }) => {
+    const { limit, offset } = params;
+    const supabase = getServiceClient();
+
+    const sbResult = await withTimeout(
+      (async () => {
+        const { count } = await supabase
+          .from("incidents")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null);
+
+        const total = Number(count || 0);
+        if (total === 0) {
+          return { incidents: [], pagination: { limit, offset, total: 0 }, source: "supabase" as const, refreshed_at: new Date().toISOString() };
+        }
+
+        // NOTE: Belt-and-suspenders P0_S3 redaction applied in route layer.
+        // (route removes agent_safe/what_observed from SELECT and jitters lat/lng
+        // for CRITICAL/HIGH severities — this is DB-only cache layer, route does
+        // final transformation before returning to anon user.)
+        const { data: rows, error } = await supabase
+          .from("incidents")
+          .select(`
+            id,
+            status,
+            severity,
+            incident_type,
+            description,
+            reported_at,
+            latitude,
+            longitude,
+            polling_unit_id,
+            lga_id,
+            state_id,
+            polling_units (official_code, name, ward_id, lga_id, state_id),
+            lgas (name, state_id),
+            states (name, code)
+          `)
+          .is("deleted_at", null)
+          .order("reported_at", { ascending: false, nullsFirst: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) {
+          console.warn("[api-cache] public disruptions query failed:", error.message);
+          return null;
+        }
+
+        return {
+          incidents: rows || [],
+          pagination: { limit, offset, total, has_next: offset + limit < total, has_prev: offset > 0 },
+          source: "supabase" as const,
+          refreshed_at: new Date().toISOString(),
+        };
+      })(),
+      SB_TIMEOUT_MS,
+      "supabase:public-disruptions"
+    );
+
+    if (sbResult) return sbResult;
+
+    return {
+      incidents: [],
+      pagination: { limit, offset, total: 0, has_next: false, has_prev: false },
+      source: "fallback" as const,
+      refreshed_at: new Date().toISOString(),
+    };
+  },
+  ["public-disruptions-v1"],
+  {
+    revalidate: 60,
+    tags: ["public-disruptions"],
+  }
+);

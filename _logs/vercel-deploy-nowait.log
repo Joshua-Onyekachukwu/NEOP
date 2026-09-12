@@ -1,0 +1,21 @@
+﻿npx.cmd : Vercel CLI 59.16.0 (Node.js 24.15.0)
+At line:1 char:90
++ ... aH3zuhYG" ; npx.cmd vercel deploy -y --no-wait --scope team_ksBu4z76R ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Vercel CLI 59.16.0 (Node.js 24.15 
+   .0):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Error: An unexpected error occurred while trying to create the global 
+directory "~\AppData\Roaming\com.vercel.cli\Data" EPERM: operation not 
+permitted, mkdir 'C:\Users\Administrator\AppData\Roaming\com.vercel.cli'
+Error: Exiting worker due to unhandled rejection: Error: EPERM: operation not 
+permitted, mkdir 'C:\Users\Administrator\AppData\Local\com.vercel.cli'
+    at async mkdir (node:internal/fs/promises:859:10)
+    at async process.<anonymous> (C:\Users\Administrator\AppData\Local\npm-cach
+e\_npx\69f9afb961c37556\node_modules\vercel\dist\get-latest-worker.cjs:100:3) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'mkdir',
+  path: 'C:\\Users\\Administrator\\AppData\\Local\\com.vercel.cli'
+}

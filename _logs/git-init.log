@@ -1,0 +1,9 @@
+﻿git.exe : warning: re-init: ignored --initial-branch=main
+At line:1 char:157
++ ... istrator\Webstrom\NEOP"; git.exe --no-pager init -b main *>&1 | Out-F ...
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: re-ini...ial-branch=main 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Reinitialized existing Git repository in C:/Users/Administrator/Webstrom/NEOP/.git/

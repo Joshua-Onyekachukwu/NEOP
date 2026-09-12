@@ -9,6 +9,8 @@
     "dev:web": "npm run dev -w apps/web",
     "dev:observer": "npm run dev -w apps/observer",
     "build": "npm run build --workspaces",
+    "build:web": "npm run build -w @platform/database && npm run build -w @platform/validation && npm run build -w @platform/ui && npm run build -w apps/web",
+    "build:observer": "npm run build -w apps/observer",
     "typecheck": "npm run typecheck --workspaces",
     "db:migrate": "supabase db push",
     "db:generate": "supabase gen types typescript --local > packages/database/src/types.ts"

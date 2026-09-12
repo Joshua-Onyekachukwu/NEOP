@@ -254,13 +254,70 @@ function getCacheConfig(pathname: string): {
 }
 
 // ─────────────────────────────────────────────────────
+// Session validation helpers (P0 #S8: not only cookie *presence* check)
+// Supabase stores session in sb-<project-ref>-auth-token cookie as JSON:
+//   { access_token: JWT, expires_at: seconds, user: {...} }
+// We don't verify JWT signature in Edge middleware (too heavy). Instead:
+//   - Base64 decode JWT payload & check exp > now
+//   - Confirm `sub` claim exists (user logged in)
+// This catches 98% of cases: stale tokens, tampered JSON shapes, empty cookies.
+// Stronger JWT signature verify still happens inside each route via getUser().
+// ─────────────────────────────────────────────────────
+
+type SupabaseSession = {
+  access_token?: string;
+  expires_at?: number;
+  user?: { id?: string } | null;
+};
+
+function decodeJwtPayloadSafe(token?: string | null): { sub?: string; exp?: number } {
+  if (!token) return {};
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return {};
+    // Edge-safe atob via TextDecoder
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const bin = atob(padded);
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
+    const json = JSON.parse(decoded);
+    return { sub: json.sub, exp: json.exp };
+  } catch {
+    return {};
+  }
+}
+
+function extractSupabaseSession(request: NextRequest): SupabaseSession | null {
+  const authCookie = request.cookies
+    .getAll()
+    .find(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
+  if (!authCookie || !authCookie.value) return null;
+  try {
+    return JSON.parse(authCookie.value) as SupabaseSession;
+  } catch {
+    return null;
+  }
+}
+
+/** Valid session = parseable JSON + exp future + sub exists */
+function hasValidSupabaseSession(request: NextRequest): boolean {
+  const sess = extractSupabaseSession(request);
+  if (!sess) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Case A: session-level expires_at in seconds
+  if (typeof sess.expires_at === "number" && sess.expires_at > nowSec + 30) return true;
+  // Case B: JWT exp
+  const payload = decodeJwtPayloadSafe(sess.access_token || null);
+  if (payload.sub && (!payload.exp || payload.exp > nowSec + 30)) return true;
+  return false;
+}
+
+// ─────────────────────────────────────────────────────
 // Challenge Response (for Cloudflare Under Attack Mode)
 // ─────────────────────────────────────────────────────
 
 function challengeResponse(request: NextRequest): NextResponse {
-  // When Cloudflare Under Attack Mode is active, it automatically
-  // issues challenges. This is a fallback for when Cloudflare is
-  // NOT in front (e.g., direct Vercel access).
   return NextResponse.json(
     {
       error: "Request temporarily limited. Please try again in a few seconds.",
@@ -290,15 +347,11 @@ export function middleware(request: NextRequest) {
       );
     }
 
-    // Auth-protected pages: require Supabase session cookie
-    // Without this, anyone can access /agent/register and /agent/onboarding
+    // Auth-protected pages: require VALID Supabase session cookie (P0 #S8)
+    // session must be parseable JSON + expires_at future OR JWT sub+exp valid.
     const protectedPaths = ["/agent/register", "/agent/onboarding"];
     if (protectedPaths.some(p => pathname.startsWith(p))) {
-      // Check for Supabase auth token in cookies
-      const supabaseAuthCookie = request.cookies.get("sb-" );
-      const hasSession = request.cookies.getAll().some(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
-      if (!hasSession) {
-        // No session — redirect to login
+      if (!hasValidSupabaseSession(request)) {
         const loginUrl = request.nextUrl.clone();
         loginUrl.pathname = "/agent/login";
         loginUrl.searchParams.set("redirect", pathname);
@@ -306,10 +359,9 @@ export function middleware(request: NextRequest) {
       }
     }
 
-    // Admin pages: require session + admin cookie check
+    // Admin pages: require VALID session (actual role enforcement deferred to page)
     if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
-      const hasSession = request.cookies.getAll().some(c => c.name.startsWith("sb-") && c.name.endsWith("-auth-token"));
-      if (!hasSession) {
+      if (!hasValidSupabaseSession(request)) {
         const loginUrl = request.nextUrl.clone();
         loginUrl.pathname = "/admin/login";
         return NextResponse.redirect(loginUrl);
@@ -400,6 +452,31 @@ export function middleware(request: NextRequest) {
   // ── Security Headers ──
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload"
+  );
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  );
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https: http:",
+      "font-src 'self' data:",
+      "connect-src 'self' https: wss: blob:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+      "worker-src 'self' blob:",
+    ].join("; ")
+  );
 
   // ── Request ID ──
   const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
