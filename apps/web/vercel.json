@@ -1,1 +1,8 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/admin/cron/dead-letter-reaper-hourly",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

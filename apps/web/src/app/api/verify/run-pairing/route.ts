@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 type AIPolicy = "FAST_ONLY" | "ALWAYS_REVIEW" | "AI_ONLY";
 
+const NVIDIA_API_BASE = process.env.NVIDIA_API_URL || "https://integrate.api.nvidia.com";
+
 const NVIDIA_KEYS = [
   process.env.NVIDIA_API_KEY_1,
   process.env.NVIDIA_API_KEY_2,
@@ -17,8 +19,9 @@ const NVIDIA_KEYS = [
   process.env.NVIDIA_API_KEY_5,
 ].filter(Boolean) as string[];
 
-function pickNvidiaKey(retry: number): string {
-  const idx = (retry * 7 + Math.floor(Math.random() * NVIDIA_KEYS.length)) % Math.max(1, NVIDIA_KEYS.length);
+function pickNvidiaKey(): string {
+  const len = Math.max(1, NVIDIA_KEYS.length);
+  const idx = Math.floor(Math.random() * len);
   return NVIDIA_KEYS[idx] || process.env.NVIDIA_API_KEY || "";
 }
 
@@ -29,7 +32,7 @@ async function retryWithBackoff<T>(
   let lastErr: any;
   for (let i = 0; i <= retries; i++) {
     const signal = AbortSignal.timeout(25000);
-    const key = pickNvidiaKey(i);
+    const key = pickNvidiaKey();
     try {
       return await fn(key, signal);
     } catch (e: any) {
@@ -46,7 +49,8 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user } = auth;
+    const adminUser = admin_user;
 
     const body = await request.json();
     const submission_id: string = body.submission_id;
@@ -182,7 +186,7 @@ export async function POST(request: NextRequest) {
       const callNVIDIA = async (modelType: string, model: string) => {
         try {
           const r = await retryWithBackoff(async (key, signal) => {
-            const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+            const res = await fetch(`${NVIDIA_API_BASE}/v1/chat/completions`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",

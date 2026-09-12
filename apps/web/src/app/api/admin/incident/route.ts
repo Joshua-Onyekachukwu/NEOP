@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user: adminUser, state_id, global } = auth;
 
     const body = await request.json();
     const { incident_id, decision, review_notes } = body;
@@ -23,6 +23,25 @@ export async function POST(request: NextRequest) {
     const validDecisions = ['CORROBORATED', 'UNCONFIRMED', 'REVIEWING'];
     if (!validDecisions.includes(decision)) {
       return NextResponse.json({ error: 'Invalid decision' }, { status: 400 });
+    }
+
+    // State guard: verify incident belongs to admin's state (if state-scoped)
+    if (!global && state_id != null) {
+      const { data: incState, error: incErr } = await supabase
+        .from('incidents')
+        .select('polling_unit_id, polling_units!inner ( state_id )')
+        .eq('id', incident_id)
+        .maybeSingle();
+      if (incErr || !incState) {
+        return NextResponse.json({ error: 'incident not found' }, { status: 404 });
+      }
+      const incSt = (incState as any)?.polling_units?.state_id;
+      if (!incSt || incSt !== state_id) {
+        return NextResponse.json(
+          { error: 'Forbidden: state-scoped admin cannot review incidents outside their state' },
+          { status: 403 }
+        );
+      }
     }
 
     // Update incident status

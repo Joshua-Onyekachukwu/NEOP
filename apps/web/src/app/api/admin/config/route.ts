@@ -12,7 +12,7 @@ export async function PUT(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase } = auth;
+    const { supabase, state_id, global } = auth;
 
     const body = await request.json();
     const { election_type, data_mode, active_election_id } = body;
@@ -42,6 +42,13 @@ export async function PUT(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    if (!global && state_id != null && (data_mode !== undefined || active_election_id !== undefined)) {
+      return NextResponse.json(
+        { error: "Forbidden: state-scoped admin cannot modify global system_config (data_mode / active_election_id)" },
+        { status: 403 }
+      );
     }
 
     if (data_mode !== undefined || active_election_id !== undefined) {

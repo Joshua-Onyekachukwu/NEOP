@@ -67,7 +67,8 @@ export async function POST(request: NextRequest) {
     // Verify admin auth (required for POST)
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user } = auth;
+    const adminUser = admin_user;
 
     const { error } = await supabase
       .from("simulation_history")

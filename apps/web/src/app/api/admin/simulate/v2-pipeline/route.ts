@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user: adminUser, state_id, global } = auth;
 
     const body = await request.json();
     const mode: Mode = body.mode || "CONTROLLED";
@@ -145,13 +145,18 @@ export async function POST(request: NextRequest) {
       sim_election_id = (newElec as any).id;
     }
 
-    const { data: states } = await supabase
-      .from("states")
-      .select("id, name")
-      .order("id")
-      .limit(3);
-    const stateIds = (states || []).map((s: any) => s.id);
-    if (stateIds.length === 0) stateIds.push("dummy-state");
+    let stateIds: string[];
+    if (!global && state_id != null) {
+      stateIds = [state_id];
+    } else {
+      const { data: states } = await supabase
+        .from("states")
+        .select("id, name")
+        .order("id")
+        .limit(3);
+      stateIds = (states || []).map((s: any) => s.id);
+      if (stateIds.length === 0) stateIds.push("dummy-state");
+    }
 
     const perState = Math.ceil(pu_count / Math.max(1, stateIds.length));
     let pus: any[] = [];

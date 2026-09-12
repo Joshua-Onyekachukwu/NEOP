@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     console.log(
-      `[trigger-v2] Admin ${auth.adminUser.email} starting: scenario=${scenario}, voters=${target_voters}`
+      `[trigger-v2] Admin ${auth.admin_user.email} starting: scenario=${scenario}, voters=${target_voters}`
     );
 
     // Call the Supabase SQL function (fire-and-forget)

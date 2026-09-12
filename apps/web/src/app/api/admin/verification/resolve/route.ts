@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user: adminUser, state_id, global } = auth;
 
     const body = await request.json();
     const verification_id: string = body.verification_id;
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       .from("verifications")
       .select(
         `id, canonical_id, election_id, pu_id, status, identical, submission1_id, submission2_id,
+         polling_units!inner ( state_id ),
          canonical_pu_results!inner ( id, election_id, pu_id, submission1_id, submission2_id ),
          sub1:result_submissions!verifications_submission1_id_fkey (
            id, valid_votes, rejected_votes, total_votes,
@@ -66,8 +67,17 @@ export async function POST(request: NextRequest) {
     if (verErr || !ver) {
       return NextResponse.json({ error: "verification not found" }, { status: 404 });
     }
-
     const v: any = ver;
+    if (!global && state_id != null) {
+      const puState = v?.polling_units?.state_id;
+      if (!puState || puState !== state_id) {
+        return NextResponse.json(
+          { error: "Forbidden: state-scoped admin cannot resolve verifications outside their state" },
+          { status: 403 }
+        );
+      }
+    }
+
     const chosenSub =
       decision === "ACCEPT_AGENT_1"
         ? v.sub1

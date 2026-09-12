@@ -1,21 +1,16 @@
 /**
  * GET /api/admin/incidents
- * Admin endpoint for listing all incidents
+ * Admin endpoint for listing all incidents (state-scoped)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { requireAdmin, isAdminSuccess } from '@/lib/admin-auth';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+import { requireAdminWithDetails, isAdminDetailsSuccess } from '@/lib/admin-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
-    if (!isAdminSuccess(auth)) return auth.error;
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const auth = await requireAdminWithDetails(request);
+    if (!isAdminDetailsSuccess(auth)) return auth.error;
+    const { supabase, state_id, global } = auth;
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500);
@@ -23,7 +18,9 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('incidents')
-      .select(`
+      .select(
+        global && state_id == null
+          ? `
         id,
         category,
         severity,
@@ -37,10 +34,30 @@ export async function GET(request: NextRequest) {
           official_code,
           name
         )
-      `)
+      `
+          : `
+        id,
+        category,
+        severity,
+        what_observed,
+        when_observed,
+        status,
+        agent_safe,
+        submitted_at,
+        reviewed_at,
+        polling_units!inner (
+          official_code,
+          name,
+          state_id
+        )
+      `
+      )
       .order('submitted_at', { ascending: false })
       .limit(limit);
 
+    if (!global && state_id != null) {
+      query = query.eq('polling_units.state_id', state_id);
+    }
     if (status) {
       query = query.eq('status', status);
     }

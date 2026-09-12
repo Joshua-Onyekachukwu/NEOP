@@ -1891,91 +1891,288 @@ function AgentManagementTab() {
 
 function ImportAgentsTab({ onImported }: { onImported?: () => void }) {
   const [file, setFile] = useState<File | null>(null);
-  const [csvPreview, setCsvPreview] = useState<string>("");
-  const [dryRun, setDryRun] = useState(true);
   const [electionId, setElectionId] = useState<string>("");
   const [elections, setElections] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [submitKind, setSubmitKind] = useState<"dry_run" | "import" | null>(null);
+  const [result, setResult] = useState<{
+    dry_run: boolean;
+    created_volunteers: number;
+    skipped_volunteers: number;
+    created_assignments: number;
+    errors: Array<{ row: number; email?: string; error: string }>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [parsedRows, setParsedRows] = useState<Record<string, string>[]>([]);
+  const [invalidRowIdxs, setInvalidRowIdxs] = useState<Set<number>>(new Set());
+  const [missingCols, setMissingCols] = useState<string[]>([]);
+
   useEffect(() => {
-    supabase.from("elections").select("id, name, is_active, status")
+    supabase
+      .from("elections")
+      .select("id, name, is_active, status")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         if (data) {
           setElections(data);
-          const firstActive = data.find((e) => e.is_active === true || e.status === "ACTIVE");
+          const firstActive = data.find(
+            (e) => e.is_active === true || e.status === "ACTIVE"
+          );
           if (firstActive) setElectionId(firstActive.id);
         }
       });
   }, []);
 
+  function parseCSV4180(text: string): string[][] {
+    const rows: string[][] = [];
+    let curRow: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    let i = 0;
+    const n = text.length;
+    while (i < n) {
+      const ch = text.charCodeAt(i);
+      if (inQuotes) {
+        if (ch === 34) {
+          if (text.charCodeAt(i + 1) === 34) {
+            cur += '"';
+            i += 2;
+            continue;
+          }
+          inQuotes = false;
+          i++;
+          continue;
+        }
+        cur += text[i];
+        i++;
+        continue;
+      }
+      if (ch === 34) {
+        inQuotes = true;
+        i++;
+        continue;
+      }
+      if (ch === 44) {
+        curRow.push(cur);
+        cur = "";
+        i++;
+        continue;
+      }
+      if (ch === 13) {
+        if (text.charCodeAt(i + 1) === 10) i++;
+        curRow.push(cur);
+        cur = "";
+        rows.push(curRow);
+        curRow = [];
+        i++;
+        continue;
+      }
+      if (ch === 10) {
+        curRow.push(cur);
+        cur = "";
+        rows.push(curRow);
+        curRow = [];
+        i++;
+        continue;
+      }
+      cur += text[i];
+      i++;
+    }
+    if (cur.length > 0 || curRow.length > 0) {
+      curRow.push(cur);
+      rows.push(curRow);
+    }
+    return rows.filter(
+      (r) => r.length > 0 && !(r.length === 1 && r[0].trim() === "")
+    );
+  }
+
+  const HEADER_ALIASES: Record<string, keyof BulkRowExpected> = {
+    email: "email",
+    "e-mail": "email",
+    email_address: "email",
+    name: "name",
+    full_name: "name",
+    fullname: "name",
+    volunteer: "name",
+    agent: "name",
+    observer: "name",
+    phone: "phone",
+    mobile: "phone",
+    telephone: "phone",
+    whatsapp: "phone",
+    contact: "phone",
+    state_id: "state_id",
+    stateid: "state_id",
+    lga_id: "lga_id",
+    lgaid: "lga_id",
+    ward: "ward",
+    ward_name: "ward",
+    polling_unit_code: "polling_unit_code",
+    pu_code: "polling_unit_code",
+    pucode: "polling_unit_code",
+    official_code: "polling_unit_code",
+    pollingunitcode: "polling_unit_code",
+    volunteer_id: "volunteer_id",
+    volunteerid: "volunteer_id",
+  };
+
+  type BulkRowExpected = {
+    email?: string;
+    name?: string;
+    phone?: string;
+    state_id?: string;
+    lga_id?: string;
+    ward?: string;
+    polling_unit_code?: string;
+    volunteer_id?: string;
+  };
+
+  const REQUIRED_COLS: (keyof BulkRowExpected)[] = [
+    "email",
+    "name",
+    "phone",
+    "state_id",
+    "lga_id",
+    "ward",
+    "polling_unit_code",
+  ];
+
   useEffect(() => {
-    if (!file) { setCsvPreview(""); return; }
+    if (!file) {
+      setHeaders([]);
+      setParsedRows([]);
+      setInvalidRowIdxs(new Set());
+      setMissingCols([]);
+      setResult(null);
+      setError(null);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      const text = (reader.result as string).slice(0, 2000);
-      setCsvPreview(text.length >= 2000 ? text + "\n... (truncated preview, full file will be sent)" : text);
+      const text = reader.result as string;
+      const raw = parseCSV4180(text);
+      if (raw.length === 0) {
+        setHeaders([]);
+        setParsedRows([]);
+        setMissingCols([...REQUIRED_COLS]);
+        return;
+      }
+      const rawHeaders = raw[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+      const mappedHeaders = rawHeaders.map(
+        (h) => HEADER_ALIASES[h] ?? (h as keyof BulkRowExpected)
+      );
+      setHeaders(raw[0]);
+
+      const missing: string[] = [];
+      REQUIRED_COLS.forEach((rc) => {
+        if (!mappedHeaders.includes(rc)) missing.push(rc);
+      });
+      setMissingCols(missing);
+
+      const records: Record<string, string>[] = [];
+      const invalidIdxs = new Set<number>();
+      for (let r = 1; r < raw.length; r++) {
+        const row = raw[r];
+        const obj: Record<string, string> = {};
+        for (let c = 0; c < mappedHeaders.length; c++) {
+          const v = (row[c] ?? "").trim();
+          const k = String(mappedHeaders[c]);
+          if (v && !(k in obj)) obj[k] = v;
+        }
+        records.push(obj);
+        let bad = false;
+        for (const rc of REQUIRED_COLS) {
+          if (!obj[rc] || String(obj[rc]).trim().length === 0) {
+            bad = true;
+            break;
+          }
+        }
+        if (missing.length > 0) bad = true;
+        if (bad) invalidIdxs.add(r - 1);
+      }
+      setParsedRows(records);
+      setInvalidRowIdxs(invalidIdxs);
+      setResult(null);
+      setError(null);
     };
     reader.readAsText(file);
   }, [file]);
 
-  const submit = async () => {
-    if (!file) { setError("Select a CSV file first"); return; }
+  const runBulk = async (kind: "dry_run" | "import") => {
+    if (parsedRows.length === 0) {
+      setError("No rows parsed. Load a valid CSV first.");
+      return;
+    }
     setSubmitting(true);
+    setSubmitKind(kind);
     setError(null);
     setResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const fd = new FormData();
-      fd.append("csv", file);
-      fd.append("dry_run", String(dryRun));
-      if (electionId) fd.append("election_id", electionId);
-
-      const res = await fetch("/api/admin/import-agents", {
+      const body: any = {
+        rows: parsedRows.map((r) => ({
+          email: r.email,
+          name: r.name,
+          phone: r.phone,
+          state_id: r.state_id,
+          lga_id: r.lga_id,
+          ward: r.ward,
+          polling_unit_code: r.polling_unit_code,
+          volunteer_id: r.volunteer_id || undefined,
+        })),
+        dry_run: kind === "dry_run",
+      };
+      if (electionId) body.election_id = electionId;
+      const res = await fetch("/api/admin/import-agents/bulk", {
         method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-        body: fd,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       setResult(json);
-      if (json.success && !dryRun && onImported) onImported();
+      if (kind === "import" && !json.errors?.length && onImported) onImported();
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
       setSubmitting(false);
+      setSubmitKind(null);
     }
   };
 
-  const summary = result?.summary as
-    | { rows_parsed: number; volunteer_inserted: number; volunteer_skipped: number; volunteer_errors: number;
-        assignment_inserted: number; assignment_skipped: number; assignment_skipped_pu_full: number;
-        assignment_errors: number; errors?: Array<{ row: number; phone?: string; error: string }>; dry_run?: boolean }
-    | undefined;
+  const previewRows = parsedRows.slice(0, 10);
+  const displayCols: { key: string; label: string }[] = [
+    { key: "email", label: "Email" },
+    { key: "name", label: "Name" },
+    { key: "phone", label: "Phone" },
+    { key: "state_id", label: "State ID" },
+    { key: "lga_id", label: "LGA ID" },
+    { key: "ward", label: "Ward" },
+    { key: "polling_unit_code", label: "PU Code" },
+    { key: "volunteer_id", label: "Vol ID" },
+  ];
 
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">Agent CSV Import</h3>
+          <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
+            Import Agents (Bulk JSON via CSV)
+          </h3>
           <p className="mt-1 font-mono text-[11px] text-[var(--color-text-dim)] max-w-2xl">
-            Bulk upload volunteers + polling-unit assignments from a CSV file.  Flexible header aliases
-            (phone/mobile/whatsapp, state/state_code/state_id, pu/pu_code/official_code, ward/lga/election).
-            Max 2 observers per polling unit. Phone is the dedup key (auto-normalized to +234…).
+            CSV required columns:{" "}
+            <code className="text-[var(--color-green-bright)]">
+              email, name, phone, state_id, lga_id, ward, polling_unit_code
+            </code>
+            . Optional: <code>volunteer_id</code>. Dedup by email. Max 2
+            observers per PU. RFC4180 CSV parsing in-browser.
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={dryRun}
-              onChange={(e) => setDryRun(e.target.checked)}
-              className="h-3.5 w-3.5 accent-[var(--color-green-bright)]"
-            />
-            <span className="font-mono text-[11px] text-[var(--color-text-muted)]">Dry run (no rows written)</span>
-          </label>
         </div>
       </div>
 
@@ -1989,13 +2186,15 @@ function ImportAgentsTab({ onImported }: { onImported?: () => void }) {
             onChange={(e) => setElectionId(e.target.value)}
             className="w-full px-3 py-2 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[11px] text-[var(--color-text-muted)]"
           >
-            <option value="">(use election column in CSV)</option>
+            <option value="">(use first ACTIVE election)</option>
             {elections.map((e) => (
-              <option key={e.id} value={e.id}>{e.name} {e.is_active ? "★" : ""}</option>
+              <option key={e.id} value={e.id}>
+                {e.name} {e.is_active ? "★" : ""}
+              </option>
             ))}
           </select>
           <p className="font-mono text-[9px] text-[var(--color-text-dim)]">
-            If set, overrides per-row election column. Falls back to first ACTIVE election when empty.
+            Falls back to the first ACTIVE election when empty.
           </p>
         </div>
 
@@ -2003,21 +2202,12 @@ function ImportAgentsTab({ onImported }: { onImported?: () => void }) {
           <label className="block font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
             CSV File
           </label>
-          <div className="flex items-stretch gap-2">
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setError(null); }}
-              className="flex-1 block w-full px-3 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)] file:mr-3 file:px-3 file:py-1.5 file:-mx-3 file:-my-1.5 file:mr-3 file:border-0 file:bg-[var(--color-gray-100)] file:font-mono file:text-[10px] file:text-[var(--color-text-muted)]"
-            />
-            <button
-              onClick={submit}
-              disabled={!file || submitting}
-              className="px-4 py-2 bg-[var(--color-green)] text-white font-mono text-[11px] uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105 transition"
-            >
-              {submitting ? (dryRun ? "Running dry-run…" : "Importing…") : (dryRun ? "Dry-run" : "Import")}
-            </button>
-          </div>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="block w-full px-3 py-1.5 bg-[var(--color-ink-light)] border border-[var(--color-gray-200)] font-mono text-[10px] text-[var(--color-text-muted)] file:mr-3 file:px-3 file:py-1.5 file:-mx-3 file:-my-1.5 file:border-0 file:bg-[var(--color-gray-100)] file:font-mono file:text-[10px] file:text-[var(--color-text-muted)]"
+          />
           {error && (
             <div className="px-3 py-2 bg-red-50 border border-red-200 font-mono text-[11px] text-red-700">
               ERROR: {error}
@@ -2026,88 +2216,241 @@ function ImportAgentsTab({ onImported }: { onImported?: () => void }) {
         </div>
       </div>
 
-      {/* CSV PREVIEW */}
-      {csvPreview && (
-        <div>
-          <div className="mb-1 flex items-center gap-2">
+      {/* STATS */}
+      {parsedRows.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 bg-[var(--color-ink-light)] border border-[var(--color-gray-100)]">
+            <div className="font-mono text-[9px] uppercase text-[var(--color-text-dim)]">
+              Total rows
+            </div>
+            <div className="mt-1 font-display text-xl text-[var(--color-text)]">
+              {parsedRows.length}
+            </div>
+          </div>
+          <div className="p-3 bg-emerald-50 border border-emerald-200">
+            <div className="font-mono text-[9px] uppercase text-emerald-700">
+              Valid rows
+            </div>
+            <div className="mt-1 font-display text-xl text-emerald-800">
+              {parsedRows.length - invalidRowIdxs.size}
+            </div>
+          </div>
+          <div className="p-3 bg-rose-50 border border-rose-200">
+            <div className="font-mono text-[9px] uppercase text-rose-600">
+              Invalid rows
+            </div>
+            <div className="mt-1 font-display text-xl text-rose-700">
+              {invalidRowIdxs.size}
+              {missingCols.length > 0 && (
+                <span className="ml-2 text-[10px] font-mono text-rose-600">
+                  missing: {missingCols.join(",")}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PREVIEW GRID */}
+      {previewRows.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
-              Preview — {file?.name} · {(file?.size ?? 0).toLocaleString()} bytes
+              Preview (first {previewRows.length} of {parsedRows.length} rows) —{" "}
+              {file?.name} · {(file?.size ?? 0).toLocaleString()} bytes
             </span>
           </div>
-          <pre className="max-h-40 overflow-auto border border-[var(--color-gray-100)] bg-[var(--color-ink-light)] p-3 font-mono text-[10px] leading-snug text-[var(--color-text-muted)] whitespace-pre-wrap break-all">
-{csvPreview}
-          </pre>
+          <div className="overflow-x-auto border border-[var(--color-gray-100)]">
+            <table className="w-full text-[10px]">
+              <thead className="bg-[var(--color-ink-light)] sticky top-0">
+                <tr className="border-b border-[var(--color-gray-100)]">
+                  <th className="px-2 py-1.5 text-left font-mono uppercase text-[var(--color-text-dim)] w-10">
+                    #
+                  </th>
+                  {displayCols.map((c) => (
+                    <th
+                      key={c.key}
+                      className={`px-2 py-1.5 text-left font-mono uppercase text-[var(--color-text-dim)] whitespace-nowrap ${
+                        REQUIRED_COLS.includes(c.key as any) &&
+                        missingCols.includes(c.key)
+                          ? "bg-rose-100 text-rose-700"
+                          : ""
+                      }`}
+                    >
+                      {c.label}
+                      {REQUIRED_COLS.includes(c.key as any) && (
+                        <span className="ml-1 text-[9px] text-[var(--color-amber)]">
+                          *
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((r, i) => {
+                  const isBad = invalidRowIdxs.has(i);
+                  return (
+                    <tr
+                      key={i}
+                      className={`border-b border-[var(--color-gray-100)] ${
+                        isBad ? "bg-rose-50" : "hover:bg-[var(--color-ink-light)]"
+                      }`}
+                    >
+                      <td className="px-2 py-1 font-mono text-[var(--color-text-dim)]">
+                        {i + 1}
+                      </td>
+                      {displayCols.map((c) => (
+                        <td
+                          key={c.key}
+                          className={`px-2 py-1 font-mono whitespace-nowrap ${
+                            REQUIRED_COLS.includes(c.key as any) &&
+                            !r[c.key] &&
+                            !missingCols.includes(c.key)
+                              ? "text-rose-700 bg-rose-50"
+                              : "text-[var(--color-text-muted)]"
+                          }`}
+                        >
+                          {r[c.key] || "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ACTION BUTTONS */}
+      {parsedRows.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => runBulk("dry_run")}
+            disabled={submitting}
+            className="px-5 py-2 bg-[var(--color-amber)] text-white font-mono text-[11px] font-bold uppercase disabled:opacity-40 hover:brightness-105 transition"
+          >
+            {submitting && submitKind === "dry_run"
+              ? "Running dry-run…"
+              : "Dry Run"}
+          </button>
+          <button
+            onClick={() => runBulk("import")}
+            disabled={submitting || invalidRowIdxs.size > 0}
+            className="px-5 py-2 bg-[var(--color-green)] text-white font-mono text-[11px] font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105 transition"
+            title={
+              invalidRowIdxs.size > 0
+                ? "Fix invalid rows before importing"
+                : ""
+            }
+          >
+            {submitting && submitKind === "import"
+              ? "Importing…"
+              : "Import"}
+          </button>
+          {invalidRowIdxs.size > 0 && (
+            <span className="font-mono text-[10px] text-rose-600">
+              {invalidRowIdxs.size} invalid row
+              {invalidRowIdxs.size !== 1 ? "s" : ""} — fix CSV or run Dry Run for errors
+            </span>
+          )}
         </div>
       )}
 
       {/* RESULT SUMMARY */}
-      {summary && (
+      {result && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-3 bg-[var(--color-ink-light)] border border-[var(--color-gray-100)]">
-              <div className="font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Rows parsed</div>
-              <div className="mt-1 font-display text-xl text-[var(--color-text)]">{summary.rows_parsed}</div>
-            </div>
             <div className="p-3 bg-emerald-50 border border-emerald-200">
-              <div className="font-mono text-[9px] uppercase text-emerald-700">Volunteers inserted</div>
-              <div className="mt-1 font-display text-xl text-emerald-800">{summary.volunteer_inserted}</div>
+              <div className="font-mono text-[9px] uppercase text-emerald-700">
+                Created volunteers
+              </div>
+              <div className="mt-1 font-display text-xl text-emerald-800">
+                {result.created_volunteers}
+              </div>
             </div>
             <div className="p-3 bg-slate-50 border border-slate-200">
-              <div className="font-mono text-[9px] uppercase text-slate-600">Volunteers skipped</div>
-              <div className="mt-1 font-display text-xl text-slate-700">{summary.volunteer_skipped}</div>
-            </div>
-            <div className="p-3 bg-rose-50 border border-rose-200">
-              <div className="font-mono text-[9px] uppercase text-rose-600">Volunteer errors</div>
-              <div className="mt-1 font-display text-xl text-rose-700">{summary.volunteer_errors}</div>
+              <div className="font-mono text-[9px] uppercase text-slate-600">
+                Skipped volunteers
+              </div>
+              <div className="mt-1 font-display text-xl text-slate-700">
+                {result.skipped_volunteers}
+              </div>
             </div>
             <div className="p-3 bg-blue-50 border border-blue-200">
-              <div className="font-mono text-[9px] uppercase text-blue-700">Assignments inserted</div>
-              <div className="mt-1 font-display text-xl text-blue-800">{summary.assignment_inserted}</div>
-            </div>
-            <div className="p-3 bg-slate-50 border border-slate-200">
-              <div className="font-mono text-[9px] uppercase text-slate-600">Assignments skipped</div>
-              <div className="mt-1 font-display text-xl text-slate-700">{summary.assignment_skipped}</div>
-            </div>
-            <div className="p-3 bg-amber-50 border border-amber-200">
-              <div className="font-mono text-[9px] uppercase text-amber-700">PU full (skipped)</div>
-              <div className="mt-1 font-display text-xl text-amber-800">{summary.assignment_skipped_pu_full}</div>
+              <div className="font-mono text-[9px] uppercase text-blue-700">
+                Created assignments
+              </div>
+              <div className="mt-1 font-display text-xl text-blue-800">
+                {result.created_assignments}
+              </div>
             </div>
             <div className="p-3 bg-rose-50 border border-rose-200">
-              <div className="font-mono text-[9px] uppercase text-rose-600">Assignment errors</div>
-              <div className="mt-1 font-display text-xl text-rose-700">{summary.assignment_errors}</div>
+              <div className="font-mono text-[9px] uppercase text-rose-600">
+                Errors
+              </div>
+              <div className="mt-1 font-display text-xl text-rose-700">
+                {result.errors.length}
+              </div>
             </div>
           </div>
-          {summary.dry_run && (
+          {result.dry_run ? (
             <div className="px-3 py-2 bg-amber-50 border border-amber-200 font-mono text-[11px] text-amber-800">
-              ⚠ DRY RUN — above numbers are what WOULD happen. Untick "Dry run" checkbox and re-submit to commit rows.
+              ⚠ DRY RUN — no rows written. Numbers above show what WOULD happen.
+              Click [Import] to commit.
+            </div>
+          ) : (
+            <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 font-mono text-[11px] text-emerald-800">
+              ✅ IMPORT COMPLETE — rows written to database.
             </div>
           )}
-          {summary.errors && summary.errors.length > 0 && (
+          {result.errors.length > 0 && (
             <div>
               <div className="mb-1 font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wide">
-                Errors ({summary.errors.length})
+                Row errors ({result.errors.length})
               </div>
               <div className="max-h-56 overflow-auto border border-[var(--color-gray-100)]">
                 <table className="w-full">
                   <thead className="sticky top-0 bg-[var(--color-ink-light)]">
                     <tr>
-                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Row</th>
-                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Phone</th>
-                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">Error</th>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">
+                        Row
+                      </th>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">
+                        Email
+                      </th>
+                      <th className="px-3 py-1.5 text-left font-mono text-[9px] uppercase text-[var(--color-text-dim)]">
+                        Error
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {summary.errors.slice(0, 100).map((e, i) => (
-                      <tr key={i} className="border-t border-[var(--color-gray-100)]">
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{e.row}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">{e.phone ?? "—"}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-rose-700">{e.error}</td>
+                    {result.errors.slice(0, 100).map((e, i) => (
+                      <tr
+                        key={i}
+                        className="border-t border-[var(--color-gray-100)]"
+                      >
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+                          {e.row}
+                        </td>
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+                          {e.email ?? "—"}
+                        </td>
+                        <td className="px-3 py-1.5 font-mono text-[10px] text-rose-700">
+                          {e.error}
+                        </td>
                       </tr>
                     ))}
-                    {summary.errors.length > 100 && (
-                      <tr><td colSpan={3} className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)]">
-                        …and {summary.errors.length - 100} more (truncated)
-                      </td></tr>
+                    {result.errors.length > 100 && (
+                      <tr>
+                        <td
+                          colSpan={3}
+                          className="px-3 py-1.5 font-mono text-[10px] text-[var(--color-text-dim)]"
+                        >
+                          …and {result.errors.length - 100} more (truncated)
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>

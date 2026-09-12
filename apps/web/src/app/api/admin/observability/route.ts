@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase } = auth;
+    const { supabase, state_id, global } = auth;
 
     const url = new URL(request.url);
     const hoursAgoParam = url.searchParams.get("hours_ago");
@@ -17,38 +17,67 @@ export async function GET(request: NextRequest) {
 
     const hoursAgo = Math.max(1, parseInt(hoursAgoParam || "24", 10));
     const limit = Math.min(5000, Math.max(1, parseInt(limitParam || "500", 10)));
+    const since = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
 
     let eventsQuery = supabase
       .from("verification_timeline_events")
-      .select("*")
-      .gte("created_at", new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString())
+      .select(
+        global && state_id == null
+          ? "*"
+          : "*, verifications!inner ( pu_id, polling_units!inner ( state_id ) )"
+      )
+      .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(limit);
 
+    if (!global && state_id != null) {
+      eventsQuery = eventsQuery.eq("verifications.polling_units.state_id", state_id);
+    }
     if (verification_id) eventsQuery = eventsQuery.eq("verification_id", verification_id);
     if (event_type) eventsQuery = eventsQuery.eq("event_type", event_type);
 
     const { data: events, error: evErr } = await eventsQuery;
 
     const eventsByVer: Record<string, any[]> = {};
+    const hourlyBuckets = new Map<string, Map<string, number>>();
     for (const e of events || []) {
-      const vid = (e as any).verification_id || "unknown";
+      const ev: any = e;
+      const vid = ev.verification_id || "unknown";
       if (!eventsByVer[vid]) eventsByVer[vid] = [];
-      eventsByVer[vid].push(e);
+      eventsByVer[vid].push(ev);
+
+      if (!global && state_id != null) {
+        const hb = new Date(ev.created_at || Date.now()).toISOString().slice(0, 13) + ":00:00Z";
+        if (!hourlyBuckets.has(hb)) hourlyBuckets.set(hb, new Map());
+        const perType = hourlyBuckets.get(hb)!;
+        perType.set(ev.event_type, (perType.get(ev.event_type) || 0) + 1);
+      }
     }
 
     let dashboard_hourly: any[] = [];
-    try {
-      const { data: mv, error: mvErr } = await supabase
-        .from("mv_observability_pipeline_dashboard")
-        .select("*")
-        .gte("hour_bucket", new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString())
-        .order("hour_bucket", { ascending: false });
-      if (!mvErr && mv) {
-        dashboard_hourly = mv as any[];
+    if (!global && state_id != null) {
+      for (const [hb, perType] of hourlyBuckets) {
+        for (const [et, c] of perType) {
+          dashboard_hourly.push({
+            hour_bucket: hb,
+            event_type: et,
+            count: c,
+          });
+        }
       }
-    } catch {
-      dashboard_hourly = [];
+    } else {
+      try {
+        const { data: mv, error: mvErr } = await supabase
+          .from("mv_observability_pipeline_dashboard")
+          .select("*")
+          .gte("hour_bucket", since)
+          .order("hour_bucket", { ascending: false });
+        if (!mvErr && mv) {
+          dashboard_hourly = mv as any[];
+        }
+      } catch {
+        dashboard_hourly = [];
+      }
     }
 
     return NextResponse.json(

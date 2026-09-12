@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user } = auth;
+    const adminUser = admin_user;
 
     const body = await request.json().catch(() => ({}));
     const {

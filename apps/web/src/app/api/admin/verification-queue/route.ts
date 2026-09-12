@@ -15,38 +15,60 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase } = auth;
+    const { supabase, state_id, global } = auth;
+
+    const stateScopePu = <T extends { eq?: any; or?: any }>(q: T, col = "polling_units.state_id"): T => {
+      if (global || state_id == null) return q;
+      return (q as any).eq(col, state_id);
+    };
+
+    const stateScopeVerPu = <T extends { eq?: any }>(q: T): T => {
+      if (global || state_id == null) return q;
+      return (q as any).eq("polling_units.state_id", state_id);
+    };
 
     const [{ count: awaiting }, { count: verifyingCnt }, { count: flagged }, hrRes, { count: published }] =
       await Promise.all([
-        supabase
-          .from("canonical_pu_results")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "ONE_SUBMISSION"),
-        supabase
-          .from("verifications")
-          .select("pu_id", { count: "exact", head: true })
-          .in("status", RUNNING_STATUSES),
-        supabase
-          .from("verifications")
-          .select("pu_id", { count: "exact", head: true })
-          .in("status", FLAGGED_STATUSES),
-        supabase
-          .from("verifications")
-          .select("pu_id, canonical_id, status, id, updated_at")
-          .or("status.eq.DISCREPANCY,status.eq.FLAGGED_AI,status.eq.NVIDIA_FAILED")
-          .order("updated_at", { ascending: false })
-          .limit(200),
-        supabase
-          .from("canonical_pu_results")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "PUBLISHED"),
+        stateScopePu(
+          supabase
+            .from("canonical_pu_results")
+            .select("id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .eq("status", "ONE_SUBMISSION")
+        ),
+        stateScopeVerPu(
+          supabase
+            .from("verifications")
+            .select("pu_id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .in("status", RUNNING_STATUSES)
+        ),
+        stateScopeVerPu(
+          supabase
+            .from("verifications")
+            .select("pu_id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .in("status", FLAGGED_STATUSES)
+        ),
+        stateScopeVerPu(
+          supabase
+            .from("verifications")
+            .select("pu_id, canonical_id, status, id, updated_at, polling_units!inner(state_id)")
+            .or("status.eq.DISCREPANCY,status.eq.FLAGGED_AI,status.eq.NVIDIA_FAILED")
+            .order("updated_at", { ascending: false })
+            .limit(200)
+        ),
+        stateScopePu(
+          supabase
+            .from("canonical_pu_results")
+            .select("id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .eq("status", "PUBLISHED")
+        ),
       ]);
 
-    const { data: hrCanonical } = await supabase
-      .from("canonical_pu_results")
-      .select("pu_id")
-      .eq("status", "HUMAN_REVIEW");
+    const { data: hrCanonical } = await stateScopePu(
+      supabase
+        .from("canonical_pu_results")
+        .select("pu_id, polling_units!inner(state_id)")
+        .eq("status", "HUMAN_REVIEW")
+    );
 
     const hrPuSet = new Set<string>();
     for (const r of hrRes?.data || []) hrPuSet.add((r as any).pu_id);
@@ -78,23 +100,27 @@ export async function GET(request: NextRequest) {
     if (detailPuIds.size > 0) {
       const combinedIds = Array.from(detailPuIds).slice(0, 200);
 
-      const { data: canRows } = await supabase
-        .from("canonical_pu_results")
-        .select(
-          `id, pu_id, status, submission1_id, submission2_id, election_id,
-           polling_units ( id, official_code, name, ward_id, lga_id, state_id,
-             wards (name), lgas (name, state_id), states (name, code) )`
-        )
-        .in("pu_id", combinedIds)
-        .in("status", ["ONE_SUBMISSION", "HUMAN_REVIEW", "FLAGGED", "PUBLISHED"]);
+      const { data: canRows } = await stateScopePu(
+        supabase
+          .from("canonical_pu_results")
+          .select(
+            `id, pu_id, status, submission1_id, submission2_id, election_id,
+             polling_units!inner ( id, official_code, name, ward_id, lga_id, state_id,
+               wards (name), lgas (name, state_id), states (name, code) )`
+          )
+          .in("pu_id", combinedIds)
+          .in("status", ["ONE_SUBMISSION", "HUMAN_REVIEW", "FLAGGED", "PUBLISHED"])
+      );
 
-      const { data: verRows } = await supabase
-        .from("verifications")
-        .select(
-          `id, canonical_id, pu_id, election_id, status, max_diff, identical, submission1_id, submission2_id,
-           created_at, updated_at`
-        )
-        .in("pu_id", combinedIds);
+      const { data: verRows } = await stateScopeVerPu(
+        supabase
+          .from("verifications")
+          .select(
+            `id, canonical_id, pu_id, election_id, status, max_diff, identical, submission1_id, submission2_id,
+             created_at, updated_at, polling_units!inner(state_id)`
+          )
+          .in("pu_id", combinedIds)
+      );
 
       const puToCan = new Map<string, any>();
       for (const c of canRows || []) puToCan.set((c as any).pu_id, c);
@@ -219,14 +245,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const { data: awaitingMinimal } = await supabase
-      .from("canonical_pu_results")
-      .select(
-        `id, pu_id, polling_units ( official_code )`
-      )
-      .eq("status", "ONE_SUBMISSION")
-      .order("updated_at", { ascending: false })
-      .limit(50);
+    const { data: awaitingMinimal } = await stateScopePu(
+      supabase
+        .from("canonical_pu_results")
+        .select(
+          `id, pu_id, polling_units!inner ( state_id, official_code )`
+        )
+        .eq("status", "ONE_SUBMISSION")
+        .order("updated_at", { ascending: false })
+        .limit(50)
+    );
 
     for (const a of awaitingMinimal || []) {
       items.push({

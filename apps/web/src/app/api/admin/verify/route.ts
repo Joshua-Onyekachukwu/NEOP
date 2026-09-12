@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
     if (!isAdminDetailsSuccess(auth)) return auth.error;
-    const { supabase, adminUser } = auth;
+    const { supabase, admin_user: adminUser, state_id, global } = auth;
 
     const body = await request.json();
     const { result_id, decision, notes } = body;
@@ -46,6 +46,25 @@ export async function POST(request: NextRequest) {
     // For VERIFIED / DISPUTED we keep status unchanged from decision.
     const rejected = decision === 'REJECTED';
     const newStatus = rejected ? 'SUPERSEDED' : decision;
+
+    // State guard: verify submission belongs to admin's state (if state-scoped)
+    if (!global && state_id != null) {
+      const { data: puState, error: puErr } = await supabase
+        .from('result_submissions')
+        .select('polling_unit_id, polling_units!inner ( state_id )')
+        .eq('id', result_id)
+        .maybeSingle();
+      if (puErr || !puState) {
+        return NextResponse.json({ error: 'result not found' }, { status: 404 });
+      }
+      const resState = (puState as any)?.polling_units?.state_id;
+      if (!resState || resState !== state_id) {
+        return NextResponse.json(
+          { error: 'Forbidden: state-scoped admin cannot act on results outside their state' },
+          { status: 403 }
+        );
+      }
+    }
 
     // Update result status
     const { data: updated, error: updateError } = await supabase

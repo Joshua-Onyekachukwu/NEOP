@@ -74,7 +74,9 @@ export async function requireAdmin(request: NextRequest): Promise<AdminAuthResul
 interface AdminDetailsSuccess {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any;
-  adminUser: AdminUser;
+  admin_user: AdminUser;
+  state_id: string | null;
+  global: boolean;
 }
 
 interface AdminDetailsFailure {
@@ -89,12 +91,11 @@ export function isAdminDetailsSuccess(result: AdminDetailsResult): result is Adm
 
 /**
  * Like requireAdmin(), but also returns the Supabase client and the full admin
- * record (id, email, role). Use this when the route needs to:
- *   - Log the admin's email
- *   - Write the admin's id to audit_log / reviewed_by / actor_id
- *   - Use the admin's role in business logic
+ * record (id, email, role) plus state-scoping fields.
  *
- * Returns { supabase, adminUser } or { error: NextResponse }.
+ * Returns { supabase, admin_user, state_id, global } or { error: NextResponse }.
+ *   - state_id: au.state_id from admin_users (null => global admin)
+ *   - global: true iff state_id IS NULL (can see all data)
  */
 export async function requireAdminWithDetails(request: NextRequest): Promise<AdminDetailsResult> {
   const authHeader = request.headers.get("Authorization");
@@ -111,24 +112,29 @@ export async function requireAdminWithDetails(request: NextRequest): Promise<Adm
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  // Check admin_users table — return id, email, role
-  const { data: adminUser } = await supabase
+  // Check admin_users table — return id, role, state_id, created_at + last_login if present
+  const { data: adminRow } = await supabase
     .from("admin_users")
-    .select("id, role")
+    .select("id, role, state_id, created_at, updated_at, last_login_at")
     .eq("user_id", user.id)
     .eq("is_active", true)
     .single();
 
-  if (!adminUser) {
+  if (!adminRow) {
     return { error: NextResponse.json({ error: "Not authorized as admin" }, { status: 403 }) };
   }
 
+  const row: any = adminRow;
+  const sid: string | null = row.state_id ?? null;
+
   return {
     supabase,
-    adminUser: {
-      id: adminUser.id,
+    admin_user: {
+      id: row.id,
       email: user.email ?? "",
-      role: adminUser.role,
+      role: row.role,
     },
+    state_id: sid,
+    global: sid === null,
   } as AdminDetailsSuccess;
 }

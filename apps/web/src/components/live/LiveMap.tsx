@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { supabase } from "@/lib/supabase-browser";
 
 interface PollingUnit {
   id: string;
@@ -36,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
+  const router = useRouter();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const maplibreglRef = useRef<any>(null);
@@ -45,6 +48,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const pollingUnitsRef = useRef<any[]>([]);
   const fetchingRef = useRef(false);
+  const seenPUIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (mapContainer.current && !map.current) {
@@ -65,6 +69,34 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       return () => clearInterval(interval);
     }
   }, [mapLoaded, refreshKey]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("public:canonical_pu_results")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canonical_pu_results",
+          filter: "status=eq.PUBLISHED",
+        },
+        (payload: any) => {
+          const record = payload.new || payload.old;
+          if (!record) return;
+          const puId = record.polling_unit_id;
+          if (puId && !seenPUIds.current.has(puId)) {
+            seenPUIds.current.add(puId);
+            router.refresh();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [router]);
 
   const initMap = async () => {
     const maplibregl = await import("maplibre-gl");

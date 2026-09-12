@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import ResultFeedSkeleton from "@/components/live/skeletons/ResultFeedSkeleton";
+import { supabase } from "@/lib/supabase-browser";
 
 interface PartyResult {
   party_abbreviation: string;
@@ -25,15 +27,45 @@ interface Result {
 }
 
 const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
+  const router = useRouter();
   const [results, setResults] = useState<Result[]>([]);
   const [lastUpdate, setLastUpdate] = useState("");
   const [loading, setLoading] = useState(true);
+  const seenCanonicalIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     fetchResults();
     const interval = setInterval(fetchResults, 10000);
     return () => clearInterval(interval);
   }, [refreshKey]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("public:canonical_pu_results")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canonical_pu_results",
+          filter: "status=eq.PUBLISHED",
+        },
+        (payload: any) => {
+          const record = payload.new || payload.old;
+          if (!record) return;
+          const canonicalId = record.id;
+          if (canonicalId && !seenCanonicalIds.current.has(canonicalId)) {
+            seenCanonicalIds.current.add(canonicalId);
+            router.refresh();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [router]);
 
   const fetchResults = async () => {
     try {
