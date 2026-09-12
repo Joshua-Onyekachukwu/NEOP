@@ -1,0 +1,2 @@
+HELLO from C:\Users\Administrator\Webstrom\NEOP at 2026-09-12T16:07:21.754Z
+["C:\\Program Files\\nodejs\\node.exe","c:\\Users\\Administrator\\Webstrom\\NEOP\\_scripts\\hello.cjs"]
