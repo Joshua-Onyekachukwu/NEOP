@@ -1,0 +1,106 @@
+
+> build:web
+> npm run build -w @platform/database && npm run build -w @platform/validation && npm run build -w @platform/ui && npm run build -w apps/web
+
+
+> @platform/database@0.1.0 build
+> echo 'database package (no build required)'
+
+'database package (no build required)'
+
+> @platform/validation@0.1.0 build
+> echo 'validation package (no build required)'
+
+'validation package (no build required)'
+
+> @platform/ui@0.1.0 build
+> echo 'ui package (no build required)'
+
+'ui package (no build required)'
+
+> nigeria-election-platform@0.1.0 build
+> next build
+
+   ▲ Next.js 15.3.6
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 48s
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/34) ...
+   Generating static pages (8/34) 
+   Generating static pages (16/34) 
+   Generating static pages (25/34) 
+ ✓ Generating static pages (34/34)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                      Size  First Load JS
+┌ ○ /                                         12.2 kB         197 kB
+├ ○ /_not-found                                 248 B         102 kB
+├ ○ /about/methodology                        2.38 kB         107 kB
+├ ○ /about/privacy                            1.42 kB         106 kB
+├ ○ /admin/dashboard                          12.9 kB         197 kB
+├ ○ /admin/login                              2.37 kB         172 kB
+├ ○ /agent/dashboard                          5.42 kB         175 kB
+├ ○ /agent/login                              1.22 kB         171 kB
+├ ○ /agent/onboarding                         21.2 kB         188 kB
+├ ○ /agent/register                           4.05 kB         174 kB
+├ ○ /agent/report-incident                    2.34 kB         169 kB
+├ ○ /agent/safety                             1.76 kB         168 kB
+├ ○ /agent/submit-result                      4.67 kB         175 kB
+├ ƒ /api/admin/agent-locations                  248 B         102 kB
+├ ƒ /api/admin/assign                           248 B         102 kB
+├ ƒ /api/admin/assignments                      248 B         102 kB
+├ ƒ /api/admin/audit                            248 B         102 kB
+├ ƒ /api/admin/check-auth                       248 B         102 kB
+├ ƒ /api/admin/config                           248 B         102 kB
+├ ƒ /api/admin/export                           248 B         102 kB
+├ ƒ /api/admin/import-agents                    248 B         102 kB
+├ ƒ /api/admin/incident                         248 B         102 kB
+├ ƒ /api/admin/incidents                        248 B         102 kB
+├ ƒ /api/admin/results                          248 B         102 kB
+├ ƒ /api/admin/simulate                         248 B         102 kB
+├ ƒ /api/admin/simulate/history                 248 B         102 kB
+├ ƒ /api/admin/simulate/progress                248 B         102 kB
+├ ƒ /api/admin/simulate/tick                    248 B         102 kB
+├ ƒ /api/admin/simulate/trigger-v2              248 B         102 kB
+├ ƒ /api/admin/verify                           248 B         102 kB
+├ ƒ /api/admin/volunteers                       248 B         102 kB
+├ ƒ /api/admin/volunteers/[id]                  248 B         102 kB
+├ ƒ /api/auth/send-otp                          248 B         102 kB
+├ ƒ /api/auth/verify-otp                        248 B         102 kB
+├ ƒ /api/health                                 248 B         102 kB
+├ ƒ /api/me/assignment                          248 B         102 kB
+├ ƒ /api/me/auto-assign                         248 B         102 kB
+├ ƒ /api/me/check-in                            248 B         102 kB
+├ ƒ /api/me/evidence                            248 B         102 kB
+├ ƒ /api/me/incident                            248 B         102 kB
+├ ƒ /api/me/result                              248 B         102 kB
+├ ƒ /api/me/status                              248 B         102 kB
+├ ƒ /api/public/config                          248 B         102 kB
+├ ƒ /api/public/disruptions                     248 B         102 kB
+├ ƒ /api/public/export                          248 B         102 kB
+├ ƒ /api/public/party-results                   248 B         102 kB
+├ ƒ /api/public/polling-units                   248 B         102 kB
+├ ƒ /api/public/polling-units/status-changes    248 B         102 kB
+├ ƒ /api/public/pu-availability                 248 B         102 kB
+├ ƒ /api/public/results                         248 B         102 kB
+├ ƒ /api/public/stats                           248 B         102 kB
+├ ƒ /api/verify/batch                           248 B         102 kB
+├ ƒ /api/verify/result                          248 B         102 kB
+├ ○ /auth/auth-code-error                       838 B         106 kB
+└ ƒ /auth/callback                              248 B         102 kB
++ First Load JS shared by all                  102 kB
+  ├ chunks/8315-16afafed680ecffd.js           46.4 kB
+  ├ chunks/87c73c54-54ba952841c0529a.js       53.2 kB
+  └ other shared chunks (total)               2.06 kB
+
+
+ƒ Middleware                                  35.6 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
