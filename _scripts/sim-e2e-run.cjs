@@ -42,8 +42,9 @@ function seededRandoms(puIdStr, idx, delta){
 }
 
 async function main() {
-  const partiesRes = await sb.from("parties").select("id,abbreviation,official_name as name,color").order("id",{ascending:true});
+  const partiesRes = await sb.from("parties").select("id,abbreviation,official_name,color").order("id",{ascending:true});
   let parties = partiesRes.data || [];
+  if (partiesRes.error) console.error("PARTIES_QUERY_ERR", partiesRes.error.message);
   if (parties.length === 0) {
     const seed = [
       ['APC','All Progressives Congress','#3a6ea5'],
@@ -58,7 +59,7 @@ async function main() {
     ];
     const newIds = [];
     for (const [abbr,off,col] of seed) {
-      const ins = await sb.from("parties").insert({ official_name: off, abbreviation: abbr, color: col }).select("id,abbreviation,official_name as name,color").maybeSingle();
+      const ins = await sb.from("parties").insert({ official_name: off, abbreviation: abbr, color: col }).select("id,abbreviation,official_name,color").maybeSingle();
       if (ins.data) { parties.push(ins.data); newIds.push(abbr); }
     }
     console.log("seeded parties on-the-fly (not in DB before)=", newIds.length);
@@ -84,7 +85,7 @@ async function main() {
 
   // create sim election
   const ts = new Date().toISOString().replace(/[-:]/g,"").slice(0,15);
-  const e = await sb.from("elections").insert({ name: "[SIM-E2E] 25PU discrepancy=0.15 sep13_"+ts, status:"ACTIVE", type:"PRESIDENTIAL", is_active:true, scheduled_start: new Date().toISOString()}).select("id").single();
+  const e = await sb.from("elections").insert({ name: "[SIM-E2E] 25PU discrepancy=0.15 sep13_rerun_"+ts, type: "PRESIDENTIAL", is_active: true, scheduled_start: new Date().toISOString(), status: "ACTIVE"}).select("id").single();
   if (e.error) { console.error("ELECTION CREATE", e.error); process.exit(2); }
   const electionId = e.data.id;
   console.log("electionId=", electionId);
@@ -96,9 +97,12 @@ async function main() {
     if (!existingMap.has(a.polling_unit_id)) existingMap.set(a.polling_unit_id, []);
     existingMap.get(a.polling_unit_id).push(a.volunteer_id);
   }
-  // preload 50 distinct volunteers that already exist with status REGISTERED/TRAINED
-  const vr = await sb.from("volunteers").select("id,user_id,status").order("created_at",{ascending:true}).limit(60);
-  const availVols = (vr.data||[]).filter(v=>v.status==="REGISTERED"||v.status==="TRAINED");
+  // preload eligible volunteers (submit_result_atomic checks assignment status only,
+  // so any active-ish volunteer can be assigned for the sim)
+  const vr = await sb.from("volunteers").select("id,user_id,status").order("created_at",{ascending:true}).limit(400);
+  const ELIGIBLE_VOL = new Set(["REGISTERED","TRAINED","ACTIVE","VERIFIED","TRAINING"]);
+  const availVols = (vr.data||[]).filter(v=>ELIGIBLE_VOL.has(v.status));
+  console.log("eligible volunteer pool=", availVols.length);
   let volIdx = 0;
   const volAssignedSet = new Set();
   const puToAssigns = new Map();
@@ -118,7 +122,7 @@ async function main() {
     // else top up from vols
     let need = maxPerPu - list.length;
     let tries = 0;
-    while (need > 0 && tries++ < vols.length * 2) {
+    while (need > 0 && tries++ < Math.max(60, vols.length) * 2) {
       const v = vols.shift(); if (!v) break;
       if (volAssignedSet.has(v.id)) { vols.push(v); continue; }
       const num = (maxPerPu - need + 1);
@@ -146,16 +150,18 @@ async function main() {
     const weights = parties.map((p,i)=> 0.5 + mulberry32(fnv1a(puId+"_party_"+i))() * 1.5);
     const registered = Math.max(50, Number(pu.registered_voters || 200));
     const turnout = Math.floor(registered * (0.55 + randBase()*0.25));
-    const base = allocLargestRemainder(Math.max(10,turnout), weights);
-    // valid = sum base, rejected ~ 0.02-0.05 turnout
+    // Domain invariant: party votes must sum to VALID votes (not turnout) —
+    // the E2E check validates sum(party_results) == valid_votes on PUBLISHED canonicals.
     const rejected = Math.max(1, Math.floor(turnout * (0.02 + randBase()*0.03)));
     const total = Math.max(10, turnout);
     const valid = Math.max(0, total - rejected);
+    const base = allocLargestRemainder(valid, weights);
 
-    // discrepancy_rate 0.15: for observer 2 perturb ~15% by +- small shifts
+    // discrepancy_rate = PROBABILITY that observer 2 disagrees with observer 1 (~15% of PUs)
+    const hasDiscrepancy = mulberry32(fnv1a(puId + "_disc_sep13"))() < 0.15;
     for (let observer of [1,2]) {
       let partiesArr = base.map(v=>v);
-      if (observer === 2) {
+      if (observer === 2 && hasDiscrepancy) {
         // perturb discrepancy_rate 0.15 across votes proportionally
         const perturbRate = 0.15;
         const changes = partiesArr.map(v => Math.max(0, Math.round(v * (1 + (mulberry32(fnv1a(puId+"_obs2_"+base.indexOf(v))))()*2-1)*perturbRate) - v));
@@ -167,8 +173,8 @@ async function main() {
           partiesArr = allocLargestRemainder(valid, partiesArr.map(v => Math.max(0.01, v*scale)));
         }
       }
-      const obsRejected = observer===2 ? Math.max(0, rejected + Math.round(rejected * (mulberry32(fnv1a(puId+"_rej_obs2"))()*2-1)*0.15)) : rejected;
-      const obsValid = observer===2 ? Math.max(0, Math.min(valid*1.2, valid + Math.round(valid*(mulberry32(fnv1a(puId+"_val_obs2"))()*2-1)*0.15))) : valid;
+      const obsRejected = (observer===2 && hasDiscrepancy) ? Math.max(0, rejected + Math.round(rejected * (mulberry32(fnv1a(puId+"_rej_obs2"))()*2-1)*0.15)) : rejected;
+      const obsValid = (observer===2 && hasDiscrepancy) ? Math.max(0, Math.min(valid*1.2, valid + Math.round(valid*(mulberry32(fnv1a(puId+"_val_obs2"))()*2-1)*0.15))) : valid;
       const obsTotal = obsValid + obsRejected;
 
       const assignList = (puToAssigns.get(puId) || []).sort((a,b)=>a.observer_number-b.observer_number);
@@ -176,25 +182,46 @@ async function main() {
       const volId = obs ? obs.volunteer_id : (availVols[(pi*2+observer-1) % availVols.length]?.id);
       const assignId = obs ? obs.id : null;
       if (volId && assignId) {
-        const idem = (puId + "_o" + observer + "_" + (new Date().getTime().toString(36)));
-        const sIns = await sb.from("result_submissions").insert({
-          idempotency_key: idem,
-          assignment_id: assignId,
-          volunteer_id: volId,
-          election_id: electionId,
-          polling_unit_id: puId,
-          valid_votes: obsValid,
-          rejected_votes: obsRejected,
-          total_votes: obsTotal,
-          status: "UNVERIFIED"
-        }).select("id").maybeSingle();
-        if (!sIns.error && sIns.data) {
-          const sid = sIns.data.id;
-          const prRows = parties.map((p,i)=>({ result_submission_id: sid, party_id: p.id, votes: Math.max(0, partiesArr[i]||0) }));
-          const prIns = await sb.from("party_results").insert(prRows);
-          if (!prIns.error) totalSubmissions++;
-          else console.error("PARTY_ROW_ERR PU=" + puId.slice(0,6) + " obs=" + observer, prIns.error);
-        } else if (sIns.error) { console.error("SUBMIT_ERR PU=" + puId.slice(0,6) + " obs=" + observer, sIns.error); }
+        const idem = (puId + "_o" + observer + "_" + (new Date().getTime().toString(36)) + "_" + Math.floor(Math.random()*1e6));
+        // Production path: submit_result_atomic RPC — validates assignment + idempotency,
+        // writes submission + party rows atomically, and fires trg_rs_timeline trigger.
+        const partyPayload = parties.map((p,i)=>({ party_id: p.id, votes: Math.max(0, partiesArr[i]||0) }));
+        const rpc = await sb.rpc("submit_result_atomic", {
+          p_idem: idem,
+          p_assignment_id: assignId,
+          p_volunteer_id: volId,
+          p_election_id: electionId,
+          p_polling_unit_id: puId,
+          p_valid_votes: obsValid,
+          p_rejected_votes: obsRejected,
+          p_total_votes: obsTotal,
+          p_party_results: partyPayload
+        });
+        const rpcRow = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+        if (!rpc.error && rpcRow && rpcRow.out_submission_id) {
+          totalSubmissions++;
+        } else {
+          if (rpc.error) console.error("RPC_ERR PU=" + puId.slice(0,6) + " obs=" + observer, rpc.error);
+          // Fallback: raw insert (same columns the RPC writes)
+          const sIns = await sb.from("result_submissions").insert({
+            idempotency_key: idem,
+            assignment_id: assignId,
+            volunteer_id: volId,
+            election_id: electionId,
+            polling_unit_id: puId,
+            valid_votes: obsValid,
+            rejected_votes: obsRejected,
+            total_votes: obsTotal,
+            status: "UNVERIFIED"
+          }).select("id").maybeSingle();
+          if (!sIns.error && sIns.data) {
+            const sid = sIns.data.id;
+            const prRows = parties.map((p,i)=>({ result_submission_id: sid, party_id: p.id, votes: Math.max(0, partiesArr[i]||0) }));
+            const prIns = await sb.from("party_results").insert(prRows);
+            if (!prIns.error) totalSubmissions++;
+            else console.error("PARTY_ROW_ERR PU=" + puId.slice(0,6) + " obs=" + observer, prIns.error);
+          } else if (sIns.error) { console.error("SUBMIT_ERR PU=" + puId.slice(0,6) + " obs=" + observer, sIns.error); }
+        }
       } else {
         console.error("MISSING_VOL_OR_ASSIGN PU=" + puId.slice(0,6) + " obs=" + observer + " vol=" + (!!volId) + " assign=" + (!!assignId));
       }
@@ -213,7 +240,7 @@ async function main() {
   const ar = await sb.from("admin_users").select("id").limit(1);
   if (ar.data && ar.data[0]) adminId = ar.data[0].id;
 
-  let pairsOk = 0; let pubCntAfter = 0; let sumMismatchAfter = 0;
+  let pairsOk = 0; let pubCntAfter = 0; let sumMismatchAfter = 0; let vid2 = null;
   const puList = [...byPu.keys()];
   for (const puId of puList) {
     const arr = byPu.get(puId);
@@ -230,13 +257,35 @@ async function main() {
     if (m1.size !== m2.size) iden=false;
     const shouldMatch = iden && md <= 2;
 
-    const pubParties = JSON.stringify(pr1.map(p=>({ party_id: p.party_id, votes: Number(p.votes||0)})));
-    const v1 = await sb.from("verifications").insert({
-      election_id: electionId, polling_unit_id: puId, submission_id_1: s1.id, submission_id_2: s2.id,
-      status: shouldMatch ? "MATCH" : "DISCREPANCY", submissions_identical: iden, math_consistent: md <= 2,
-      final_decision: shouldMatch ? "MATCH" : "DISCREPANCY"
-    }).select("id").maybeSingle();
-    const vid = v1.data?.id || null;
+    // NOTE: must be a real array — a JSON.stringify'd string arrives as a jsonb
+    // *string scalar* and publish_canonical_result silently skips party inserts.
+    const pubParties = pr1.map(p=>({ party_id: p.party_id, votes: Number(p.votes||0)}));
+    // The trg_rs_timeline trigger created a verification row when the FIRST
+    // submission for this PU was inserted — update it, never insert a duplicate.
+    const verQ = await sb.from("verifications").select("id")
+      .eq("election_id", electionId).eq("polling_unit_id", puId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const vid = verQ.data?.id || null;
+    if (vid) {
+      await sb.from("verifications").update({
+        status: shouldMatch ? "MATCH" : "DISCREPANCY",
+        submissions_identical: iden, math_consistent: md <= 2,
+        discrepancy_score: md,
+        final_decision: shouldMatch ? "MATCH" : "DISCREPANCY",
+        decided_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq("id", vid);
+    } else {
+      const vIns = await sb.from("verifications").insert({
+        election_id: electionId, polling_unit_id: puId, submission_id_1: s1.id, submission_id_2: s2.id,
+        status: shouldMatch ? "MATCH" : "DISCREPANCY", submissions_identical: iden, math_consistent: md <= 2,
+        discrepancy_score: md,
+        final_decision: shouldMatch ? "MATCH" : "DISCREPANCY"
+      }).select("id").maybeSingle();
+      vid2 = vIns.data?.id || null;
+    }
+    const vidFinal = vid || vid2 || null;
 
     if (shouldMatch) {
       try {
@@ -246,8 +295,9 @@ async function main() {
           p_source_1: s1.id, p_source_2: s2.id, p_party_votes: pubParties, p_created_by: adminId
         });
         const cid = (Array.isArray(prr.data) && prr.data[0]?.out_canonical_id) || (prr.data && prr.data.out_canonical_id) || null;
-        if (vid && cid) { await sb.from("verifications").update({ canonical_result_id: cid }).eq("id", vid); }
+        if (vidFinal && cid) { await sb.from("verifications").update({ canonical_result_id: cid }).eq("id", vidFinal); }
         if (cid) pubCntAfter++;
+        if (!cid && prr.error) console.error("PUBLISH_ERR PU=" + puId.slice(0,6), prr.error);
       } catch (e) { /* skip */ }
     } else {
       await sb.from("canonical_pu_results").insert({

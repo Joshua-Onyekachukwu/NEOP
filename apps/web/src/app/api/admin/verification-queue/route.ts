@@ -5,11 +5,10 @@ export const dynamic = "force-dynamic";
 
 const RUNNING_STATUSES = [
   "DETERMINISTIC_RUNNING",
-  "AI_RUNNING",
-  "MATCH_PENDING_PUBLISH",
-  "VERIFYING",
+  "NVIDIA_RUNNING",
 ];
-const FLAGGED_STATUSES = ["FLAGGED_AI", "NVIDIA_FAILED"];
+
+const FLAGGED_STATUSES = ["FLAGGED_AI", "NVIDIA_FAILED", "DISCREPANCY"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,19 +37,19 @@ export async function GET(request: NextRequest) {
         stateScopeVerPu(
           supabase
             .from("verifications")
-            .select("pu_id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .select("polling_unit_id, polling_units!inner(state_id)", { count: "exact", head: true })
             .in("status", RUNNING_STATUSES)
         ),
         stateScopeVerPu(
           supabase
             .from("verifications")
-            .select("pu_id, polling_units!inner(state_id)", { count: "exact", head: true })
+            .select("polling_unit_id, polling_units!inner(state_id)", { count: "exact", head: true })
             .in("status", FLAGGED_STATUSES)
         ),
         stateScopeVerPu(
           supabase
             .from("verifications")
-            .select("pu_id, canonical_id, status, id, updated_at, polling_units!inner(state_id)")
+            .select("polling_unit_id, canonical_result_id, status, id, updated_at, polling_units!inner(state_id)")
             .or("status.eq.DISCREPANCY,status.eq.FLAGGED_AI,status.eq.NVIDIA_FAILED")
             .order("updated_at", { ascending: false })
             .limit(200)
@@ -66,13 +65,13 @@ export async function GET(request: NextRequest) {
     const { data: hrCanonical } = await stateScopePu(
       supabase
         .from("canonical_pu_results")
-        .select("pu_id, polling_units!inner(state_id)")
+        .select("polling_unit_id, polling_units!inner(state_id)")
         .eq("status", "HUMAN_REVIEW")
     );
 
     const hrPuSet = new Set<string>();
-    for (const r of hrRes?.data || []) hrPuSet.add((r as any).pu_id);
-    for (const r of hrCanonical || []) hrPuSet.add((r as any).pu_id);
+    for (const r of hrRes?.data || []) hrPuSet.add((r as any).polling_unit_id);
+    for (const r of hrCanonical || []) hrPuSet.add((r as any).polling_unit_id);
     const human_review_count = hrPuSet.size;
 
     const buckets = {
@@ -90,10 +89,9 @@ export async function GET(request: NextRequest) {
       HUMAN_REVIEW: 7,
     };
 
-    const allHrIds = Array.from(hrPuSet);
     const detailPuIds = new Set<string>();
-    for (const r of hrRes?.data || []) detailPuIds.add((r as any).pu_id);
-    for (const r of hrCanonical || []) detailPuIds.add((r as any).pu_id);
+    for (const r of hrRes?.data || []) detailPuIds.add((r as any).polling_unit_id);
+    for (const r of hrCanonical || []) detailPuIds.add((r as any).polling_unit_id);
 
     let items: any[] = [];
 
@@ -104,37 +102,37 @@ export async function GET(request: NextRequest) {
         supabase
           .from("canonical_pu_results")
           .select(
-            `id, pu_id, status, submission1_id, submission2_id, election_id,
+            `id, polling_unit_id, status, source_submission_1, source_submission_2, election_id,
              polling_units!inner ( id, official_code, name, ward_id, lga_id, state_id,
                wards (name), lgas (name, state_id), states (name, code) )`
           )
-          .in("pu_id", combinedIds)
-          .in("status", ["ONE_SUBMISSION", "HUMAN_REVIEW", "FLAGGED", "PUBLISHED"])
+          .in("polling_unit_id", combinedIds)
+          .in("status", ["ONE_SUBMISSION", "HUMAN_REVIEW", "FLAGGED", "PUBLISHED", "AWAITING_AGENTS", "VERIFYING"])
       );
 
       const { data: verRows } = await stateScopeVerPu(
         supabase
           .from("verifications")
           .select(
-            `id, canonical_id, pu_id, election_id, status, max_diff, identical, submission1_id, submission2_id,
+            `id, canonical_result_id, polling_unit_id, election_id, status, discrepancy_score, submissions_identical, submission_id_1, submission_id_2,
              created_at, updated_at, polling_units!inner(state_id)`
           )
-          .in("pu_id", combinedIds)
+          .in("polling_unit_id", combinedIds)
       );
 
       const puToCan = new Map<string, any>();
-      for (const c of canRows || []) puToCan.set((c as any).pu_id, c);
+      for (const c of canRows || []) puToCan.set((c as any).polling_unit_id, c);
       const puToVer = new Map<string, any>();
-      for (const v of verRows || []) puToVer.set((v as any).pu_id, v);
+      for (const v of verRows || []) puToVer.set((v as any).polling_unit_id, v);
 
       const subIds = new Set<string>();
       for (const c of canRows || []) {
-        if ((c as any).submission1_id) subIds.add((c as any).submission1_id);
-        if ((c as any).submission2_id) subIds.add((c as any).submission2_id);
+        if ((c as any).source_submission_1) subIds.add((c as any).source_submission_1);
+        if ((c as any).source_submission_2) subIds.add((c as any).source_submission_2);
       }
       for (const v of verRows || []) {
-        if ((v as any).submission1_id) subIds.add((v as any).submission1_id);
-        if ((v as any).submission2_id) subIds.add((v as any).submission2_id);
+        if ((v as any).submission_id_1) subIds.add((v as any).submission_id_1);
+        if ((v as any).submission_id_2) subIds.add((v as any).submission_id_2);
       }
 
       const subMap = new Map<string, any>();
@@ -173,8 +171,8 @@ export async function GET(request: NextRequest) {
         const can = puToCan.get(pu_id);
         const ver = puToVer.get(pu_id);
         const pu = can?.polling_units;
-        const s1id = can?.submission1_id || ver?.submission1_id;
-        const s2id = can?.submission2_id || ver?.submission2_id;
+        const s1id = can?.source_submission_1 || ver?.submission_id_1;
+        const s2id = can?.source_submission_2 || ver?.submission_id_2;
         const a1 = buildAgent(s1id);
         const a2 = buildAgent(s2id);
 
@@ -184,8 +182,6 @@ export async function GET(request: NextRequest) {
           ? "NVIDIA_FAILED"
           : ver?.status === "FLAGGED_AI"
           ? "FLAGGED_AI"
-          : can?.status === "HUMAN_REVIEW"
-          ? "HUMAN_REVIEW"
           : "HUMAN_REVIEW";
 
         if (!a2) {
@@ -220,7 +216,7 @@ export async function GET(request: NextRequest) {
 
         items.push({
           verification_id: ver?.id,
-          canonical_id: can?.id || ver?.canonical_id,
+          canonical_id: can?.id || ver?.canonical_result_id,
           polling_unit_code: pu?.official_code || "?",
           polling_unit_name: pu?.name || "",
           state_name: pu?.states?.name || "",
@@ -230,7 +226,7 @@ export async function GET(request: NextRequest) {
           agent_2: a2,
           diff: {
             party_diffs,
-            max_diff: Number(ver?.max_diff ?? max_d),
+            max_diff: Number(ver?.discrepancy_score ?? max_d),
             totals_diff,
             valid_diff: (a1?.valid || 0) - (a2?.valid || 0),
             rejected_diff: (a1?.rejected || 0) - (a2?.rejected || 0),
@@ -249,7 +245,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("canonical_pu_results")
         .select(
-          `id, pu_id, polling_units!inner ( state_id, official_code )`
+          `id, polling_unit_id, polling_units!inner ( state_id, official_code )`
         )
         .eq("status", "ONE_SUBMISSION")
         .order("updated_at", { ascending: false })

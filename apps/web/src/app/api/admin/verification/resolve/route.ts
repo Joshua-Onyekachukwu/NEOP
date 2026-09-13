@@ -49,14 +49,13 @@ export async function POST(request: NextRequest) {
     const { data: ver, error: verErr } = await supabase
       .from("verifications")
       .select(
-        `id, canonical_id, election_id, pu_id, status, identical, submission1_id, submission2_id,
+        `id, canonical_result_id, election_id, polling_unit_id, status, submissions_identical, submission_id_1, submission_id_2,
          polling_units!inner ( state_id ),
-         canonical_pu_results!inner ( id, election_id, pu_id, submission1_id, submission2_id ),
-         sub1:result_submissions!verifications_submission1_id_fkey (
+         sub1:result_submissions!verifications_submission_id_1_fkey (
            id, valid_votes, rejected_votes, total_votes,
            party_results ( party_id, votes, parties ( id, abbreviation ) )
          ),
-         sub2:result_submissions!verifications_submission2_id_fkey (
+         sub2:result_submissions!verifications_submission_id_2_fkey (
            id, valid_votes, rejected_votes, total_votes,
            party_results ( party_id, votes, parties ( id, abbreviation ) )
          )`
@@ -111,33 +110,55 @@ export async function POST(request: NextRequest) {
 
     const { data: pubData, error: pubErr } = await supabase.rpc("publish_canonical_result", {
       p_election_id: v.election_id,
-      p_pu_id: v.pu_id,
+      p_polling_unit_id: v.polling_unit_id,
       p_status: "PUBLISHED",
       p_valid_votes: final_valid,
       p_rejected_votes: final_rejected,
       p_total_votes: final_total,
-      p_source1_id: v.submission1_id,
-      p_source2_id: v.submission2_id,
+      p_source_1: v.submission_id_1,
+      p_source_2: v.submission_id_2,
       p_party_votes: final_party_votes,
-      p_admin_id: adminUser.id,
+      p_created_by: adminUser.id,
     });
 
-    const pd: any = pubData || {};
-    const canonical_id = pd?.out_canonical_id || pd?.canonical_id || v.canonical_id;
-    const out_was_superseded_count = Number(pd?.out_superseded || pd?.superseded_count || 0);
-    const out_party_count = Number(pd?.out_party_count || pd?.party_count || final_party_votes.length);
+    if (pubErr) {
+      return NextResponse.json(
+        { error: `Publish failed: ${pubErr.message}` },
+        { status: 500 }
+      );
+    }
 
-    const final_decision = v.identical
+    const pd: any = (Array.isArray(pubData) ? pubData[0] : pubData) || {};
+    const canonical_id = pd?.out_canonical_id || v.canonical_result_id;
+    const out_was_superseded_count = Number(pd?.out_was_superseded_count || 0);
+    const out_party_count = Number(pd?.out_party_count || final_party_votes.length);
+
+    const final_decision = v.submissions_identical
       ? "ADMIN_OVERRIDE_MATCH"
       : "ADMIN_OVERRIDE_DISCREPANCY";
+
+    // decided_by FKs to user_accounts.id (not admin_users.id) — resolve by email.
+    let actor_user_accounts_id: string | null = null;
+    try {
+      if (adminUser.email) {
+        const { data: uaRow } = await supabase
+          .from("user_accounts")
+          .select("id")
+          .eq("email", adminUser.email)
+          .maybeSingle();
+        actor_user_accounts_id = (uaRow as any)?.id || null;
+      }
+    } catch {}
 
     await supabase
       .from("verifications")
       .update({
         status: "RESOLVED_ADMIN",
         final_decision,
-        decided_by: adminUser.id,
+        canonical_result_id: canonical_id,
+        decided_by: actor_user_accounts_id,
         decided_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
         decision_notes: reason,
         updated_at: new Date().toISOString(),
       })

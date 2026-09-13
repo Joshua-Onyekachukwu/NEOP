@@ -67,3 +67,6 @@ scripts/*.log
 scripts/*.js
 scripts/*.cjs
 scripts/*.mjs
+
+# Transient dev/debug artifacts
+_logs/

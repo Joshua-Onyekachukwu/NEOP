@@ -53,43 +53,50 @@ export async function POST(request: NextRequest) {
     const adminUser = admin_user;
 
     const body = await request.json();
-    const submission_id: string = body.submission_id;
+    const pu_id: string = body.polling_unit_id;
     const force_ai: boolean = body.force_ai || false;
     const publish: boolean = body.publish !== false;
     const ai_policy: AIPolicy = body.ai_policy || "FAST_ONLY";
 
-    if (!submission_id) {
-      return NextResponse.json({ error: "submission_id required" }, { status: 400 });
+    if (!pu_id) {
+      return NextResponse.json({ error: "polling_unit_id required" }, { status: 400 });
     }
 
-    const { data: pairData, error: pairErr } = await supabase
-      .rpc("get_or_create_both_submissions_pair", { p_submission_id: submission_id })
-      .single();
+    // ── Load the verification row the trg_rs_timeline trigger created for this PU.
+    //    The trigger attaches submission_id_1 / submission_id_2 as agents submit.
+    const { data: ver, error: verErr } = await supabase
+      .from("verifications")
+      .select(
+        `id, election_id, polling_unit_id, submission_id_1, submission_id_2, status,
+         polling_units!inner ( id, official_code, name, state_id, lga_id, ward_id )`
+      )
+      .eq("polling_unit_id", pu_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (pairErr || !pairData) {
-      return NextResponse.json({ error: "Pair lookup failed" }, { status: 500 });
+    if (verErr || !ver) {
+      return NextResponse.json(
+        { error: "No verification found for polling unit (need at least one agent submission)" },
+        { status: 404 }
+      );
     }
 
-    const {
-      canonical_id,
-      election_id,
-      polling_unit_id: pu_id,
-      submission1_id,
-      submission2_id,
-    } = pairData as any;
+    const verification_id: string = ver.id;
+    const election_id: string = ver.election_id;
+    const submission1_id: string | null = ver.submission_id_1;
+    const submission2_id: string | null = ver.submission_id_2;
 
-    if (!submission2_id) {
-      await supabase
-        .from("canonical_pu_results")
-        .upsert({
-          id: canonical_id,
-          election_id,
-          pu_id,
-          status: "ONE_SUBMISSION",
-          submission1_id,
-          updated_at: new Date().toISOString(),
-        });
-      return NextResponse.json({ status: "ONE_SUBMISSION", canonical_id });
+    if (!submission1_id || !submission2_id) {
+      return NextResponse.json(
+        {
+          status: "AWAITING_SECOND_SUBMISSION",
+          verification_id,
+          canonical_id: null,
+          received: submission1_id ? 1 : 0,
+        },
+        { status: 200 }
+      );
     }
 
     const loadSub = async (sid: string) => {
@@ -153,20 +160,15 @@ export async function POST(request: NextRequest) {
       per_party_diffs: perPartyDiffs,
     };
 
-    const verification_id = randomUUID();
-    await supabase.from("verifications").upsert({
-      id: verification_id,
-      canonical_id,
-      election_id,
-      pu_id,
-      submission1_id,
-      submission2_id,
-      status: "DETERMINISTIC_RUNNING",
-      max_diff,
-      identical,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
+    // ── Take over the trigger-created verification row (column names per live DDL).
+    await supabase
+      .from("verifications")
+      .update({
+        status: "DETERMINISTIC_RUNNING",
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", verification_id);
 
     let final_status = "MATCH";
     let ai_present = false;
@@ -175,12 +177,6 @@ export async function POST(request: NextRequest) {
 
     const skipAiForFastPath =
       identical && max_diff <= 2 && !force_ai && ai_policy !== "ALWAYS_REVIEW";
-
-    if (!skipAiForFastPath && ai_policy !== "AI_ONLY" && !force_ai) {
-      if (!(identical && max_diff <= 2)) {
-        // proceed to AI below
-      }
-    }
 
     if (!skipAiForFastPath) {
       const callNVIDIA = async (modelType: string, model: string) => {
@@ -239,17 +235,23 @@ export async function POST(request: NextRequest) {
         await supabase
           .from("canonical_pu_results")
           .update({ status: "HUMAN_REVIEW", updated_at: new Date().toISOString() })
-          .eq("id", canonical_id);
+          .eq("election_id", election_id)
+          .eq("polling_unit_id", pu_id)
+          .in("status", ["AWAITING_AGENTS", "ONE_SUBMISSION", "VERIFYING", "FLAGGED", "HUMAN_REVIEW"]);
         try {
-          await supabase.rpc("call_enqueue_dead_letter", {
-            p_queue: "nvidia_failed",
-            p_payload: JSON.stringify({ verification_id, canonical_id, pu_id }),
+          await supabase.rpc("enqueue_dead_letter", {
+            p_job_type: "nvidia_failed",
+            p_payload: JSON.stringify({ verification_id, pu_id }),
+            p_last_error: "All NVIDIA calls failed after retries",
+            p_elec: election_id,
+            p_pu: pu_id,
+            p_sub: submission1_id,
           });
         } catch {}
         return NextResponse.json({
           success: true,
           status: "NVIDIA_FAILED",
-          canonical_id,
+          canonical_id: null,
           verification_id,
           deterministic_checks,
           identical,
@@ -270,11 +272,10 @@ export async function POST(request: NextRequest) {
       await supabase
         .from("verifications")
         .update({
-          ai_vision_result: visionRes.ok ? visionRes.data : null,
-          ai_evidence_result: evidenceRes.ok ? evidenceRes.data : null,
-          ai_anomaly_result: anomalyRes.ok ? anomalyRes.data : null,
-          ai_consistency_result: consistencyRes.ok ? consistencyRes.data : null,
-          ai_warnings: aiWarnings,
+          nvidia_ocr: visionRes.ok ? visionRes.data : null,
+          nvidia_evidence: evidenceRes.ok ? evidenceRes.data : null,
+          nvidia_anomaly: anomalyRes.ok ? anomalyRes.data : null,
+          nvidia_consistency: consistencyRes.ok ? consistencyRes.data : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", verification_id);
@@ -294,10 +295,31 @@ export async function POST(request: NextRequest) {
     let out_superseded = 0;
     let out_party_count = 0;
 
+    // decided_by FKs to user_accounts.id (not admin_users.id) — resolve by email;
+    // an automated pipeline decision falls back to null (recorded in audit_log).
+    let actor_user_accounts_id: string | null = null;
+    try {
+      if (adminUser.email) {
+        const { data: uaRow } = await supabase
+          .from("user_accounts")
+          .select("id")
+          .eq("email", adminUser.email)
+          .maybeSingle();
+        actor_user_accounts_id = (uaRow as any)?.id || null;
+      }
+    } catch {}
+
     if (final_status === "MATCH") {
       await supabase
         .from("verifications")
-        .update({ status: "MATCH", decided_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update({
+          status: "MATCH",
+          final_decision: "MATCH",
+          decided_by: actor_user_accounts_id,
+          decided_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", verification_id);
 
       if (publish) {
@@ -305,61 +327,85 @@ export async function POST(request: NextRequest) {
         const parties_jsonb = p1.map((p: any) => ({ party_id: p.party_id, votes: p.votes }));
         const { data: pubData, error: pubErr } = await supabase.rpc("publish_canonical_result", {
           p_election_id: election_id,
-          p_pu_id: pu_id,
+          p_polling_unit_id: pu_id,
           p_status: "PUBLISHED",
           p_valid_votes: Number(chosen?.valid_votes || 0),
           p_rejected_votes: Number(chosen?.rejected_votes || 0),
           p_total_votes: Number(chosen?.total_votes || 0),
-          p_source1_id: submission1_id,
-          p_source2_id: submission2_id,
+          p_source_1: submission1_id,
+          p_source_2: submission2_id,
           p_party_votes: parties_jsonb,
-          p_admin_id: adminUser.id,
+          p_created_by: null,
         });
         if (pubData && !pubErr) {
-          const pd: any = pubData;
-          out_canonical_id = pd?.out_canonical_id || pd?.canonical_id || canonical_id;
-          out_superseded = Number(pd?.out_superseded || pd?.superseded_count || 0);
-          out_party_count = Number(pd?.out_party_count || pd?.party_count || p1.length);
+          const pd: any = Array.isArray(pubData) ? pubData[0] : pubData;
+          out_canonical_id = pd?.out_canonical_id || null;
+          out_superseded = Number(pd?.out_was_superseded_count || 0);
+          out_party_count = Number(pd?.out_party_count || 0);
+        } else if (pubErr) {
+          return NextResponse.json(
+            { error: `Publish failed: ${pubErr.message}` },
+            { status: 500 }
+          );
         }
       } else {
         await supabase
           .from("canonical_pu_results")
           .update({ status: "VERIFIED", updated_at: new Date().toISOString() })
-          .eq("id", canonical_id);
-        out_canonical_id = canonical_id;
+          .eq("election_id", election_id)
+          .eq("polling_unit_id", pu_id)
+          .in("status", ["AWAITING_AGENTS", "ONE_SUBMISSION", "VERIFYING", "FLAGGED", "HUMAN_REVIEW"]);
+        out_canonical_id = null;
       }
 
       try {
         await supabase.from("audit_log").insert({
           action: "VERIFICATION_COMPLETED_MATCH",
-          actor_id: adminUser.id,
+          actor_id: actor_user_accounts_id,
           actor_type: "admin",
           resource_type: "verifications",
           resource_id: verification_id,
-          metadata: { canonical_id, pu_id, max_diff, identical, ai_present },
+          metadata: { admin_user_id: adminUser.id, pu_id, max_diff, identical, ai_present },
           created_at: new Date().toISOString(),
         });
       } catch {}
     } else {
       await supabase
         .from("verifications")
-        .update({ status: "DISCREPANCY", updated_at: new Date().toISOString() })
+        .update({
+          status: "DISCREPANCY",
+          final_decision: "DISCREPANCY",
+          decided_by: actor_user_accounts_id,
+          decided_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", verification_id);
       await supabase
         .from("canonical_pu_results")
         .update({ status: "HUMAN_REVIEW", updated_at: new Date().toISOString() })
-        .eq("id", canonical_id);
+        .eq("election_id", election_id)
+        .eq("polling_unit_id", pu_id)
+        .in("status", ["AWAITING_AGENTS", "ONE_SUBMISSION", "VERIFYING", "FLAGGED"]);
       try {
         await supabase.from("audit_log").insert({
           action: "VERIFICATION_DISCREPANCY",
-          actor_id: adminUser.id,
+          actor_id: actor_user_accounts_id,
           actor_type: "admin",
           resource_type: "verifications",
           resource_id: verification_id,
-          metadata: { canonical_id, pu_id, max_diff, identical, ai_present, aiWarnings },
+          metadata: { admin_user_id: adminUser.id, pu_id, max_diff, identical, ai_present, aiWarnings },
           created_at: new Date().toISOString(),
         });
       } catch {}
+    }
+
+    // Link the published canonical result back onto the verification row.
+    if (out_canonical_id) {
+      await supabase
+        .from("verifications")
+        .update({ canonical_result_id: out_canonical_id, updated_at: new Date().toISOString() })
+        .eq("id", verification_id);
     }
 
     try {
@@ -375,7 +421,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       status: final_status,
-      canonical_id: out_canonical_id || canonical_id,
+      canonical_id: out_canonical_id,
       verification_id,
       out_superseded,
       out_party_count,

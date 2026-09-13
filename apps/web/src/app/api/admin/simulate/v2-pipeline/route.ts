@@ -114,9 +114,15 @@ export async function POST(request: NextRequest) {
 
     const partiesRes = await supabase
       .from("parties")
-      .select("id, abbreviation, official_name as name, color")
+      .select("id, abbreviation, official_name, color")
       .order("id", { ascending: true });
     const parties = partiesRes.data || [];
+    if (partiesRes.error) {
+      return NextResponse.json(
+        { error: `Parties query failed: ${partiesRes.error.message}` },
+        { status: 500 }
+      );
+    }
     if (parties.length === 0) {
       return NextResponse.json(
         { error: "No parties found in DB" },
@@ -132,7 +138,6 @@ export async function POST(request: NextRequest) {
           name: `[SIM] ${ts} ${mode} Pipeline x${pu_count}`,
           status: "ACTIVE",
           type: "PRESIDENTIAL",
-          election_date: new Date().toISOString().slice(0, 10),
         })
         .select("id")
         .single();
@@ -216,9 +221,7 @@ export async function POST(request: NextRequest) {
 
         for (const pu of chunk) {
           const emailN = `sim_observer_N_${pu.official_code || pu.id}@neop.ng`;
-          const phoneN = `+234${fnv1a(pu.id) % 10000000000}`.slice(0, 14);
           const emailS = `sim_observer_S_${pu.official_code || pu.id}@neop.ng`;
-          const phoneS = `+234${(fnv1a(pu.id) + 1) % 10000000000}`.slice(0, 14);
 
           let volNId: string | null = null;
           let volSId: string | null = null;
@@ -238,8 +241,6 @@ export async function POST(request: NextRequest) {
                 .insert({
                   email: emailN,
                   full_name: `Sim Observer N ${pu.official_code || pu.id}`,
-                  phone_number: phoneN,
-                  status: "ACTIVE",
                 })
                 .select("id")
                 .single();
@@ -283,8 +284,6 @@ export async function POST(request: NextRequest) {
                 .insert({
                   email: emailS,
                   full_name: `Sim Observer S ${pu.official_code || pu.id}`,
-                  phone_number: phoneS,
-                  status: "ACTIVE",
                 })
                 .select("id")
                 .single();
@@ -391,17 +390,9 @@ export async function POST(request: NextRequest) {
 
           if (volNId && assignNId) {
             try {
-              const partyArray: any[] = Object.entries(baseDist.party_votes).map(
-                ([abbr, votes]: any) => {
-                  const party: any = parties.find(
-                    (p: any) => p.abbreviation === abbr
-                  );
-                  return {
-                    party_id: party?.id,
-                    votes: Number(votes || 0),
-                  };
-                }
-              ).filter((x) => x.party_id);
+              const partyArray: any[] = baseDist.party_votes.filter(
+                (pv: any) => pv.party_id && Number(pv.votes || 0) >= 0
+              );
               const subN = await supabase
                 .from("result_submissions")
                 .insert({
@@ -443,17 +434,9 @@ export async function POST(request: NextRequest) {
 
           if (volSId && assignSId) {
             try {
-              const partyArrayS: any[] = Object.entries(a2Dist.party_votes).map(
-                ([abbr, votes]: any) => {
-                  const party: any = parties.find(
-                    (p: any) => p.abbreviation === abbr
-                  );
-                  return {
-                    party_id: party?.id,
-                    votes: Number(votes || 0),
-                  };
-                }
-              ).filter((x) => x.party_id);
+              const partyArrayS: any[] = a2Dist.party_votes.filter(
+                (pv: any) => pv.party_id && Number(pv.votes || 0) >= 0
+              );
               const subS = await supabase
                 .from("result_submissions")
                 .insert({
@@ -531,32 +514,43 @@ export async function POST(request: NextRequest) {
 
               const shouldMatch = iden && md <= 2 && !require_ai;
 
-              const pubParties = JSON.stringify(
-                (s1?.party_results || []).map((pr: any) => ({
-                  party_id: pr?.parties?.id || pr?.party_id,
-                  votes: Number(pr?.votes || 0),
-                }))
-              );
+              const pubParties = (s1?.party_results || []).map((pr: any) => ({
+                party_id: pr?.parties?.id || pr?.party_id,
+                votes: Number(pr?.votes || 0),
+              }));
 
-              const v1 = await supabase
+              // The trg_rs_timeline trigger already created one verification row per
+              // (election, polling_unit) and attached both submissions — update it
+              // instead of inserting a duplicate.
+              const { data: verRow } = await supabase
                 .from("verifications")
-                .insert({
-                  election_id: electionId,
-                  polling_unit_id: pu.id,
-                  submission_id_1: sub1Id,
-                  submission_id_2: sub2Id,
-                  status: shouldMatch ? "MATCH" : "DISCREPANCY",
-                  submissions_identical: iden,
-                  math_consistent: md <= 2,
-                  final_decision: shouldMatch ? "MATCH" : "DISCREPANCY",
-                })
                 .select("id")
+                .eq("election_id", electionId)
+                .eq("polling_unit_id", pu.id)
+                .order("created_at", { ascending: false })
+                .limit(1)
                 .maybeSingle();
-              const vid = (v1 as any)?.data?.id || null;
+              const vid = (verRow as any)?.id || null;
+
+              if (vid) {
+                await supabase
+                  .from("verifications")
+                  .update({
+                    status: shouldMatch ? "MATCH" : "DISCREPANCY",
+                    submissions_identical: iden,
+                    math_consistent: md <= 2,
+                    discrepancy_score: md,
+                    final_decision: shouldMatch ? "MATCH" : "DISCREPANCY",
+                    decided_at: new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", vid);
+              }
 
               if (shouldMatch) {
                 try {
-                  const { data: pub } = await supabase.rpc("publish_canonical_result", {
+                  const { data: pub, error: pubErr } = await supabase.rpc("publish_canonical_result", {
                     p_election_id: electionId,
                     p_polling_unit_id: pu.id,
                     p_status: "PUBLISHED",
@@ -568,15 +562,23 @@ export async function POST(request: NextRequest) {
                     p_party_votes: pubParties,
                     p_created_by: adminId,
                   });
-                  const cid =
-                    (Array.isArray(pub) && (pub as any)[0]?.out_canonical_id) ||
-                    (pub as any)?.out_canonical_id ||
-                    null;
-                  if (vid && cid) {
-                    await supabase
-                      .from("verifications")
-                      .update({ canonical_result_id: cid })
-                      .eq("id", vid);
+                  if (pubErr) {
+                    chunkErrors.push({
+                      pu_code: pu.official_code,
+                      step: "publish_rpc",
+                      message: pubErr.message || "publish_rpc failed",
+                    });
+                  } else {
+                    const cid =
+                      (Array.isArray(pub) && (pub as any)[0]?.out_canonical_id) ||
+                      (pub as any)?.out_canonical_id ||
+                      null;
+                    if (vid && cid) {
+                      await supabase
+                        .from("verifications")
+                        .update({ canonical_result_id: cid })
+                        .eq("id", vid);
+                    }
                   }
                 } catch (pe: any) {
                   chunkErrors.push({

@@ -49,7 +49,12 @@ const AdminDashboard: React.FC = () => {
   // Simulation state
   const [simScenario, setSimScenario] = useState<string>("random");
   const [simDuration, setSimDuration] = useState<number>(5);
-  const [simVoters, setSimVoters] = useState<number>(100);
+  // Real voters stored in the DB (kept small — the Free-plan DB quota
+  // cannot hold 100M+ rows); display voters are what the public site
+  // renders (×display multiplier, SIMULATED mode only).
+  const [simVoters, setSimVoters] = useState<number>(5);
+  const [simDisplayVoters, setSimDisplayVoters] = useState<number>(50);
+  const [simCoverage, setSimCoverage] = useState<number>(25);
   const [simRunning, setSimRunning] = useState(false);
   const [simElectionType, setSimElectionType] = useState<string>("PRESIDENTIAL");
   const [simProgress, setSimProgress] = useState<string>("");
@@ -429,15 +434,13 @@ const AdminDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           scenario: simScenario,
-          election_type: simElectionType,
           target_voters: simVoters * 1_000_000,
-          random_seed: Date.now(),
-          batch_size: 2000,
-          pu_failure_rate: 0.03,
-          turnout_min: 0.3,
-          turnout_max: 0.8,
-          geographic_scope: "national",
-          simulation_speed: 1,
+          display_voters: simDisplayVoters * 1_000_000,
+          duration_minutes: simDuration,
+          waves: 6,
+          discrepancy_rate: 0.05,
+          coverage_pct: simCoverage,
+          reset_first: true,
         }),
       });
 
@@ -485,15 +488,13 @@ const AdminDashboard: React.FC = () => {
           },
           body: JSON.stringify({
             scenario,
-            election_type: simElectionType,
             target_voters: simVoters * 1_000_000,
-            random_seed: Date.now() + i,
-            batch_size: 2000,
-            pu_failure_rate: 0.03,
-            turnout_min: 0.3,
-            turnout_max: 0.8,
-            geographic_scope: "national",
-            simulation_speed: 1,
+            display_voters: simDisplayVoters * 1_000_000,
+            duration_minutes: simDuration,
+            waves: 6,
+            discrepancy_rate: 0.05,
+            coverage_pct: simCoverage,
+            reset_first: true,
           }),
         });
 
@@ -1341,16 +1342,20 @@ const AdminDashboard: React.FC = () => {
                     </div>
                     <div className="p-3 border border-[var(--color-gray-200)]">
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
-                        Target Voters (millions)
+                        Real Voters Stored (millions)
                       </div>
                       <div className="flex items-center gap-3">
                         <input
                           type="range"
-                          min={10}
-                          max={200}
-                          step={5}
+                          min={1}
+                          max={10}
+                          step={1}
                           value={simVoters}
-                          onChange={(e) => setSimVoters(Number(e.target.value))}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setSimVoters(v);
+                            if (simDisplayVoters < v) setSimDisplayVoters(v);
+                          }}
                           disabled={simRunning}
                           className="flex-1 accent-[var(--color-green)]"
                         />
@@ -1359,7 +1364,30 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-                        ~{Math.round(simVoters * 1_000_000 / 176846).toLocaleString()} votes per polling unit on average
+                        Actual votes written to the DB (kept small for the DB quota)
+                      </div>
+                    </div>
+                    <div className="p-3 border border-[var(--color-gray-200)]">
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase tracking-wider mb-2">
+                        Display Voters (millions, × shown on site)
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={simVoters}
+                          max={200}
+                          step={5}
+                          value={simDisplayVoters}
+                          onChange={(e) => setSimDisplayVoters(Number(e.target.value))}
+                          disabled={simRunning}
+                          className="flex-1 accent-[var(--color-green)]"
+                        />
+                        <span className="font-mono text-sm text-[var(--color-text)] min-w-[50px] text-right">
+                          {simDisplayVoters}M (×{Math.round(simDisplayVoters / Math.max(simVoters, 1))})
+                        </span>
+                      </div>
+                      <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
+                        ~{Math.round(simDisplayVoters * 1_000_000 / 176846).toLocaleString()} displayed votes per polling unit — simulation display only, never live elections
                       </div>
                     </div>
                   </div>

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const { data: fullRow } = await supabase
       .from("admin_users")
-      .select("id, role, state_id, created_at, updated_at, last_login_at")
+      .select("id, role, state_id, created_at, updated_at")
       .eq("id", admin_user.id)
       .single();
 
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         state_id,
         global,
         created_at: row.created_at ?? null,
-        last_login_at: row.last_login_at ?? row.updated_at ?? null,
+        last_login_at: row.updated_at ?? null,
         permissions: roleToPermissions(admin_user.role),
       },
       {

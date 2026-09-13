@@ -66,7 +66,6 @@ export async function GET(request: NextRequest) {
       .select(
         `
         id,
-        canonical_result_id,
         election_id,
         published_at,
         valid_votes,
@@ -79,8 +78,6 @@ export async function GET(request: NextRequest) {
         ward_id,
         ward_name,
         polling_unit_id,
-        official_code,
-        pu_name,
         polling_unit_code,
         polling_unit_name,
         latitude,
@@ -102,7 +99,7 @@ export async function GET(request: NextRequest) {
 
     const rows = mvRows || [];
     const canonicalIds = rows
-      .map((r: any) => r.canonical_result_id || r.id)
+      .map((r: any) => r.id)
       .filter(Boolean);
 
     const partyMap = new Map<string, Record<string, number>>();
@@ -160,16 +157,15 @@ export async function GET(request: NextRequest) {
     csv += rowToCsv(headers);
 
     for (const r of rows) {
-      const cid = r.canonical_result_id || r.id;
+      const cid = r.id;
       const partiesForRow = partyMap.get(cid) || {};
       const partyCells = partyAbbrs.map((abbr: string) =>
         partiesForRow[abbr] !== undefined ? partiesForRow[abbr] : 0
       );
 
       const stateCode = r.state_code || r.state_id || "";
-      const puCode =
-        r.official_code || r.polling_unit_code || "";
-      const puName = r.pu_name || r.polling_unit_name || "";
+      const puCode = r.polling_unit_code || "";
+      const puName = r.polling_unit_name || "";
 
       const row = [
         cid,

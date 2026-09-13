@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       .select(
         global && state_id == null
           ? "*"
-          : "*, verifications!inner ( pu_id, polling_units!inner ( state_id ) )"
+          : "*, verifications!inner ( polling_unit_id, polling_units!inner ( state_id ) )"
       )
       .gte("created_at", since)
       .order("created_at", { ascending: false })

@@ -112,10 +112,11 @@ export async function requireAdminWithDetails(request: NextRequest): Promise<Adm
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  // Check admin_users table — return id, role, state_id, created_at + last_login if present
+  // Check admin_users table — return id, role, state_id, created_at + updated_at
+  // (last_login_at is not a live column; updated_at is the freshest available marker)
   const { data: adminRow } = await supabase
     .from("admin_users")
-    .select("id, role, state_id, created_at, updated_at, last_login_at")
+    .select("id, role, state_id, created_at, updated_at")
     .eq("user_id", user.id)
     .eq("is_active", true)
     .single();

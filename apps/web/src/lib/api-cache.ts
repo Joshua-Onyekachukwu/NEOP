@@ -1,6 +1,30 @@
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+const SYSTEM_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+
+/**
+ * Display scaling for SIMULATED mode: the sim backend stores real (small)
+ * vote counts so the DB stays under the Free-plan quota, while the public
+ * site renders them ×display_multiplier (e.g. ×10) for realistic national
+ * headlines. Live elections never scale (multiplier stays 1).
+ */
+async function getDisplayScale(): Promise<number> {
+  try {
+    const supabase = getServiceClient();
+    const { data } = await supabase
+      .from("system_config")
+      .select("data_mode, display_multiplier")
+      .eq("id", SYSTEM_CONFIG_ID)
+      .maybeSingle();
+    if (data?.data_mode === "SIMULATED") {
+      const m = Number(data.display_multiplier || 1);
+      return m > 1 ? m : 1;
+    }
+  } catch {}
+  return 1;
+}
+
 function seededRandom(seed: number) {
   return function () {
     seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
@@ -181,22 +205,20 @@ export const getCachedStats = unstable_cache(
         let breakdown: any[] = [];
 
         try {
-          const { data: votesData, error: votesErr } = await supabase
-            .from("canonical_pu_results")
-            .select("valid_votes, rejected_votes")
-            .eq("status", "PUBLISHED");
-          if (!votesErr && votesData) {
-            totalVotes = votesData.reduce(
-              (s: number, r: any) => s + Number(r.valid_votes || 0) + Number(r.rejected_votes || 0),
-              0
-            );
+          // Server-side aggregate: PostgREST hard-caps un-capped selects
+          // at 1000 rows, so summing rows over REST undercounted once the
+          // dataset exceeded ~1000 rows (migration 240).
+          const { data: voteTotals, error: votesErr } = await supabase.rpc("get_published_vote_totals");
+          if (!votesErr && voteTotals) {
+            const vt = Array.isArray(voteTotals) ? voteTotals[0] : voteTotals;
+            totalVotes = Number(vt?.total_votes || 0);
           }
         } catch {}
 
         try {
           const { count: coveredCount, error: coveredErr } = await supabase
             .from("canonical_pu_results")
-            .select("pu_id", { count: "exact", head: true })
+            .select("polling_unit_id", { count: "exact", head: true })
             .in("status", ["ONE_SUBMISSION", "VERIFYING", "VERIFIED", "FLAGGED", "HUMAN_REVIEW", "PUBLISHED"]);
           if (!coveredErr) {
             totalCovered = Number(coveredCount || 0);
@@ -206,7 +228,7 @@ export const getCachedStats = unstable_cache(
         try {
           const { count: verifiedCount, error: verifiedErr } = await supabase
             .from("canonical_pu_results")
-            .select("pu_id", { count: "exact", head: true })
+            .select("polling_unit_id", { count: "exact", head: true })
             .in("status", ["VERIFIED", "PUBLISHED"]);
           if (!verifiedErr) {
             totalVerified = Number(verifiedCount || 0);
@@ -304,7 +326,13 @@ export const getCachedStats = unstable_cache(
       "supabase:stats"
     );
 
-    if (sbResult) return sbResult;
+    if (sbResult) {
+      const m = await getDisplayScale();
+      if (m > 1) {
+        sbResult.total_votes = Math.round(Number(sbResult.total_votes || 0) * m);
+      }
+      return sbResult;
+    }
 
     return getSeededStats(totalPUCount);
   },
@@ -323,37 +351,52 @@ export const getCachedPartyResults = unstable_cache(
       (async () => {
         let rpcData: any[] | null = null;
 
+        // Preferred source: published canonicals aggregated server-side —
+        // PostgREST caps un-capped selects at 1000 rows, which silently
+        // undercounted party totals once the sim dataset grew past the
+        // demo data (migration 239).
         try {
-          const { data: canonicalData, error: canonicalErr } = await supabase
-            .from("canonical_party_results")
-            .select(`
-              votes,
-              party_id,
-              canonical_result_id,
-              canonical_pu_results!inner (id, status),
-              parties!inner (id, name, abbreviation, color)
-            `)
-            .eq("canonical_pu_results.status", "PUBLISHED")
-            .returns<any[]>();
-          if (!canonicalErr && canonicalData && canonicalData.length > 0) {
-            const partyMap = new Map<string, any>();
-            for (const row of canonicalData) {
-              const pid = row.party_id;
-              if (!partyMap.has(pid)) {
-                partyMap.set(pid, {
-                  party_abbreviation: row.parties?.abbreviation,
-                  party_name: row.parties?.name,
-                  party_color: row.parties?.color,
-                  total_votes: 0,
-                });
-              }
-              partyMap.get(pid).total_votes += Number(row.votes || 0);
-            }
-            rpcData = Array.from(partyMap.values()).sort(
-              (a: any, b: any) => b.total_votes - a.total_votes
-            );
+          const { data: pubData, error: pubErr } = await supabase.rpc("get_party_totals_published");
+          if (!pubErr && pubData && pubData.length > 0) {
+            rpcData = pubData;
           }
         } catch {}
+
+        if (!rpcData) {
+          try {
+            const { data: canonicalData, error: canonicalErr } = await supabase
+              .from("canonical_party_results")
+              .select(`
+                votes,
+                party_id,
+                canonical_result_id,
+                canonical_pu_results!inner (id, status),
+                parties!inner (id, name, abbreviation, color)
+              `)
+              .eq("canonical_pu_results.status", "PUBLISHED")
+              .limit(500000)
+              .returns<any[]>();
+            if (!canonicalErr && canonicalData && canonicalData.length > 0) {
+              const partyMap = new Map<string, any>();
+              for (const row of canonicalData) {
+                const pid = row.party_id;
+                if (!partyMap.has(pid)) {
+                  partyMap.set(pid, {
+                    party_abbreviation: row.parties?.abbreviation,
+                    party_name: row.parties?.name,
+                    party_color: row.parties?.color,
+                    total_votes: 0,
+                  });
+                }
+                const entry = partyMap.get(pid);
+                if (entry) entry.total_votes += Number(row.votes || 0);
+              }
+              rpcData = Array.from(partyMap.values()).sort(
+                (a: any, b: any) => b.total_votes - a.total_votes
+              );
+            }
+          } catch {}
+        }
 
         if (!rpcData || rpcData.length === 0) {
           try {
@@ -404,7 +447,7 @@ export const getCachedPartyResults = unstable_cache(
           verifiedResults = totalResults;
         } catch {}
 
-        return {
+        const payload: any = {
           parties: parties.map((p: any) => ({
             name: p.party_name,
             abbreviation: p.party_abbreviation,
@@ -418,6 +461,15 @@ export const getCachedPartyResults = unstable_cache(
           last_updated: new Date().toISOString(),
           source: "supabase" as const,
         };
+        const m = await getDisplayScale();
+        if (m > 1) {
+          payload.grand_total = Math.round(Number(payload.grand_total || 0) * m);
+          payload.parties = payload.parties.map((p: any) => ({
+            ...p,
+            total_votes: Math.round(Number(p.total_votes || 0) * m),
+          }));
+        }
+        return payload;
       })(),
       SB_TIMEOUT_MS,
       "supabase:party-results"
@@ -516,6 +568,7 @@ export const getCachedPublicResults = unstable_cache(
 
     const sbResult = await withTimeout(
       (async () => {
+        const displayScale = await getDisplayScale();
         const countQuery = supabase
           .from("mv_public_published_results")
           .select("id", { count: "exact", head: true });
@@ -590,15 +643,18 @@ export const getCachedPublicResults = unstable_cache(
               for (const pr of partyRows) {
                 const cid = pr.canonical_result_id;
                 if (!partyMap.has(cid)) partyMap.set(cid, []);
-                partyMap.get(cid).push({
-                  votes: Number(pr.votes || 0),
-                  party: pr.parties ? {
-                    id: pr.parties.id,
-                    name: pr.parties.name,
-                    abbreviation: pr.parties.abbreviation,
-                    color: pr.parties.color,
-                  } : null,
-                });
+                const arr = partyMap.get(cid);
+                if (arr) {
+                  arr.push({
+                    votes: Number(pr.votes || 0) * displayScale,
+                    party: pr.parties ? {
+                      id: pr.parties.id,
+                      name: pr.parties.name,
+                      abbreviation: pr.parties.abbreviation,
+                      color: pr.parties.color,
+                    } : null,
+                  });
+                }
               }
             }
           } catch {}
@@ -609,9 +665,9 @@ export const getCachedPublicResults = unstable_cache(
           submitted_at: r.published_at,
           verified_at: r.published_at,
           status: r.status,
-          valid_votes: Number(r.valid_votes || 0),
-          rejected_votes: Number(r.rejected_votes || 0),
-          total_votes: Number(r.total_votes || 0),
+          valid_votes: Math.round(Number(r.valid_votes || 0) * displayScale),
+          rejected_votes: Math.round(Number(r.rejected_votes || 0) * displayScale),
+          total_votes: Math.round(Number(r.total_votes || 0) * displayScale),
           election_id: r.election_id,
           polling_unit: {
             id: r.polling_unit_id,
@@ -622,7 +678,7 @@ export const getCachedPublicResults = unstable_cache(
             state_id: r.state_id,
             latitude: r.latitude,
             longitude: r.longitude,
-            registered_voters: Number(r.registered_voters || 0),
+            registered_voters: Math.round(Number(r.registered_voters || 0) * displayScale),
           },
           party_results: partyMap.get(r.canonical_result_id) || [],
         }));
