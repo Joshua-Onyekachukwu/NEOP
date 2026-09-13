@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     const partiesRes = await supabase
       .from("parties")
-      .select("id, abbreviation, name, color")
+      .select("id, abbreviation, official_name as name, color")
       .order("id", { ascending: true });
     const parties = partiesRes.data || [];
     if (parties.length === 0) {
@@ -391,19 +391,41 @@ export async function POST(request: NextRequest) {
 
           if (volNId && assignNId) {
             try {
-              const { data: r1 } = await supabase.rpc("submit_result_atomic", {
-                p_election_id: electionId,
-                p_polling_unit_id: pu.id,
-                p_assignment_id: assignNId,
-                p_volunteer_id: volNId,
-                p_valid: baseDist.validVotes,
-                p_rejected: baseDist.rejectedVotes,
-                p_total: baseDist.total_votes,
-                p_idempotency: randomUUID(),
-                p_party_votes: JSON.stringify(baseDist.party_votes),
-              });
-              const r1a: any = r1;
-              sub1Id = r1a?.out_submission_id || r1a?.submission_id || null;
+              const partyArray: any[] = Object.entries(baseDist.party_votes).map(
+                ([abbr, votes]: any) => {
+                  const party: any = parties.find(
+                    (p: any) => p.abbreviation === abbr
+                  );
+                  return {
+                    party_id: party?.id,
+                    votes: Number(votes || 0),
+                  };
+                }
+              ).filter((x) => x.party_id);
+              const subN = await supabase
+                .from("result_submissions")
+                .insert({
+                  idempotency_key: randomUUID(),
+                  assignment_id: assignNId,
+                  volunteer_id: volNId,
+                  election_id: electionId,
+                  polling_unit_id: pu.id,
+                  valid_votes: baseDist.validVotes,
+                  rejected_votes: baseDist.rejectedVotes,
+                  total_votes: baseDist.total_votes,
+                  status: "UNVERIFIED",
+                })
+                .select("id")
+                .maybeSingle();
+              sub1Id = (subN as any)?.data?.id || null;
+              if (sub1Id) {
+                const bulk1: any[] = partyArray.map((pr: any) => ({
+                  result_submission_id: sub1Id,
+                  party_id: pr.party_id,
+                  votes: pr.votes,
+                }));
+                await supabase.from("party_results").insert(bulk1);
+              }
             } catch (e: any) {
               chunkErrors.push({
                 pu_code: pu.official_code,
@@ -421,19 +443,41 @@ export async function POST(request: NextRequest) {
 
           if (volSId && assignSId) {
             try {
-              const { data: r2 } = await supabase.rpc("submit_result_atomic", {
-                p_election_id: electionId,
-                p_polling_unit_id: pu.id,
-                p_assignment_id: assignSId,
-                p_volunteer_id: volSId,
-                p_valid: a2Dist.validVotes,
-                p_rejected: a2Dist.rejectedVotes,
-                p_total: a2Dist.total_votes,
-                p_idempotency: randomUUID(),
-                p_party_votes: JSON.stringify(a2Dist.party_votes),
-              });
-              const r2a: any = r2;
-              sub2Id = r2a?.out_submission_id || r2a?.submission_id || null;
+              const partyArrayS: any[] = Object.entries(a2Dist.party_votes).map(
+                ([abbr, votes]: any) => {
+                  const party: any = parties.find(
+                    (p: any) => p.abbreviation === abbr
+                  );
+                  return {
+                    party_id: party?.id,
+                    votes: Number(votes || 0),
+                  };
+                }
+              ).filter((x) => x.party_id);
+              const subS = await supabase
+                .from("result_submissions")
+                .insert({
+                  idempotency_key: randomUUID(),
+                  assignment_id: assignSId,
+                  volunteer_id: volSId,
+                  election_id: electionId,
+                  polling_unit_id: pu.id,
+                  valid_votes: a2Dist.validVotes,
+                  rejected_votes: a2Dist.rejectedVotes,
+                  total_votes: a2Dist.total_votes,
+                  status: "UNVERIFIED",
+                })
+                .select("id")
+                .maybeSingle();
+              sub2Id = (subS as any)?.data?.id || null;
+              if (sub2Id) {
+                const bulk2: any[] = partyArrayS.map((pr: any) => ({
+                  result_submission_id: sub2Id,
+                  party_id: pr.party_id,
+                  votes: pr.votes,
+                }));
+                await supabase.from("party_results").insert(bulk2);
+              }
             } catch (e: any) {
               chunkErrors.push({
                 pu_code: pu.official_code,
@@ -487,47 +531,72 @@ export async function POST(request: NextRequest) {
 
               const shouldMatch = iden && md <= 2 && !require_ai;
 
-              const pubParties = (s1?.party_results || []).map((pr: any) => ({
-                party_id: pr?.parties?.id || pr?.party_id,
-                votes: Number(pr?.votes || 0),
-              }));
+              const pubParties = JSON.stringify(
+                (s1?.party_results || []).map((pr: any) => ({
+                  party_id: pr?.parties?.id || pr?.party_id,
+                  votes: Number(pr?.votes || 0),
+                }))
+              );
+
+              const v1 = await supabase
+                .from("verifications")
+                .insert({
+                  election_id: electionId,
+                  polling_unit_id: pu.id,
+                  submission_id_1: sub1Id,
+                  submission_id_2: sub2Id,
+                  status: shouldMatch ? "MATCH" : "DISCREPANCY",
+                  submissions_identical: iden,
+                  math_consistent: md <= 2,
+                  final_decision: shouldMatch ? "MATCH" : "DISCREPANCY",
+                })
+                .select("id")
+                .maybeSingle();
+              const vid = (v1 as any)?.data?.id || null;
 
               if (shouldMatch) {
                 try {
-                  await supabase.rpc("publish_canonical_result", {
+                  const { data: pub } = await supabase.rpc("publish_canonical_result", {
                     p_election_id: electionId,
-                    p_pu_id: pu.id,
+                    p_polling_unit_id: pu.id,
                     p_status: "PUBLISHED",
                     p_valid_votes: Number(s1?.valid_votes || 0),
                     p_rejected_votes: Number(s1?.rejected_votes || 0),
                     p_total_votes: Number(s1?.total_votes || 0),
-                    p_source1_id: sub1Id,
-                    p_source2_id: sub2Id,
+                    p_source_1: sub1Id,
+                    p_source_2: sub2Id,
                     p_party_votes: pubParties,
-                    p_admin_id: adminId,
+                    p_created_by: adminId,
                   });
-                } catch {
-                  await supabase
-                    .from("canonical_pu_results")
-                    .upsert({
-                      election_id: electionId,
-                      pu_id: pu.id,
-                      status: "VERIFIED",
-                      submission1_id: sub1Id,
-                      submission2_id: sub2Id,
-                      updated_at: new Date().toISOString(),
-                    });
+                  const cid =
+                    (Array.isArray(pub) && (pub as any)[0]?.out_canonical_id) ||
+                    (pub as any)?.out_canonical_id ||
+                    null;
+                  if (vid && cid) {
+                    await supabase
+                      .from("verifications")
+                      .update({ canonical_result_id: cid })
+                      .eq("id", vid);
+                  }
+                } catch (pe: any) {
+                  chunkErrors.push({
+                    pu_code: pu.official_code,
+                    step: "publish_rpc",
+                    message: pe?.message || "publish_rpc failed",
+                  });
                 }
               } else {
                 await supabase
                   .from("canonical_pu_results")
-                  .upsert({
+                  .insert({
                     election_id: electionId,
-                    pu_id: pu.id,
+                    polling_unit_id: pu.id,
                     status: "HUMAN_REVIEW",
-                    submission1_id: sub1Id,
-                    submission2_id: sub2Id,
-                    updated_at: new Date().toISOString(),
+                    source_submission_1: sub1Id,
+                    source_submission_2: sub2Id,
+                    valid_votes: Number(s1?.valid_votes || 0),
+                    rejected_votes: Number(s1?.rejected_votes || 0),
+                    total_votes: Number(s1?.total_votes || 0),
                   });
               }
             } catch (e: any) {
