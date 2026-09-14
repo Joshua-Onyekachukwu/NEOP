@@ -69,6 +69,7 @@ const AdminDashboard: React.FC = () => {
   const [liveProgress, setLiveProgress] = useState<{
     progress_percent: number;
     total_results: number;
+    total_polling_units?: number;
     total_votes: number;
     elapsed_seconds: number;
     status_distribution: Record<string, number>;
@@ -1469,7 +1470,11 @@ const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-                            {liveProgress ? `${liveProgress.total_results.toLocaleString()} / 188,042 PUs` : simProgress || "Starting..."}
+                            {liveProgress
+                              ? `${liveProgress.total_results.toLocaleString()} / ${(
+                                  liveProgress.total_polling_units || 176846
+                                ).toLocaleString()} PUs`
+                              : simProgress || "Starting..."}
                           </span>
                           {liveProgress && liveProgress.elapsed_seconds > 0 && (
                             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">

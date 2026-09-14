@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       election_type: config.election_type || "PRESIDENTIAL",
       progress_percent: progressPercent,
       total_results: totalResults || 0,
+      total_polling_units: totalPUCount,
       verified_results: verifiedResults || 0,
       total_votes: totalVotes,
       elapsed_seconds: elapsedSeconds,

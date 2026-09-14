@@ -18,6 +18,7 @@ import React, { useEffect, useState, useRef } from "react";
 interface SimProgress {
   status: string;
   total_results: number;
+  total_pus: number;
   total_votes: number;
   progress_percent: number;
   scenario: string;
@@ -83,13 +84,15 @@ const SimulationTicker: React.FC = () => {
             }
             prevResults.current = totalResults;
 
-            // Estimate progress based on results count
-            const expectedResults = 176846;
-            const progressPct = Math.min(100, Math.round((totalResults / expectedResults) * 100));
+            // Authoritative PU total from the stats API (real INEC geography),
+            // never a hard-coded number.
+            const totalPUs = Number(stats.inec_total_polling_units) || 176846;
+            const progressPct = Math.min(100, Math.round((totalResults / totalPUs) * 100));
 
             setProgress({
               status: config.status || "RUNNING",
               total_results: totalResults,
+              total_pus: totalPUs,
               total_votes: 0,
               progress_percent: progressPct,
               scenario: config.scenario || "random",
@@ -153,7 +156,7 @@ const SimulationTicker: React.FC = () => {
           </div>
           <div className="flex items-center gap-[12px]">
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-              {progress.total_results.toLocaleString()} / 188,042 PUs
+              {progress.total_results.toLocaleString()} / {progress.total_pus.toLocaleString()} PUs
             </span>
             {elapsed > 0 && (
               <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
