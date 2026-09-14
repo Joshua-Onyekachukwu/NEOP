@@ -40,31 +40,38 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   }, [refreshKey]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("public:canonical_pu_results")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "canonical_pu_results",
-          filter: "status=eq.PUBLISHED",
-        },
-        (payload: any) => {
-          const record = payload.new || payload.old;
-          if (!record) return;
-          const canonicalId = record.id;
-          if (canonicalId && !seenCanonicalIds.current.has(canonicalId)) {
-            seenCanonicalIds.current.add(canonicalId);
-            router.refresh();
+    // Unique channel name (LiveMap owns "-map", this owns "-feed") — see
+    // LiveMap for the shared-topic crash this fixes.
+    try {
+      const channel = supabase
+        .channel("public:canonical_pu_results-feed")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "canonical_pu_results",
+            filter: "status=eq.PUBLISHED",
+          },
+          (payload: any) => {
+            const record = payload.new || payload.old;
+            if (!record) return;
+            const canonicalId = record.id;
+            if (canonicalId && !seenCanonicalIds.current.has(canonicalId)) {
+              seenCanonicalIds.current.add(canonicalId);
+              router.refresh();
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (e) {
+      // Realtime is a progressive enhancement — polling refreshes the feed.
+      console.warn("[ResultFeed] realtime unavailable:", e);
+    }
   }, [router]);
 
   const fetchResults = async () => {

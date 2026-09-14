@@ -71,31 +71,40 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   }, [mapLoaded, refreshKey]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("public:canonical_pu_results")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "canonical_pu_results",
-          filter: "status=eq.PUBLISHED",
-        },
-        (payload: any) => {
-          const record = payload.new || payload.old;
-          if (!record) return;
-          const puId = record.polling_unit_id;
-          if (puId && !seenPUIds.current.has(puId)) {
-            seenPUIds.current.add(puId);
-            router.refresh();
+    // Unique channel name: ResultFeed used to share this topic, and whichever
+    // component mounted second added .on() to an already-subscribed channel,
+    // throwing "cannot add postgres_changes callbacks ... after subscribe()"
+    // and crashing the whole page into the error boundary.
+    try {
+      const channel = supabase
+        .channel("public:canonical_pu_results-map")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "canonical_pu_results",
+            filter: "status=eq.PUBLISHED",
+          },
+          (payload: any) => {
+            const record = payload.new || payload.old;
+            if (!record) return;
+            const puId = record.polling_unit_id;
+            if (puId && !seenPUIds.current.has(puId)) {
+              seenPUIds.current.add(puId);
+              router.refresh();
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (e) {
+      // Realtime is a progressive enhancement — polling refreshes the map.
+      console.warn("[LiveMap] realtime unavailable:", e);
+    }
   }, [router]);
 
   const initMap = async () => {
