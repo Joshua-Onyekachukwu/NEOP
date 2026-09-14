@@ -121,7 +121,11 @@ const SimulationTicker: React.FC = () => {
     };
 
     checkStatus();
-    interval = setInterval(checkStatus, 3000);
+    // 3s polling here made a single client issue ~60 req/min (config+stats
+    // +results every tick) and could trip the public rate limit when combined
+    // with the other live components. 10s keeps the progress bar lively
+    // while leaving healthy headroom under the 120/min public budget.
+    interval = setInterval(checkStatus, 10000);
 
     return () => {
       active = false;
