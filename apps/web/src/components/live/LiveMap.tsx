@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { supabase } from "@/lib/supabase-browser";
+import { useRealtimeData } from "@/components/live/RealtimeLayer";
 
 interface PollingUnit {
   id: string;
@@ -49,6 +50,32 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const pollingUnitsRef = useRef<any[]>([]);
   const fetchingRef = useRef(false);
   const seenPUIds = useRef<Set<string>>(new Set());
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { config } = useRealtimeData();
+
+  // Full-screen mode uses CSS position:fixed rather than a React portal:
+  // reparenting the container DOM node destroys MapLibre's WebGL context
+  // (canvas goes blank), while fixed positioning escapes ancestor overflow
+  // without touching the node. ESC exits. The same component instance
+  // keeps polling/realtime — nothing re-mounts, updates continue live.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // MapLibre needs an explicit resize after the container changes size.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const t1 = setTimeout(() => map.current?.resize(), 60);
+    const t2 = setTimeout(() => map.current?.resize(), 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (mapContainer.current && !map.current) {
@@ -466,12 +493,17 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     return STATUS_COLORS[status] || "#4B5563";
   };
 
-  return (
-    <div className="relative">
+  const simLabel = config?.status_label || "SIMULATED DATA";
+
+  const mapShell = (
+    <div className={isFullscreen ? "fixed inset-0 z-[9999] bg-[var(--color-ink)]" : "relative"}>
       <div
         ref={mapContainer}
-        className="w-full h-[400px] md:h-[500px] overflow-hidden border border-[var(--color-gray-100)]"
-        role="application"
+        className={
+          isFullscreen
+            ? "w-full h-full"
+            : "w-full h-[400px] md:h-[500px] overflow-hidden border border-[var(--color-gray-100)]"
+        }  role="application"
         aria-label="Interactive map showing polling unit locations across Nigeria. Click a point for details."
       />
 
@@ -484,6 +516,42 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
             <Skeleton className="h-[10px] rounded-[2px]" style={{ width: "80px" }} />
           </div>
         </div>
+      )}
+
+      {/* Simulation badge — persistent, impossible to miss, both modes */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-[var(--color-amber)]/15 border border-[var(--color-amber)]/60 px-3 py-1.5 pointer-events-none max-w-[92%]">
+        <span className="font-mono text-[10px] md:text-xs font-bold tracking-wider text-[var(--color-amber)] whitespace-nowrap">
+          ⚠ <span className="md:hidden">SIMULATED</span>
+          <span className="hidden md:inline">{simLabel} — NOT OFFICIAL ELECTION RESULTS</span>
+        </span>
+      </div>
+
+      {/* Full-screen controls (same component — live updates continue) */}
+      {isFullscreen ? (
+        <button
+          onClick={() => setIsFullscreen(false)}
+          className="absolute top-14 right-3 z-30 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-2 font-mono text-xs text-[var(--color-text)] hover:bg-[var(--color-ink-light)]"
+          aria-label="Exit full-screen map"
+        >
+          ✕ EXIT FULL SCREEN
+        </button>
+      ) : (
+        <>
+          <button
+            onClick={() => setIsFullscreen(true)}
+            className="hidden md:block absolute top-14 right-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-2 font-mono text-xs text-[var(--color-text)] hover:bg-[var(--color-ink-light)]"
+            aria-label="Open full-screen map"
+          >
+            ⛶ FULL SCREEN
+          </button>
+          <button
+            onClick={() => setIsFullscreen(true)}
+            className="md:hidden absolute bottom-14 right-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2.5 py-2 font-mono text-[11px] text-[var(--color-text)]"
+            aria-label="Open full-screen map"
+          >
+            ⛶
+          </button>
+        </>
       )}
 
       {/* Live update indicator */}
@@ -570,13 +638,19 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       )}
 
       {/* Total count */}
-      <div className="absolute bottom-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10">
-        <span className="font-mono text-xs text-[var(--color-text-muted)]">
+      <div className={
+        isFullscreen
+          ? "absolute bottom-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10"
+          : "absolute bottom-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10 mr-28"
+      }>
+        <span className="font-mono xs text-[var(--color-text-muted)]">
           {totalPU.toLocaleString()} polling units
         </span>
       </div>
     </div>
   );
+
+  return mapShell;
 };
 
 export default LiveMap;

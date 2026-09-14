@@ -17,6 +17,7 @@ interface Result {
   polling_unit_code: string;
   polling_unit_name: string;
   state_name: string;
+  lga_name: string;
   valid_votes: number;
   rejected_votes: number;
   total_votes: number;
@@ -85,7 +86,8 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           id: r.id,
           polling_unit_code: r.polling_unit_code || "â€”",
           polling_unit_name: r.polling_unit_name || "â€”",
-          state_name: r.state || "â€”",
+          state_name: r.state || "—",
+          lga_name: r.lga || "",
           valid_votes: r.valid_votes,
           rejected_votes: r.rejected_votes,
           total_votes: r.total_votes,
@@ -249,12 +251,12 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
                 </span>
               </div>
 
-              {/* State */}
-              {result.state_name !== "—" && (
+              {/* Geography — real LGA + state from the canonical result */}
+              {(result.state_name && result.state_name !== "—") || result.lga_name ? (
                 <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[4px]">
-                  {result.state_name}
+                  {result.lga_name ? `${result.lga_name} · ` : ""}{result.state_name}
                 </div>
-              )}
+              ) : null}
             </div>
           ))
         )}

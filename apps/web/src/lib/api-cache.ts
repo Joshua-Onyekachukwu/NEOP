@@ -199,6 +199,60 @@ export const getCachedStats = unstable_cache(
 
     const sbResult = await withTimeout(
       (async () => {
+        // ── PRIMARY: single authoritative summary (migration 242) ──
+        // One server-side aggregation (national + parties + per-state,
+        // all derived from PU canonicals) feeds stats, state breakdown
+        // and the leaderboard. No surface computes its own totals.
+        try {
+          const { data: sumData, error: sumErr } = await supabase.rpc("get_election_summary");
+          const sum = sumErr ? null : (Array.isArray(sumData) ? sumData[0] : sumData);
+          if (sum && (sum.national || sum.states)) {
+            const nat = sum.national || {};
+            const covered = Number(nat.covered_results || 0);
+            const verified = Number(nat.verified_results || 0);
+            const totalPU = Number(sum.total_polling_units || 0);
+            const states = (sum.states || []).map((s: any) => {
+              const totalPus = Number(s.total_pus || 0);
+              const cov = Number(s.covered_pus || 0);
+              const ver = Number(s.verified_pus || 0);
+              return {
+                state_id: s.state_id,
+                state_name: s.state_name,
+                name: s.state_name,
+                state_code: s.state_code || "",
+                total_pus: totalPus,
+                // Alias keys: consumers read either naming
+                total_polling_units: totalPus,
+                covered: cov,
+                covered_pus: cov,
+                covered_polling_units: cov,
+                verified: ver,
+                verified_pus: ver,
+                verified_polling_units: ver,
+                total_votes: Number(s.total_votes || 0),
+                leader_abbreviation: s.leader_abbreviation || null,
+                leader_votes: Number(s.leader_votes || 0),
+                reporting_status: s.reporting_status || "AWAITING",
+                coverage_percent: Number(s.coverage_percent || 0),
+                verification_percent: cov > 0 ? Number(((ver / cov) * 100).toFixed(1)) : 0,
+              };
+            });
+            return {
+              inec_total_polling_units: totalPU,
+              total_polling_units: totalPU,
+              covered_polling_units: covered,
+              verified_polling_units: verified,
+              total_votes: Number(nat.total_votes || 0),
+              state_breakdown: states,
+              coverage_percent: totalPU > 0 ? Number(((covered / totalPU) * 100).toFixed(1)) : 0,
+              verification_percent: covered > 0 ? Number(((verified / covered) * 100).toFixed(1)) : 0,
+              last_updated: sum.generated_at || new Date().toISOString(),
+              disclaimer: "These are independently collected field observations and are not official INEC election results.",
+              source: "supabase" as const,
+            };
+          }
+        } catch {}
+        // ── Legacy fallback chain (resilience only) ──
         let totalVotes = 0;
         let totalCovered = 0;
         let totalVerified = 0;
@@ -330,6 +384,13 @@ export const getCachedStats = unstable_cache(
       const m = await getDisplayScale();
       if (m > 1) {
         sbResult.total_votes = Math.round(Number(sbResult.total_votes || 0) * m);
+        // State-level display numbers must scale identically so every
+        // surface reconciles with the national headline.
+        sbResult.state_breakdown = (sbResult.state_breakdown || []).map((s: any) => ({
+          ...s,
+          total_votes: Math.round(Number(s.total_votes || 0) * m),
+          leader_votes: Math.round(Number(s.leader_votes || 0) * m),
+        }));
       }
       return sbResult;
     }
@@ -351,10 +412,22 @@ export const getCachedPartyResults = unstable_cache(
       (async () => {
         let rpcData: any[] | null = null;
 
-        // Preferred source: published canonicals aggregated server-side —
-        // PostgREST caps un-capped selects at 1000 rows, which silently
-        // undercounted party totals once the sim dataset grew past the
-        // demo data (migration 239).
+        // PRIMARY: the same authoritative summary the stats endpoint uses —
+        // one computation feeds leaderboard + stats + state breakdown.
+        try {
+          const { data: sumData, error: sumErr } = await supabase.rpc("get_election_summary");
+          const sum = sumErr ? null : (Array.isArray(sumData) ? sumData[0] : sumData);
+          if (sum && Array.isArray(sum.parties) && sum.parties.length > 0) {
+            rpcData = sum.parties.map((p: any) => ({
+              party_abbreviation: p.abbreviation,
+              party_name: p.name,
+              party_color: p.color,
+              total_votes: Number(p.total_votes || 0),
+            }));
+          }
+        } catch {}
+
+        // Fallback: published-canonical aggregate (migration 239)
         try {
           const { data: pubData, error: pubErr } = await supabase.rpc("get_party_totals_published");
           if (!pubErr && pubData && pubData.length > 0) {
@@ -429,8 +502,12 @@ export const getCachedPartyResults = unstable_cache(
             deduped[abbr] = p;
           }
         }
+        // Authoritative ordering: highest votes first; ties (including the
+        // all-zero state) break alphabetically by abbreviation.
         const parties = Object.values(deduped).sort(
-          (a, b) => Number(b.total_votes) - Number(a.total_votes)
+          (a, b) =>
+            Number(b.total_votes) - Number(a.total_votes) ||
+            String(a.party_abbreviation).localeCompare(String(b.party_abbreviation))
         );
         const grandTotal = parties.reduce(
           (s: number, r: any) => s + Number(r.total_votes), 0
@@ -674,8 +751,11 @@ export const getCachedPublicResults = unstable_cache(
             official_code: r.official_code,
             name: r.pu_name,
             ward_id: r.ward_id,
+            ward_name: r.ward_name,
             lga_id: r.lga_id,
+            lga_name: r.lga_name,
             state_id: r.state_id,
+            state_name: r.state_name,
             latitude: r.latitude,
             longitude: r.longitude,
             registered_voters: Math.round(Number(r.registered_voters || 0) * displayScale),

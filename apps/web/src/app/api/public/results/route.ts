@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
         polling_unit_name: pu.name || "Unknown",
         state: pu.state_id ? (pu.state_name || pu.state_id) : "Unknown",
         state_id: pu.state_id || null,
+        lga: pu.lga_name || null,
         lga_id: pu.lga_id || null,
         ward_id: pu.ward_id || null,
         polling_unit_id: pu.id || r.polling_unit_id || null,
