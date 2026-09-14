@@ -45,7 +45,7 @@ This inserts:
 - 36 states + FCT
 - 774 LGAs
 - ~8,800 wards
-- ~188,000 polling units
+- ~176,846 polling units (INEC geography)
 
 > **Note:** This step takes 5-10 minutes due to the volume of polling units.
 
@@ -128,12 +128,12 @@ Set these in your deployment platform (Vercel, etc.) or in `apps/web/.env.local`
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Project Settings → API → anon public | Long JWT string |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → service_role | ⚠️ SECRET — never expose to client |
 
-### Required (Convex) — if using Convex for realtime
+### Optional (deployment tooling, local `.env.local` only)
 
 | Variable | Where to find | Notes |
 |----------|---------------|-------|
-| `NEXT_PUBLIC_CONVEX_URL` | Convex dashboard → Settings | e.g. `https://xxxxx.convex.cloud` |
-| `CONVEX_DEPLOY_KEY` | Convex dashboard → Settings → Deploy key | ⚠️ SECRET |
+| `VERCEL_TOKEN` | Vercel dashboard → Settings → Tokens | ⚠️ SECRET — CLI production deploys |
+| `GITHUB_TOKEN` | GitHub → Settings → Developer settings → Tokens | Repo status checks, branch management |
 
 ### Optional
 
@@ -147,34 +147,35 @@ Set these in your deployment platform (Vercel, etc.) or in `apps/web/.env.local`
 
 - `NEXT_PUBLIC_*` variables are exposed to the browser — never put secrets here
 - `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS — keep it server-side only
-- `CONVEX_DEPLOY_KEY` authorizes mutations — keep it server-side only
+- `VERCEL_TOKEN` authorizes production deploys — keep it in `.env.local` only
 - Never commit `.env.local` to git (already in `.gitignore`)
 
 ---
 
 ## 7. Update CSP Headers
 
-In `apps/web/next.config.ts`, update the Content-Security-Policy `connect-src` and `script-src` with your new Supabase and Convex URLs:
+In `apps/web/next.config.ts`, update the Content-Security-Policy `connect-src` and `script-src` with your new Supabase URL:
 
 ```typescript
-"connect-src 'self' https://YOUR-PROJECT.supabase.co https://YOUR-PROJECT.convex.cloud https://YOUR-PROJECT.convex.site wss://YOUR-PROJECT.convex.cloud",
-"script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://YOUR-PROJECT.convex.cloud",
+"connect-src 'self' https://YOUR-PROJECT.supabase.co wss://YOUR-PROJECT.supabase.co https://tile.openstreetmap.org https://api.maptiler.com",
+"script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com",
 ```
 
 ---
 
-## 8. Deploy Convex (if using Convex)
+## 8. Configure Scheduled Jobs (pg_cron)
 
-```bash
-cd apps/web
-npx convex deploy
+NEOP does not use Vercel crons (Hobby plan forbids them). Scheduled jobs run inside Supabase via pg_cron:
+
+```sql
+-- Dead-letter reaper (migration 244 applies this idempotently)
+SELECT cron.schedule('dead-letter-reaper-10min','*/10 * * * *',
+  $$SELECT public.process_dead_letter_batch(50)$$);
 ```
 
-This deploys:
-- `convex/schema.ts` — Convex schema
-- `convex/functions/dashboard.ts` — Dashboard queries and mutations
+Verify: `SELECT jobname, schedule, active FROM cron.job;`
 
-After deploy, copy the Convex URL and set it as `NEXT_PUBLIC_CONVEX_URL`.
+Manual trigger without pg_cron: call `/api/admin/cron/dead-letter-reaper-hourly` (admin-authenticated).
 
 ---
 
@@ -182,12 +183,13 @@ After deploy, copy the Convex URL and set it as `NEXT_PUBLIC_CONVEX_URL`.
 
 ### Vercel
 
+From the **repo root** (never from `apps/web/` — a subdirectory deploy misses the `packages/` workspace):
+
 ```bash
-cd apps/web
-vercel --prod
+npx vercel deploy --prod --yes
 ```
 
-Or push to GitHub and connect the repo in Vercel dashboard.
+Or push to `main` and let Vercel's GitHub integration build it.
 
 ### Environment Variables on Vercel
 
@@ -209,7 +211,7 @@ Open your deployed URL and check:
 - [ ] Go to `/admin/login`
 - [ ] Log in with admin credentials
 - [ ] Dashboard loads with statistics
-- [ ] Polling unit count shows ~188K (from database, not hardcoded)
+- [ ] Polling unit count shows 176,846 (from database, not hardcoded)
 
 ### 10c. Test Agent Flow
 
@@ -226,7 +228,7 @@ Open your deployed URL and check:
 - [ ] Click "Run Simulation"
 - [ ] Progress bar updates (polling every 5 seconds)
 - [ ] Simulation completes
-- [ ] "Sync to Convex" button works (if Convex is configured)
+- [ ] Progress bar denominator equals the DB PU count (176,846)
 - [ ] Results appear in verification tab
 
 ### 10e. Test Public Dashboard
@@ -245,7 +247,7 @@ Open your deployed URL and check:
 - [ ] Admin user created and can log in
 - [ ] Google OAuth configured (if needed)
 - [ ] Storage bucket created with policies
-- [ ] Convex deployed (if using)
+- [ ] pg_cron jobs scheduled (`SELECT jobname FROM cron.job;`)
 - [ ] DNS configured (if custom domain)
 - [ ] SSL certificate active (Vercel handles this automatically)
 - [ ] `NEOP_HANDOVER_REPORT.md` is NOT committed to GitHub (contains secrets)
@@ -254,8 +256,8 @@ Open your deployed URL and check:
 
 ## Troubleshooting
 
-### "Could not find Convex client"
-→ Set `NEXT_PUBLIC_CONVEX_URL` environment variable
+### "Failed to compile: Can't resolve '@platform/validation'"
+→ You deployed from `apps/web/` instead of the repo root, so the workspace package wasn't uploaded. Redeploy from the root.
 
 ### "Unauthorized" on admin pages
 → Verify `SUPABASE_SERVICE_ROLE_KEY` is set and the admin user exists in `admin_users` table
@@ -269,9 +271,6 @@ Open your deployed URL and check:
 ### Photo upload fails
 → Verify the `evidence` storage bucket exists and has the correct policies
 
-### 401 on Convex sync
-→ Verify `CONVEX_DEPLOY_KEY` is set and matches your Convex project
-
 ---
 
 ## Files Reference
@@ -281,8 +280,6 @@ Open your deployed URL and check:
 | `supabase/NEOP_COMPLETE_SCHEMA.sql` | Complete database schema — run this ONE file |
 | `supabase/migrations/102_MASTER_MIGRATION.sql` | Incremental migration for existing databases |
 | `supabase/schema.sql` | Reference schema (tables only, no functions) |
-| `convex/schema.ts` | Convex schema definition |
-| `convex/functions/dashboard.ts` | Convex queries and mutations |
 | `apps/web/next.config.ts` | Security headers and CSP — **update URLs here** |
 | `apps/web/.env.local` | Local environment variables (not committed) |
 | `NEOP_HANDOVER_REPORT.md` | ⚠️ Contains API keys — never push to GitHub |

@@ -3,8 +3,8 @@
 
 > Supabase project: **muwocrmdcyzmwqjvvjfj**
 > Vercel project (production): **ngeop** (orgId team_ksBu4z76RQhxb2mFJHgsodAn, projectId prj_33UdRPH8dIn6Zet59kyAlGv29yeM)
-> Convex (live projections secondary only): rosy-crocodile-952
-> Source of truth: Supabase PostgreSQL 15 + PostGIS 3.3.7 ONLY. Convex mirrors are not authoritative.
+> Source of truth: Supabase PostgreSQL 15 + PostGIS 3.3.7 ONLY.
+> Convex was removed from the application in Sep 2026 — the `convex/` directory is legacy, nothing imports it, and it must never be reintroduced as a data layer.
 
 ---
 
@@ -49,7 +49,7 @@ NEOP/
 │   │   ├── 212_SIMULATION_VERIFY.sql         3 ticks + fn registry + progress stats regression
 │   │   └── inec_chunks/05_pus_01..89.sql     INEC 176,846 PUs geographic seed (apply via Supabase SQL Editor)
 │   └── schema.sql        supabase db dump of current state (NOT migration source; for reference only)
-├── convex/             live dashboards projections only — NOT source of truth. Mirrors Supabase.
+├── convex/             LEGACY (removed Sep 2026) — not imported by any app; do not use
 ├── docs/migration/     handover docs from legacy.
 ├── scripts/            migration generators Python (data in, SQL chunked out).
 ├── workers/            (future) ddos edge + verification Python workers.
@@ -227,7 +227,7 @@ The original repo had **three stacked** tech-stack incompatibilities with Vercel
 3. **OTP provider (Supabase phone auth)** — if no twilio provider configured, /api/auth/send-otp returns 503 "Phone verification not configured" (fail-safe behavior).
 4. **apps/observer** — no CSP, no vercel.json, no Supabase SSR pattern, no production env vars configured. Not the deliverable; only apps/web is wired for production.
 5. **Appropriate caching / rate limits** — rate-limit.ts skeleton exists in [rate-limit.ts](file:///c:/Users/Administrator/Webstrom/NEOP/apps/web/src/lib/rate-limit.ts). Redis-backed rate limiting recommended before high-load election day.
-6. **Convex live projections** — CONVEX_DEPLOY_KEY was set to preview key, swap for a production deployment key for public-facing traffic.
+6. **Convex live projections** — REMOVED (Sep 2026). The app uses Supabase Realtime (postgres_changes) exclusively. Ignore any remaining Convex env vars; the `convex/` directory is dead code awaiting deletion.
 
 ---
 
@@ -246,3 +246,29 @@ The original repo had **three stacked** tech-stack incompatibilities with Vercel
 - CSP connect-src muwoc+convex+maps → [next.config.ts](file:///c:/Users/Administrator/Webstrom/NEOP/apps/web/next.config.ts#L49-L49)
 
 Signed: NEOP v1 Baseline Acceptance, 2026-09-12.
+
+---
+
+# Addendum — Current State (2026-09-14)
+
+Supersedes any Convex references above (kept for history). Verified live state:
+
+## Authoritative results layer
+- **`get_election_summary()`** (migration 242) is the single aggregation: national + per-party + per-state rollups derived from `canonical_pu_results` → `canonical_party_results` → `polling_units.state_id`. Single pass, ~1.15 s warm at 37k canonicals.
+- Consumed by `/api/public/stats` (stats bar, State Breakdown, ticker), `/api/public/party-results` (National Leaderboard), and the map. The Live Feed (`/api/public/results`) serves canonical PU events with party breakdowns merged in JS (the `parties` meta lookup uses `official_name` — the table has no `name` column).
+- Invariants: national == Σ states == Σ parties (party-attributable valid votes; ballots tracked separately). Duplicate PU submissions **supersede**, never double-count (`publish_canonical_result`).
+
+## PU count discipline
+- Real INEC geography: **176,846** polling units (from `polling_units` / `inec_total_polling_units`). No hard-coded denominators in the UI — the ticker and admin progress read the DB value (`/api/admin/simulate/progress` now returns `total_polling_units`).
+
+## Realtime
+- Supabase Realtime only. Channel names are **unique per component** (e.g. `public:canonical_pu_results-map` / `-feed`); sharing a name across components crashes on mount order (supabase-js forbids adding callbacks after subscribe). Subscribes are try/catch-guarded.
+
+## Scheduled jobs
+- pg_cron in-database (Vercel Hobby forbids crons): `dead-letter-reaper-10min` → `process_dead_letter_batch(50)` (migration 244 — the batch processor migration 224 never shipped; the old Vercel cron endpoint called a nonexistent signature and 500'd hourly).
+
+## Deployment facts
+- Deploys must run from the **repo root** (root `vercel.json` runs `npm run build:web` across the workspace). Deploying from `apps/web/` fails: it uploads only that directory (missing `packages/validation`) and runs bare `next build`.
+- GitHub default branch and the repo's only branch: **`main`** (`master` archived as tag `archive/master-v1-sep03`).
+- Vercel **Settings → Git → Production Branch** still reads `master` (dashboard-only setting) — until flipped, pushes to `main` build previews; production ships via CLI `--prod` deploys.
+- Env vars (production + preview): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` for project `muwocrmdcyzmwqjvvjfj`. `VERCEL_TOKEN` lives in root `.env.local` (gitignored).
