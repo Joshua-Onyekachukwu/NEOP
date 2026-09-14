@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ResultFeedSkeleton from "@/components/live/skeletons/ResultFeedSkeleton";
-import { supabase } from "@/lib/supabase-browser";
+import { subscribePublishedResults, createIdDedupe } from "@/lib/realtime";
 
 interface PartyResult {
   party_abbreviation: string;
@@ -41,38 +41,14 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   }, [refreshKey]);
 
   useEffect(() => {
-    // Unique channel name (LiveMap owns "-map", this owns "-feed") — see
-    // LiveMap for the shared-topic crash this fixes.
-    try {
-      const channel = supabase
-        .channel("public:canonical_pu_results-feed")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "canonical_pu_results",
-            filter: "status=eq.PUBLISHED",
-          },
-          (payload: any) => {
-            const record = payload.new || payload.old;
-            if (!record) return;
-            const canonicalId = record.id;
-            if (canonicalId && !seenCanonicalIds.current.has(canonicalId)) {
-              seenCanonicalIds.current.add(canonicalId);
-              router.refresh();
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e) {
-      // Realtime is a progressive enhancement — polling refreshes the feed.
-      console.warn("[ResultFeed] realtime unavailable:", e);
-    }
+    // Central realtime module: unique per-scope channel + guarded subscribe.
+    const shouldRefresh = createIdDedupe();
+    return subscribePublishedResults({
+      scope: "feed",
+      onPublishedResult: (record) => {
+        if (shouldRefresh(record.id)) router.refresh();
+      },
+    });
   }, [router]);
 
   const fetchResults = async () => {

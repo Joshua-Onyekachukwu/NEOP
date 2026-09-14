@@ -46,7 +46,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://muwocrmdcyzmwqjvvjfj.supabase.co wss://muwocrmdcyzmwqjvvjfj.supabase.co wss://realtime.supabase.co wss://realtime.netlify.app https://rosy-crocodile-952.convex.cloud wss://rosy-crocodile-952.convex.site https://rosy-crocodile-952.convex.site https://api.maptiler.com https://tile.openstreetmap.org https://unpkg.com https://cdn.jsdelivr.net blob: data:",
+      "connect-src 'self' https://muwocrmdcyzmwqjvvjfj.supabase.co wss://muwocrmdcyzmwqjvvjfj.supabase.co wss://realtime.supabase.co wss://realtime.netlify.app https://api.maptiler.com https://tile.openstreetmap.org https://unpkg.com https://cdn.jsdelivr.net blob: data:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { supabase } from "@/lib/supabase-browser";
+import { subscribePublishedResults, createIdDedupe } from "@/lib/realtime";
 import { useRealtimeData } from "@/components/live/RealtimeLayer";
 
 interface PollingUnit {
@@ -49,7 +49,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const pollingUnitsRef = useRef<any[]>([]);
   const fetchingRef = useRef(false);
-  const seenPUIds = useRef<Set<string>>(new Set());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { config } = useRealtimeData();
 
@@ -98,40 +97,16 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   }, [mapLoaded, refreshKey]);
 
   useEffect(() => {
-    // Unique channel name: ResultFeed used to share this topic, and whichever
-    // component mounted second added .on() to an already-subscribed channel,
-    // throwing "cannot add postgres_changes callbacks ... after subscribe()"
-    // and crashing the whole page into the error boundary.
-    try {
-      const channel = supabase
-        .channel("public:canonical_pu_results-map")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "canonical_pu_results",
-            filter: "status=eq.PUBLISHED",
-          },
-          (payload: any) => {
-            const record = payload.new || payload.old;
-            if (!record) return;
-            const puId = record.polling_unit_id;
-            if (puId && !seenPUIds.current.has(puId)) {
-              seenPUIds.current.add(puId);
-              router.refresh();
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } catch (e) {
-      // Realtime is a progressive enhancement — polling refreshes the map.
-      console.warn("[LiveMap] realtime unavailable:", e);
-    }
+    // Central realtime module: unique per-scope channel + guarded subscribe.
+    // Dedupe by canonical result id (not PU id) so a superseding result for
+    // an already-seen PU still triggers a map refresh.
+    const shouldRefresh = createIdDedupe();
+    return subscribePublishedResults({
+      scope: "map",
+      onPublishedResult: (record) => {
+        if (shouldRefresh(record.id)) router.refresh();
+      },
+    });
   }, [router]);
 
   const initMap = async () => {

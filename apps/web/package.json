@@ -13,7 +13,6 @@
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.49.0",
     "@types/pg": "^8.23.1",
-    "convex": "^1.45.0",
     "maplibre-gl": "^4.7.0",
     "material-symbols": "^0.31.3",
     "next": "^15.3.6",
@@ -33,6 +32,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.0"
   }
 }

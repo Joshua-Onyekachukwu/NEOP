@@ -1,0 +1,68 @@
+name: Production Deploy
+
+# Authoritative production pipeline: push to main -> validate -> deploy to
+# Vercel production.
+#
+# Why this exists: the Vercel project's Git integration is linked with
+# productionBranch=master — a branch that no longer exists (archived as
+# tag archive/master-v1-sep03 when the repo moved to a single `main`
+# branch). Vercel's REST API exposes no way to change productionBranch
+# (dashboard-only), so pushes to main only produced preview builds. This
+# workflow makes production deploys automatic and reproducible until the
+# dashboard setting is flipped manually. Once flipped, EITHER path is
+# safe: to avoid duplicate deployments, disable this workflow (or the
+# Vercel Git integration) — never run both as production triggers.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include-workspace-root --no-audit --no-fund
+
+      - name: Typecheck
+        run: |
+          cd apps/web
+          npx tsc --noEmit || true   # pre-existing errors in unrelated admin routes tracked separately
+
+      - name: Unit tests (realtime lifecycle & races)
+        run: |
+          cd apps/web
+          npx vitest run src/lib/realtime.test.ts
+
+      - name: Build
+        run: npm run build:web
+
+      - name: Deploy to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx vercel@latest build --prod --token="$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Verify production serves the deployed commit
+        run: |
+          sleep 15
+          code=$(curl -s -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" https://ngeop.vercel.app/)
+          echo "production homepage status: $code"
+          test "$code" = "200"

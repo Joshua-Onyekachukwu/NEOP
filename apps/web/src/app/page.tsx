@@ -11,7 +11,7 @@ import LiveMap from "@/components/live/LiveMap";
 import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
 import SimulationTicker from "@/components/live/SimulationTicker";
-import { supabase } from "@/lib/supabase-browser";
+import { subscribeDashboardEvents } from "@/lib/realtime";
 
 interface ElectionConfig {
   election_type: string;
@@ -89,32 +89,16 @@ const HomePage: React.FC = () => {
     return () => clearInterval(t);
   }, []);
 
-  // Supabase Realtime — subscribe to table changes for instant updates
+  // Supabase Realtime (central module) — signals authoritative data changed;
+  // consumers refetch from the central results APIs.
   useEffect(() => {
-    const channel = supabase
-      .channel("live-results")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "result_submissions" },
-        () => bumpRefresh()
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "polling_units" },
-        () => bumpRefresh()
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "party_results" },
-        () => bumpRefresh()
-      )
-      .subscribe((status) => {
+    return subscribeDashboardEvents({
+      scope: "home",
+      onChange: bumpRefresh,
+      onStatus: (status) => {
         if (status === "SUBSCRIBED") setIsLive(true);
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      },
+    });
   }, [bumpRefresh]);
 
   const fetchConfig = async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { subscribeIncidents } from "@/lib/realtime";
 import { supabase } from "@/lib/supabase-browser";
 
 interface IncidentCounts {
@@ -21,13 +22,7 @@ const IncidentBar: React.FC = () => {
 
   useEffect(() => {
     fetchIncidentCounts();
-
-    const channel = supabase
-      .channel("incident-updates")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "incidents" }, () => fetchIncidentCounts())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return subscribeIncidents({ scope: "bar", onInsert: fetchIncidentCounts });
   }, []);
 
   const fetchIncidentCounts = async () => {
@@ -49,7 +44,7 @@ const IncidentBar: React.FC = () => {
     counts.disruption = results[2].count || 0;
     counts.election_not_held = results[3].count || 0;
     counts.material_shortage = results[4].count || 0;
-    counts.total = results.reduce((sum, r) => sum + (r.count || 0), 0);
+    counts.total = results.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
 
     // Get "other" count (total minus the 5 known categories)
     const { count: totalAll } = await supabase.from("incidents").select("id", { count: "exact", head: true });

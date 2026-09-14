@@ -41,8 +41,6 @@ next-env.d.ts
 supabase/.temp/
 supabase/.env
 
-# Convex
-convex/_generated/
 
 # Python workers
 *.pyc

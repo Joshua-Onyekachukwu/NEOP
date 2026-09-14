@@ -217,6 +217,17 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
   const prevRanksRef = useRef<Record<string, number>>({});
 
+  // Clock, set after mount — avoids a hydration mismatch (server and client
+  // render at different times, so an inline new Date() can never match).
+  const [mountedTime, setMountedTime] = useState("");
+  useEffect(() => {
+    const tick = () =>
+      setMountedTime(new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" }));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // Update previous ranks when parties change
   useEffect(() => {
     const newRanks: Record<string, number> = {};
@@ -307,7 +318,9 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           {source === "supabase" ? "Live data from Supabase" : "Demo data"}
         </span>
         <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-          {new Date().toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos" })}
+          {/* Rendered client-side only after mount — a direct new Date() here
+              caused a hydration mismatch (server/client times always differ). */}
+          {mountedTime}
         </span>
       </div>
     </div>
