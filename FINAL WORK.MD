@@ -1850,3 +1850,12 @@ The user should experience NEOP as a fast, smooth, trustworthy, continuously upd
 - **Deploy-path repair**: `apps/web/vercel.json` hourly cron (Hobby-incompatible) blocked deploys; cron removed in favor of **pg_cron `dead-letter-reaper-10min`** running the new **`process_dead_letter_batch`** RPC (migration 244) — the batch processor migration 224 never shipped, and the manual cron endpoint had been calling a nonexistent signature. Deploys must run from **repo root** (workspace build).
 - **Production rehearsal PASS**: national = state-sum = party-sum = 35,835,290; 37/37 states; leaderboard NDC > APC > PDP; feed chips reconcile; GitHub auto-deploy `Vercel=success`.
 - Commits: `51b2a85`, `229d2ba`, `1c3f43b` (all today-dated).
+
+## SESSION T — Production readiness pass (Sep 14, 2026)
+- Vercel: 94 stale/failed deployments removed (65 ERROR-era + superseded); 3 obsolete Convex env vars deleted after code-verified zero usage; preview deployment protection disabled for QA access.
+- productionBranch stays `master` via API (no REST endpoint exists — dashboard-only). Authoritative production path is now GitHub Actions: `.github/workflows/production-deploy.yml` (push main → build+typecheck+tests → Vercel prod deploy via VERCEL_TOKEN/ORG/PROJECT secrets). Native git push no longer deploys anything — single pipeline, no duplicates.
+- Realtime: central typed module `apps/web/src/lib/realtime.ts` (`liveResultsChannel`/`simulationChannel`); all 4 consumers (page.tsx, ResultFeed, LiveMap, IncidentBar) refactored onto it; map dedupe switched PU-id → canonical-id so superseded results propagate. 9/9 race tests pass (vitest): shared channel, no leak on mount/unmount, no double-count on reconnect/rapid events.
+- Hydration: fixed PartyResults footer server/client `toLocaleTimeString` mismatch (client-time state set in effect).
+- DB maintenance: verdict healthy (dead tuples ≤2.9%, autovacuum active 37–49×/day on canonical tables) — NO VACUUM FULL scheduled; added read-only `supabase/POST_SIM_HEALTH_CHECK.sql` operator check.
+- Convex removed: `convex/` dir, dep, CSP origins. E2E: published test result (+240 exact), realtime propagation to feed verified without reload, supersede verified, cleanup restored 3,583,529 baseline.
+- Ticker poll 3s → 10s (was 60 req/min of the 120/min per-IP budget). Deployed `8179cad` + `27ffc3d` via Actions (both success); production reconciles: 35,835,290 national, 37,003/176,846 PUs.
