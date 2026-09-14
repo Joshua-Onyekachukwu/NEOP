@@ -1831,3 +1831,10 @@ The user should experience NEOP as a fast, smooth, trustworthy, continuously upd
 **Re-run**: POST /api/admin/simulate/trigger-v2 {scenario, target_voters, display_voters, duration_minutes, coverage_pct:25, reset_first:true} — or use the dashboard Simulation tab (defaults 5M/50M/25%/5min).
 
 **Known limits**: Free-plan DB locks read-only when size exceeds quota (observed at ~777MB). Safe sim envelope: ≤5M real votes at ≤25% coverage (~450-640MB peak). If a run dies mid-way: cleanup via _scripts/cleanup-sim-debris.mjs (election-scoped) or supabase/RECOVERY_DISK_FULL.sql, then VACUUM FULL each big table (single-statement via MCP execute_sql — multi-statement wraps in a txn and VACUUM rejects that; SET TRANSACTION READ WRITE unblocks MCP writes when locked).
+
+## SESSION R — Sep 14 (evening): Firefox crash fix, branch cleanup, prod deploy
+- **Firefox "Something went wrong"**: LiveMap + ResultFeed both subscribed a Supabase channel named `public:canonical_pu_results`; second mount added callbacks to an already-subscribed channel → throw → error boundary. Fixed via unique names (`-map`/`-feed`) + try/catch guard (commit cbb6979). Verified in prod-mode bundle locally and in the deployed production chunk.
+- **Branches**: master and main had NO common ancestor (two histories). master stale since Sep 03 → archived as tag `archive/master-v1-sep03`, GitHub default branch switched to `main`, `master` deleted. `main` is the only branch.
+- **Production**: CLI deploy of cbb6979 to ngeop.vercel.app — READY. Verified: home 200, config SIMULATED, parties NDC 38.8%/APC 24.8%, fixed channel names present in prod bundle, zero occurrences of the broken name.
+- **Vercel caveat**: API refuses to change project productionBranch (still `master`, now deleted) — dashboard-only setting. Until set to `main` by hand (Dashboard → ngeop → Settings → Git), pushes to main create previews; production ships via CLI deploys.
+- **Vercel token saved to `.env.local` as VERCEL_TOKEN (gitignored, untracked — never commit it).**
