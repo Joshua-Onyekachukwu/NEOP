@@ -11,8 +11,12 @@ export async function GET(_request: NextRequest) {
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data, error } = await supabase.rpc("process_dead_letter_retry", {
-      batch_size: 50,
+    // The scheduled reaper now runs in-database via pg_cron every 10 minutes
+    // (migration 244). This endpoint remains as a manual trigger with the
+    // correct batch RPC — the old call used process_dead_letter_retry with a
+    // nonexistent batch_size arg and always failed.
+    const { data, error } = await supabase.rpc("process_dead_letter_batch", {
+      p_limit: 50,
     });
 
     if (error) {

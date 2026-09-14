@@ -1,8 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/admin/cron/dead-letter-reaper-hourly",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
