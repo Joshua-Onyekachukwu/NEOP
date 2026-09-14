@@ -707,29 +707,42 @@ export const getCachedPublicResults = unstable_cache(
 
         if (canonicalIds.length > 0) {
           try {
+            // Plain select + JS merge: the embedded "parties (...)" join
+            // silently returned nothing on some PostgREST states, which
+            // emptied every feed row's party chips. Two tiny queries are
+            // deterministic and cheap (parties has 9 rows).
             const { data: partyRows, error: partyErr } = await supabase
               .from("canonical_party_results")
-              .select(`
-                canonical_result_id,
-                votes,
-                parties (id, name, abbreviation, color)
-              `)
+              .select("canonical_result_id, party_id, votes")
               .in("canonical_result_id", canonicalIds)
               .returns<any[]>();
+            if (partyErr) {
+              console.warn("[api-cache] feed party rows failed:", partyErr.message);
+            }
+            const { data: partyMeta, error: metaErr } = await supabase
+              .from("parties")
+              .select("id, official_name, abbreviation, color");
+            if (metaErr) {
+              console.warn("[api-cache] parties meta failed:", metaErr.message);
+            }
+            const pmeta = new Map<string, any>(
+              (partyMeta || []).map((p: any) => [p.id, p])
+            );
             if (!partyErr && partyRows) {
               for (const pr of partyRows) {
                 const cid = pr.canonical_result_id;
                 if (!partyMap.has(cid)) partyMap.set(cid, []);
                 const arr = partyMap.get(cid);
-                if (arr) {
+                const meta = pmeta.get(pr.party_id);
+                if (arr && meta) {
                   arr.push({
                     votes: Number(pr.votes || 0) * displayScale,
-                    party: pr.parties ? {
-                      id: pr.parties.id,
-                      name: pr.parties.name,
-                      abbreviation: pr.parties.abbreviation,
-                      color: pr.parties.color,
-                    } : null,
+                    party: {
+                      id: meta.id,
+                      name: meta.official_name,
+                      abbreviation: meta.abbreviation,
+                      color: meta.color,
+                    },
                   });
                 }
               }
