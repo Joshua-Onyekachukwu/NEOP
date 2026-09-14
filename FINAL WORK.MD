@@ -1838,3 +1838,15 @@ The user should experience NEOP as a fast, smooth, trustworthy, continuously upd
 - **Production**: CLI deploy of cbb6979 to ngeop.vercel.app — READY. Verified: home 200, config SIMULATED, parties NDC 38.8%/APC 24.8%, fixed channel names present in prod bundle, zero occurrences of the broken name.
 - **Vercel caveat**: API refuses to change project productionBranch (still `master`, now deleted) — dashboard-only setting. Until set to `main` by hand (Dashboard → ngeop → Settings → Git), pushes to main create previews; production ships via CLI deploys.
 - **Vercel token saved to `.env.local` as VERCEL_TOKEN (gitignored, untracked — never commit it).**
+## SESSION S — One authoritative results pipeline, feed party fix, deploy-path repair (Sep 14)
+
+- **Authoritative aggregation (242)**: `get_election_summary()` is now the single source of truth — national + per-party + per-state (with leaders) all derived from PU canonicals via `polling_units.state_id`. Single-pass over the 37k canonicals: 9–13 s → **1.15 s warm**; invariant verified: state-sum == national == party-sum (35,835,290).
+- **State Breakdown empty → fixed**: the stats route grouped PUBLISHED-only mv rows (1000-row cap, no `total_pus`) so every state rendered zeros; the good RPC fallback never ran. Route now serves the RPC with compatibility aliases (`covered_pus`, `total_pus`, etc.). All **37/37 states render real data** (Lagos 13,325 PUs, Kano 11,222).
+- **StateTable key mismatch fixed**: UI read `covered_pus` while payload emitted `covered` — aliases + leading-party column + verification % + derived-data note.
+- **Leaderboard ordering**: deterministic (votes DESC, alphabetical tiebreak) enforced at the final sort; single numeric basis across surfaces (party-attributable valid votes; ballots kept separately for transparency).
+- **Feed fixed twice**: real geography per row (state/LGA), and the party join rebuilt as plain select + JS merge after finding `parties.name` doesn't exist (`official_name`) — chips now **sum exactly to each row's valid votes**.
+- **Full-screen map**: opens full-viewport with badge + exit control, canvas context preserved (CSS fixed-position, not DOM reparenting), verified open/resize/exit in browser.
+- **E2E integrity PASS**: published PDP 120 / APC 80 / LP 40 through the real ingestion fn → national +240, covered +1, party deltas exact; resubmission **supersedes** (never double-counts); cleanup done.
+- **Deploy-path repair**: `apps/web/vercel.json` hourly cron (Hobby-incompatible) blocked deploys; cron removed in favor of **pg_cron `dead-letter-reaper-10min`** running the new **`process_dead_letter_batch`** RPC (migration 244) — the batch processor migration 224 never shipped, and the manual cron endpoint had been calling a nonexistent signature. Deploys must run from **repo root** (workspace build).
+- **Production rehearsal PASS**: national = state-sum = party-sum = 35,835,290; 37/37 states; leaderboard NDC > APC > PDP; feed chips reconcile; GitHub auto-deploy `Vercel=success`.
+- Commits: `51b2a85`, `229d2ba`, `1c3f43b` (all today-dated).
