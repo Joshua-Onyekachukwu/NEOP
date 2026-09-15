@@ -12,6 +12,7 @@ import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
 import SimulationTicker from "@/components/live/SimulationTicker";
 import { subscribeDashboardEvents } from "@/lib/realtime";
+import "@/lib/client-error-reporter";
 
 interface ElectionConfig {
   election_type: string;

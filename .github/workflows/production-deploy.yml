@@ -19,7 +19,7 @@ on:
 
 concurrency:
   group: production-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -58,7 +58,7 @@ jobs:
         run: |
           npx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx vercel@latest build --prod --token="$VERCEL_TOKEN"
-          npx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
 
       - name: Verify production serves the deployed commit
         run: |
