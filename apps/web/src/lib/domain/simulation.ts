@@ -5,18 +5,14 @@
  * Used by the admin dashboard to run controlled simulations.
  */
 
-// Nigerian political parties with approximate strength profiles
-const PARTIES = [
-  { abbreviation: "NDC", name: "Nigeria Democratic Congress", color: "#1B5E20", baseStrength: 0.25 },
-  { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", baseStrength: 0.22 },
-  { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#003DA5", baseStrength: 0.18 },
-  { abbreviation: "LP", name: "Labour Party", color: "#00FF00", baseStrength: 0.10 },
-  { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#FF0000", baseStrength: 0.08 },
-  { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#FFD700", baseStrength: 0.07 },
-  { abbreviation: "SDP", name: "Social Democratic Party", color: "#800080", baseStrength: 0.05 },
-  { abbreviation: "YPP", name: "Young Progressives Party", color: "#FF4500", baseStrength: 0.05 },
-  { abbreviation: "ADC", name: "African Democratic Congress", color: "#006400", baseStrength: 0.05 },
-];
+// Nigerian political parties — colors from shared party-config
+import { PARTIES as PARTY_CONFIG } from "@/lib/party-config";
+const PARTIES = PARTY_CONFIG.map((p) => ({
+  abbreviation: p.abbr,
+  name: p.name,
+  color: p.color,
+  baseStrength: { NDC: 0.25, APC: 0.22, PDP: 0.18, LP: 0.10, NNPP: 0.08, APGA: 0.07, SDP: 0.05, YPP: 0.05, ADC: 0.05 }[p.abbr] ?? 0.05,
+}));
 
 export type ElectionType = "PRESIDENTIAL" | "HOUSE_OF_REPS" | "GOVERNORSHIP";
 

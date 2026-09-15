@@ -461,9 +461,9 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </>
       )}
 
-      {/* Map legend — LGA level */}
+      {/* Map legend — 5 statuses */}
       <div className="absolute bottom-3 left-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-2 font-mono text-[9px] space-y-0.5">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 mb-0.5">
           <span className="text-[var(--color-text-muted)]">LIVE •</span>
           <span className="text-[var(--color-text)]">{totalPU}</span>
           <span className="text-[var(--color-text-muted)]">LGAs</span>
@@ -474,11 +474,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-[#F97316]" />
-          <span>disputed</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-[#B91C1C]" />
-          <span>failed</span>
+          <span>under review</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-[#EF4444]" />

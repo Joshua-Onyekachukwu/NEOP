@@ -253,19 +253,28 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   // Default placeholder parties when no simulation has run
   const defaultParties = [
     { abbreviation: "NDC", name: "Nigeria Democratic Congress", color: "#1B5E20", total_votes: 0, percentage: 0 },
-    { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", total_votes: 0, percentage: 0 },
-    { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#000080", total_votes: 0, percentage: 0 },
-    { abbreviation: "LP", name: "Labour Party", color: "#FF0000", total_votes: 0, percentage: 0 },
-    { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#E53935", total_votes: 0, percentage: 0 },
-    { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#FFD600", total_votes: 0, percentage: 0 },
-    { abbreviation: "SDP", name: "Social Democratic Party", color: "#1565C0", total_votes: 0, percentage: 0 },
-    { abbreviation: "YPP", name: "Young Progressives Party", color: "#6A1B9A", total_votes: 0, percentage: 0 },
-    { abbreviation: "ADC", name: "African Democratic Congress", color: "#00838F", total_votes: 0, percentage: 0 },
+    { abbreviation: "APC", name: "All Progressives Congress", color: "#1565C0", total_votes: 0, percentage: 0 },
+    { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#B71C1C", total_votes: 0, percentage: 0 },
+    { abbreviation: "LP", name: "Labour Party", color: "#FF6F00", total_votes: 0, percentage: 0 },
+    { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#4A148C", total_votes: 0, percentage: 0 },
+    { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#F9A825", total_votes: 0, percentage: 0 },
+    { abbreviation: "SDP", name: "Social Democratic Party", color: "#00838F", total_votes: 0, percentage: 0 },
+    { abbreviation: "YPP", name: "Young Progressives Party", color: "#AD1457", total_votes: 0, percentage: 0 },
+    { abbreviation: "ADC", name: "African Democratic Congress", color: "#37474F", total_votes: 0, percentage: 0 },
   ];
 
-  const displayParties = parties.length > 0 ? parties : defaultParties;
+  // Sort alphabetically for display, but compute vote-based rank for visual indicators
+  const sortedByVotes = (parties.length > 0 ? parties : defaultParties)
+    .slice()
+    .sort((a: any, b: any) => b.total_votes - a.total_votes);
+  const voteRank: Record<string, number> = {};
+  sortedByVotes.forEach((p: any, i: number) => { voteRank[p.abbreviation] = i; });
 
-  const maxVotes = displayParties[0]?.total_votes || 1;
+  const displayParties = (parties.length > 0 ? parties : defaultParties)
+    .slice()
+    .sort((a: any, b: any) => a.abbreviation.localeCompare(b.abbreviation));
+
+  const maxVotes = sortedByVotes[0]?.total_votes || 1;
 
   return (
     <div>
@@ -299,13 +308,13 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </div>
       </div>
 
-      {/* Party rows — animated */}
+      {/* Party rows — animated, sorted alphabetically */}
       <div className="divide-y divide-[var(--color-gray-100)]">
-        {displayParties.map((party: any, index: number) => (
+        {displayParties.map((party: any) => (
           <AnimatedPartyRow
             key={party.abbreviation}
             party={party}
-            index={index}
+            index={voteRank[party.abbreviation] ?? 0}
             maxVotes={maxVotes}
             prevRank={prevRanks[party.abbreviation] ?? -1}
           />

@@ -1130,7 +1130,12 @@ const AdminDashboard: React.FC = () => {
                     <div>
                       <label className="font-mono text-[10px] text-[var(--color-text-dim)] uppercase mb-1 block">Speed</label>
                       <div className="grid grid-cols-4 gap-1">
-                        {([["SLOW", 2500], ["NORMAL", 1000], ["FAST", 300], ["STRESS", 0]] as const).map(([sp]) => (
+                        {([
+                          ["SLOW", "2.5s/wave"],
+                          ["NORMAL", "1s/wave"],
+                          ["FAST", "300ms/wave"],
+                          ["STRESS", "no delay"],
+                        ] as const).map(([sp, desc]) => (
                           <button
                             key={sp}
                             onClick={() => setSimV2Cfg((p) => ({ ...p, speed: sp }))}
@@ -1139,11 +1144,15 @@ const AdminDashboard: React.FC = () => {
                                 ? "bg-[var(--color-green)]/10 border-[var(--color-green)] text-[var(--color-green-bright)] font-bold"
                                 : "border-[var(--color-gray-200)] text-[var(--color-text-dim)] hover:border-[var(--color-text-dim)]"
                             }`}
+                            title={desc}
                           >
                             {sp}
                           </button>
                         ))}
                       </div>
+                    </div>
+                    <div className="font-mono text-[9px] text-[var(--color-text-dim)] mt-1">
+                      Max: 12 waves, 30 min, 176,846 PUs per run. STRESS mode has no delay — use only for load testing.
                     </div>
                   </div>
                   <div className="space-y-3 mb-3">
@@ -1328,7 +1337,7 @@ const AdminDashboard: React.FC = () => {
                         <input
                           type="range"
                           min={1}
-                          max={60}
+                          max={30}
                           value={simDuration}
                           onChange={(e) => setSimDuration(Number(e.target.value))}
                           disabled={simRunning}
@@ -1339,7 +1348,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-                        How long the simulation runs (status transitions happen over this period)
+                        How long the simulation runs (1-30 min, status transitions paced across this period)
                       </div>
                     </div>
                     <div className="p-3 border border-[var(--color-gray-200)]">

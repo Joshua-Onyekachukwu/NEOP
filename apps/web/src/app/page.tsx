@@ -177,16 +177,16 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Stats row */}
-      <section className="border-b border-[var(--color-gray-100)]">
+      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
           <StatsBar refreshKey={refreshKey} />
         </div>
       </section>
 
       {/* Map + Feed */}
-      <section className="border-b border-[var(--color-gray-100)]">
+      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
             <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
               <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
                 <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
@@ -203,9 +203,9 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* State Breakdown + Party Results */}
-      <section className="border-b border-[var(--color-gray-100)]">
+      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
             <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
               <StateTable refreshKey={refreshKey} />
             </div>
@@ -217,15 +217,15 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Disruptions & Incidents Feed */}
-      <section className="border-b border-[var(--color-gray-100)]">
+      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto">
           <DisruptionFeed refreshKey={refreshKey} />
         </div>
       </section>
 
       {/* Export Results */}
-      <section className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px]">
+      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
+        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
           <ExportPanel variant="public" />
         </div>
       </section>

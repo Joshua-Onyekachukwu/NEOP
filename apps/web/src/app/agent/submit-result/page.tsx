@@ -96,17 +96,15 @@ const SubmitResult: React.FC = () => {
         })));
       } else {
         // Fallback
-        setPartyVotes([
-          { party_id: "1", party_name: "All Progressives Congress", abbreviation: "APC", votes: "", color: "#00A859" },
-          { party_id: "2", party_name: "Peoples Democratic Party", abbreviation: "PDP", votes: "", color: "#0000FF" },
-          { party_id: "3", party_name: "Labour Party", abbreviation: "LP", votes: "", color: "#FF0000" },
-          { party_id: "4", party_name: "New Nigeria Peoples Party", abbreviation: "NNPP", votes: "", color: "#E53935" },
-          { party_id: "5", party_name: "Nigeria Democratic Congress", abbreviation: "NDC", votes: "", color: "#1B5E20" },
-          { party_id: "6", party_name: "All Progressives Grand Alliance", abbreviation: "APGA", votes: "", color: "#FFD600" },
-          { party_id: "7", party_name: "Social Democratic Party", abbreviation: "SDP", votes: "", color: "#1565C0" },
-          { party_id: "8", party_name: "Young Progressives Party", abbreviation: "YPP", votes: "", color: "#6A1B9A" },
-          { party_id: "9", party_name: "African Democratic Congress", abbreviation: "ADC", votes: "", color: "#00838F" },
-        ]);
+        // Use shared party-config for consistent colors
+        const { PARTIES } = await import("@/lib/party-config");
+        setPartyVotes(PARTIES.map((p, i) => ({
+          party_id: String(i + 1),
+          party_name: p.name,
+          abbreviation: p.abbr,
+          votes: "",
+          color: p.color,
+        })));
       }
     };
     fetchData();
