@@ -258,6 +258,7 @@ export async function POST(request: NextRequest) {
             p_disrupted_rate: outcomes.disrupted_rate,
             p_unavailable_rate: outcomes.unavailable_rate,
             p_max_published_pct: outcomes.max_published_pct,
+            p_coverage_pct: coverage_pct,
           }
         );
         if (outcomesErr) throw new Error(`Outcome assignment failed: ${outcomesErr.message}`);
