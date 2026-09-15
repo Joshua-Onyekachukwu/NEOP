@@ -29,7 +29,7 @@ async function getDisplayScale(): Promise<number> {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const SB_TIMEOUT_MS = 15_000;
+const SB_TIMEOUT_MS = 25_000;
 /** Total PU universe (filled in by get_fast_stats at runtime). */
 let totalPUCount = 176846;
 
