@@ -159,64 +159,6 @@ export async function POST(request: NextRequest) {
     }
     const runId = String(runIdData);
 
-    // Materialize the FULL PU-universe ledger in chunks: one 20k-row
-    // statement per call, so no single statement can exceed even the
-    // tightest role statement_timeout (8s on pooled PostgREST).
-    let ledgerRows = 0;
-    let afterId: string | null = null;
-    for (let i = 0; i < 40; i++) {
-      const { data: chunk, error: chunkErr } = await supabase.rpc("materialize_ledger_chunk", {
-        p_run: runId,
-        p_after_id: afterId,
-        p_chunk: 20000,
-      });
-      if (chunkErr) {
-        await supabase.rpc("stop_simulation_run");
-        return NextResponse.json(
-          { error: `Ledger materialization failed: ${chunkErr.message}` },
-          { status: 500 }
-        );
-      }
-      const inserted = Number(chunk ?? 0);
-      ledgerRows += inserted;
-      if (inserted < 20000) break;
-      // Advance the cursor past the last inserted row for the next chunk
-      const { data: maxRow } = await supabase
-        .from("pu_simulation_status")
-        .select("polling_unit_id")
-        .eq("run_id", runId)
-        .order("polling_unit_id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      afterId = (maxRow as any)?.polling_unit_id ?? null;
-      if (!afterId) break;
-    }
-
-    // Record the universe size on the run
-    await supabase
-      .from("simulation_runs")
-      .update({ total_pus: ledgerRows })
-      .eq("id", runId);
-
-    const { data: outcomesData, error: outcomesErr } = await supabase.rpc(
-      "assign_simulation_outcomes",
-      {
-        p_run: runId,
-        p_dispute_rate: outcomes.dispute_rate,
-        p_failed_rate: outcomes.failed_rate,
-        p_disrupted_rate: outcomes.disrupted_rate,
-        p_unavailable_rate: outcomes.unavailable_rate,
-        p_max_published_pct: outcomes.max_published_pct,
-      }
-    );
-    if (outcomesErr) {
-      await supabase.rpc("stop_simulation_run");
-      return NextResponse.json(
-        { error: `Outcome assignment failed: ${outcomesErr.message}` },
-        { status: 500 }
-      );
-    }
-
     const perWave: any[] = [];
     let simElectionId: string | null = null;
     let pointerWritten = false;
@@ -271,6 +213,54 @@ export async function POST(request: NextRequest) {
     (async () => {
       try {
         const startMs = Date.now();
+
+        // ── 1. Materialize the FULL PU-universe ledger in chunks ──
+        // (moved out of the request path: ~9 × 20k-row statements take
+        // minutes and MUST NOT block the launch response — a blocked
+        // response makes clients retry and stack duplicate pipelines)
+        let ledgerRows = 0;
+        let afterId: string | null = null;
+        for (let i = 0; i < 40; i++) {
+          const { data: chunk, error: chunkErr } = await supabase.rpc("materialize_ledger_chunk", {
+            p_run: runId,
+            p_after_id: afterId,
+            p_chunk: 20000,
+          });
+          if (chunkErr) throw new Error(`Ledger materialization failed: ${chunkErr.message}`);
+          const inserted = Number(chunk ?? 0);
+          ledgerRows += inserted;
+          if (inserted < 20000) break;
+          // Advance the cursor past the last inserted row for the next chunk
+          const { data: maxRow } = await supabase
+            .from("pu_simulation_status")
+            .select("polling_unit_id")
+            .eq("run_id", runId)
+            .order("polling_unit_id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          afterId = (maxRow as any)?.polling_unit_id ?? null;
+          if (!afterId) break;
+        }
+
+        // Record the universe size on the run
+        await supabase
+          .from("simulation_runs")
+          .update({ total_pus: ledgerRows })
+          .eq("id", runId);
+
+        // ── 2. Assign the configurable outcome profile ──
+        const { error: outcomesErr } = await supabase.rpc(
+          "assign_simulation_outcomes",
+          {
+            p_run: runId,
+            p_dispute_rate: outcomes.dispute_rate,
+            p_failed_rate: outcomes.failed_rate,
+            p_disrupted_rate: outcomes.disrupted_rate,
+            p_unavailable_rate: outcomes.unavailable_rate,
+            p_max_published_pct: outcomes.max_published_pct,
+          }
+        );
+        if (outcomesErr) throw new Error(`Outcome assignment failed: ${outcomesErr.message}`);
 
         // Data waves, paced route-side to the configured duration
         for (let w = 0; w < waves; w++) {
@@ -433,7 +423,7 @@ export async function POST(request: NextRequest) {
         discrepancy_rate,
         coverage_pct,
         run_id: runId,
-        outcomes: outcomesData,
+        outcomes,
         reset: resetResult,
       },
       { status: 202 }
