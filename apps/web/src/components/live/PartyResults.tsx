@@ -270,7 +270,9 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const voteRank: Record<string, number> = {};
   sortedByVotes.forEach((p: any, i: number) => { voteRank[p.abbreviation] = i; });
 
-  const displayParties = (parties.length > 0 ? parties : defaultParties)
+  const hasVotes = sortedByVotes.some((p: any) => p.total_votes > 0);
+  // When idle (no votes): alphabetical.  When results flow: by votes.
+  const displayParties = hasVotes ? sortedByVotes : (parties.length > 0 ? parties : defaultParties)
     .slice()
     .sort((a: any, b: any) => a.abbreviation.localeCompare(b.abbreviation));
 
