@@ -1,8 +1,20 @@
 /**
  * GET /api/public/polling-units
- * Returns GeoJSON of all polling units.
- * Uses cursor-based pagination to fetch all 176K+ PUs.
- * Result is cached for 5 minutes.
+ *
+ * Live map data. Serves the LGA-aggregated GeoJSON from
+ * `get_map_lga_geojson()` (migration 246): one feature per LGA (774),
+ * colored by the DOMINANT per-PU status and carrying per-status counts.
+ *
+ * Why LGA aggregates instead of 176,846 individual points:
+ *  - the full PU universe as points is ~40 MB — unusable in a browser;
+ *  - at zooms where all PUs are visible, individual pins are
+ *    indistinguishable anyway;
+ *  - every PU is still accounted for: each LGA feature aggregates ALL
+ *    of its PUs' ledger states (nothing silently disappears, §3/§8).
+ *
+ * While a simulation is RUNNING, statuses come from the active run's
+ * coverage ledger; otherwise from each PU's own status. Single-row RPC
+ * response avoids PostgREST's 1,000-row cap entirely.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,16 +29,15 @@ export const revalidate = 0;
 
 let cachedGeoJSON: any = null;
 let cacheTime = 0;
-const CACHE_TTL = 300_000; // 5 minutes
+let cacheTtl = 300_000; // 5 minutes (30s while a simulation is RUNNING)
 
-export async function GET(_request: NextRequest) {
-  // Rate limiting
-  const rateResult = publicLimiter.check(_request);
+export async function GET(request: NextRequest) {
+  const rateResult = publicLimiter.check(request);
   if (!rateResult.ok) return rateLimitResponse(rateResult);
 
   try {
     const now = Date.now();
-    if (cachedGeoJSON && now - cacheTime < CACHE_TTL) {
+    if (cachedGeoJSON && now - cacheTime < cacheTtl) {
       return NextResponse.json(cachedGeoJSON, {
         headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
       });
@@ -34,57 +45,36 @@ export async function GET(_request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ── Paginated fetch — grab all PUs in batches ──
-    const PAGE_SIZE = 50000; // large batch to minimise round trips
-    const allUnits: any[] = [];
-    let offset = 0;
+    // One row: { type, features[774], meta } — no PostgREST row cap
+    const { data, error } = await supabase.rpc("get_map_lga_geojson");
 
-    while (true) {
-      const { data, error } = await supabase
-        .from("polling_units")
-        .select("id, official_code, name, latitude, longitude, status, state_id")
-        .range(offset, offset + PAGE_SIZE - 1);
-
-      if (error || !data || data.length === 0) break;
-      allUnits.push(...data);
-      if (data.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+    if (error || !data) {
+      console.error("get_map_lga_geojson failed:", error);
+      return NextResponse.json(
+        { type: "FeatureCollection", features: [], meta: { lga_count: 0, error: true } },
+        { status: 502 }
+      );
     }
 
-    // Fetch state names
-    const { data: states } = await supabase.from("states").select("id, name");
-    const stateMap = new Map((states || []).map((s) => [s.id, s.name]));
+    const geojson =
+      typeof data === "string" ? JSON.parse(data) : data;
 
-    // Build GeoJSON — only include PUs with valid coordinates
-    const geojson = {
-      type: "FeatureCollection",
-      features: allUnits
-        .filter((pu) => pu.latitude != null && pu.longitude != null)
-        .map((pu) => ({
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: [pu.longitude, pu.latitude],
-          },
-          properties: {
-            id: pu.id,
-            official_code: pu.official_code,
-            name: pu.name,
-            status: pu.status,
-            state_name: stateMap.get(pu.state_id) || "Unknown",
-          },
-        })),
-      meta: {
-        total_pu_count: allUnits.length,
-        geocoded_count: allUnits.filter((pu) => pu.latitude != null).length,
-      },
-    };
-
+    const activeRun = geojson?.meta?.active_run === true;
     cachedGeoJSON = geojson;
     cacheTime = now;
-    return NextResponse.json(geojson, {
-      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    // While a simulation RUNS, ledger statuses change continuously —
+    // shorten the cache so the map reflects transitions.
+    cacheTtl = activeRun ? 30_000 : 300_000;
+
+    const res = NextResponse.json(geojson, {
+      headers: {
+        "Cache-Control": activeRun
+          ? "public, s-maxage=30, stale-while-revalidate=60"
+          : "public, s-maxage=300, stale-while-revalidate=600",
+      },
     });
+    addRateLimitHeaders(res, { ok: true } as any);
+    return res;
   } catch (error) {
     console.error("Error in polling-units API:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

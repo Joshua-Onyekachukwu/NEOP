@@ -3,48 +3,49 @@
 /**
  * SimulationTicker — Live progress bar + status ticker
  *
- * Shows on the main page when a simulation is running.
- * Auto-refreshes every 3 seconds to show:
- * - Progress bar with percentage
- * - Current phase (voting → counting → submitted → verified)
- * - Status distribution counts
- * - Elapsed time
+ * Shows on the main page while a simulation is running. All numbers come
+ * from the authoritative full-coverage ledger (migration 245) via
+ * /api/public/stats — every polling unit in the universe is accounted
+ * for, with explicit states:
  *
- * Disappears when simulation completes.
+ *   accounted = published + disputed + failed + disrupted + unavailable
+ *             (+ awaiting while the run is still progressing)
+ *
+ * Terminology (§2): "covered" = PUs accounted for by the simulation;
+ * "published" = PUs with verified, countable results. A PU can be
+ * covered without ever publishing — never conflated here.
  */
 
 import React, { useEffect, useState, useRef } from "react";
 
 interface SimProgress {
-  status: string;
-  total_results: number;
   total_pus: number;
-  total_votes: number;
-  progress_percent: number;
+  accounted_pus: number;
+  published_pus: number;
+  disputed_pus: number;
+  failed_pus: number;
+  disrupted_pus: number;
+  unavailable_pus: number;
+  awaiting_pus: number;
+  published_percent: number;
   scenario: string;
   election_type: string;
-  status_distribution: Record<string, number>;
-  elapsed_seconds: number;
-  is_running: boolean;
 }
 
-const STATUS_CONFIG: Record<string, { color: string; label: string; icon: string }> = {
-  NOT_STARTED: { color: "#6B7280", label: "Not Started", icon: "○" },
-  VOTING: { color: "#3B82F6", label: "Voting", icon: "🗳" },
-  COUNTING: { color: "#FBBF24", label: "Counting", icon: "🔢" },
-  RESULT_ANNOUNCED: { color: "#06B6D4", label: "Announced", icon: "📢" },
-  RESULT_SUBMITTED: { color: "#8B5CF6", label: "Submitted", icon: "📤" },
-  VERIFICATION_PENDING: { color: "#F472B6", label: "Pending", icon: "⏳" },
-  VERIFIED: { color: "#22C55E", label: "Verified", icon: "✓" },
-  DISPUTED: { color: "#F97316", label: "Disputed", icon: "⚠" },
-  DISRUPTED: { color: "#EF4444", label: "Disrupted", icon: "⛔" },
-};
+const LEDGER_STATES: { key: keyof SimProgress & string; color: string; label: string }[] = [
+  { key: "published_pus", color: "#16A34A", label: "Published" },
+  { key: "disputed_pus", color: "#F97316", label: "Disputed" },
+  { key: "failed_pus", color: "#B91C1C", label: "Failed verification" },
+  { key: "disrupted_pus", color: "#EF4444", label: "Disrupted" },
+  { key: "unavailable_pus", color: "#374151", label: "Unavailable" },
+  { key: "awaiting_pus", color: "#6B7280", label: "Awaiting data" },
+];
 
 const SimulationTicker: React.FC = () => {
   const [progress, setProgress] = useState<SimProgress | null>(null);
   const [visible, setVisible] = useState(false);
   const [flash, setFlash] = useState(false);
-  const prevResults = useRef(0);
+  const prevPublished = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -61,51 +62,52 @@ const SimulationTicker: React.FC = () => {
         if (isRunning) {
           setVisible(true);
 
-          // Fetch detailed progress from stats
           const statsRes = await fetch("/api/public/stats");
           if (statsRes.ok) {
             const stats = await statsRes.json();
 
-            // Fetch status distribution from results
-            const resultsRes = await fetch("/api/public/results?limit=1");
-            let totalResults = config.total_results || 0;
-            let totalVotes = 0;
-            let statusDist: Record<string, number> = {};
+            // Ledger counters (migration 245) are authoritative while a
+            // run exists. With no active run the site must still show a
+            // meaningful banner (§11 persistent dataset): fall back to
+            // the result-derived counters.
+            const hasLedger = stats.accounted_pus != null;
+            const accounted = hasLedger
+              ? Number(stats.accounted_pus) || 0
+              : Number(stats.covered_polling_units) || 0;
+            const published = hasLedger
+              ? Number(stats.published_pus) || 0
+              : Number(stats.verified_polling_units) || 0;
+            const awaiting = hasLedger
+              ? Number(stats.awaiting_pus) || 0
+              : Math.max((Number(stats.total_polling_units) || 0) - accounted, 0);
 
-            if (resultsRes.ok) {
-              const resultsData = await resultsRes.json();
-              totalResults = resultsData.pagination?.total || totalResults;
-            }
-
-            // Flash effect when new results arrive
-            if (totalResults > prevResults.current && prevResults.current > 0) {
+            // Flash effect when newly published results arrive
+            if (published > prevPublished.current && prevPublished.current > 0) {
               setFlash(true);
               setTimeout(() => setFlash(false), 500);
             }
-            prevResults.current = totalResults;
-
-            // Authoritative PU total from the stats API (real INEC geography),
-            // never a hard-coded number.
-            const totalPUs = Number(stats.inec_total_polling_units) || 176846;
-            const progressPct = Math.min(100, Math.round((totalResults / totalPUs) * 100));
+            prevPublished.current = published;
 
             setProgress({
-              status: config.status || "RUNNING",
-              total_results: totalResults,
-              total_pus: totalPUs,
-              total_votes: 0,
-              progress_percent: progressPct,
+              // Full-coverage ledger (migration 245): every PU accounted for
+              total_pus: Number(stats.total_polling_units) || 0,
+              accounted_pus: accounted,
+              published_pus: published,
+              disputed_pus: Number(stats.disputed_pus) || 0,
+              failed_pus: Number(stats.failed_pus) || 0,
+              disrupted_pus: Number(stats.disrupted_pus) || 0,
+              unavailable_pus: Number(stats.unavailable_pus) || 0,
+              awaiting_pus: awaiting,
+              published_percent: hasLedger
+                ? Number(stats.published_percent) || 0
+                : Number(stats.verification_percent) || 0,
               scenario: config.scenario || "random",
               election_type: config.election_type || "PRESIDENTIAL",
-              status_distribution: statusDist,
-              elapsed_seconds: 0,
-              is_running: true,
             });
           }
         } else {
-          // Simulation completed — play sound and show brief completion message
+          // Simulation completed — play sound and hide the ticker
           if (visible) {
-            // Play completion sound
             try {
               const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczIjiNw9+3dE05bpy02Lt5UD5wl7DVvX5bRHeSrdLAhGVNe4ikyr2Ia1B9h57Ev4ptVIGBlL7FjXNagH2OucqUe2F+d4ivyZyBZXZ0h7LJm4VsfXOFscmbhW1/c4SxyZuFbYB0hLHJm4VtgHSDsMmbhW2AdIOwyZuFbYB0g7DJm4VtgHSDsMmbhW2AdIOwyZuFbYB0g7DJm4VtgHQ=");
               audio.volume = 0.3;
@@ -121,10 +123,8 @@ const SimulationTicker: React.FC = () => {
     };
 
     checkStatus();
-    // 3s polling here made a single client issue ~60 req/min (config+stats
-    // +results every tick) and could trip the public rate limit when combined
-    // with the other live components. 10s keeps the progress bar lively
-    // while leaving healthy headroom under the 120/min public budget.
+    // 10s polling: config+stats per tick keeps one client well under the
+    // 120/min public rate budget even alongside the other live components.
     interval = setInterval(checkStatus, 10000);
 
     return () => {
@@ -135,15 +135,16 @@ const SimulationTicker: React.FC = () => {
 
   if (!visible || !progress) return null;
 
-  const elapsed = progress.elapsed_seconds;
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
+  const coveredPct =
+    progress.total_pus > 0
+      ? Math.round((progress.accounted_pus / progress.total_pus) * 100)
+      : 0;
 
   return (
     <section className={`border-b border-[var(--color-gray-100)] transition-all duration-300 ${flash ? "bg-[var(--color-green)]/5" : ""}`}>
       <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[16px]">
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-[12px]">
+        {/* Header row — explicit semantics: covered vs published */}
+        <div className="flex items-center justify-between mb-[12px] gap-3 flex-wrap">
           <div className="flex items-center gap-[10px]">
             <div className="relative">
               <div className="w-3 h-3 rounded-full bg-[var(--color-amber)] animate-pulse" />
@@ -158,61 +159,52 @@ const SimulationTicker: React.FC = () => {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-[12px]">
+          <div className="flex items-center gap-[12px] flex-wrap">
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-              {progress.total_results.toLocaleString()} / {progress.total_pus.toLocaleString()} PUs
+              {progress.accounted_pus.toLocaleString()} / {progress.total_pus.toLocaleString()} PUs covered
             </span>
-            {elapsed > 0 && (
-              <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-                {minutes}:{String(seconds).padStart(2, "0")}
-              </span>
-            )}
+            <span className="font-mono text-[10px] font-bold text-[var(--color-green)]">
+              {progress.published_pus.toLocaleString()} published ({progress.published_percent}%)
+            </span>
           </div>
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar — coverage of the full PU universe */}
         <div className="relative h-[6px] bg-[var(--color-gray-100)] rounded-full overflow-hidden mb-[12px]">
           <div
             className="h-full bg-gradient-to-r from-[var(--color-green)] to-[var(--color-green-bright)] rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${progress.progress_percent}%` }}
+            style={{ width: `${coveredPct}%` }}
           />
           {/* Animated shimmer */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer_2s_ease-in-out_infinite]" />
         </div>
 
-        {/* Status ticker — scrolling phase indicators */}
+        {/* Ledger status chips — the complete PU accounting */}
         <div className="flex items-center gap-[16px] overflow-x-auto scrollbar-hide pb-[4px]">
-          {Object.entries(STATUS_CONFIG)
-            .filter(([key]) => key !== "NOT_STARTED")
-            .map(([key, config]) => {
-              const count = progress.status_distribution[key] || 0;
-              const isActive = key === "VOTING" || key === "COUNTING" || key === "RESULT_SUBMITTED";
-
-              return (
+          {LEDGER_STATES.map(({ key, color, label }) => {
+            const count = Number(progress[key]) || 0;
+            return (
+              <div
+                key={key}
+                className={`flex items-center gap-[6px] flex-shrink-0 transition-opacity ${
+                  count > 0 ? "opacity-100" : "opacity-30"
+                }`}
+              >
                 <div
-                  key={key}
-                  className={`flex items-center gap-[6px] flex-shrink-0 transition-opacity ${
-                    count > 0 ? "opacity-100" : "opacity-30"
-                  }`}
-                >
-                  <div
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: config.color }}
-                  />
-                  <span className="font-mono text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
-                    {config.label}
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="font-mono text-[10px] text-[var(--color-text-muted)] whitespace-nowrap">
+                  {label}
+                </span>
+                {count > 0 && (
+                  <span className="font-mono text-[10px] font-bold text-[var(--color-text)]">
+                    {count.toLocaleString()}
                   </span>
-                  {count > 0 && (
-                    <span className="font-mono text-[10px] font-bold text-[var(--color-text)]">
-                      {count.toLocaleString()}
-                    </span>
-                  )}
-                  {isActive && count > 0 && (
-                    <div className="w-1 h-1 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
-                  )}
-                </div>
-              );
-            })}
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

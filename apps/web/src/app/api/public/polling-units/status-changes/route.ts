@@ -1,7 +1,10 @@
 /**
  * GET /api/public/polling-units/status-changes
- * Returns only PUs with active statuses (not NOT_STARTED).
- * Tries RPC first; falls back to paginated fetch.
+ *
+ * Returns LGA-level status changes for the live map (migration 246).
+ * The response shape { active: [{ id, status }] } is consumed by
+ * LiveMap's pollStatusUpdates to incrementally update LGA markers
+ * without a full GeoJSON reload.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,9 +21,8 @@ let cachedActive: any = null;
 let cacheTime = 0;
 const CACHE_TTL = 10_000;
 
-export async function GET(_request: NextRequest) {
-  // Rate limiting
-  const rateResult = publicLimiter.check(_request);
+export async function GET(request: NextRequest) {
+  const rateResult = publicLimiter.check(request);
   if (!rateResult.ok) return rateLimitResponse(rateResult);
 
   try {
@@ -33,41 +35,29 @@ export async function GET(_request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Try RPC
+    // Try the migration-246 RPC first (LGA-level)
     const { data: rpcData, error: rpcError } = await supabase.rpc(
-      "get_active_polling_units"
+      "get_map_status_changes"
     );
 
     if (!rpcError && rpcData) {
-      cachedActive = rpcData;
+      // Transform { active: bool, lgas: [...] } → { active: [{id, status}] }
+      const lgas = Array.isArray(rpcData.lgas) ? rpcData.lgas : [];
+      const active = lgas
+        .filter((l: any) => l.dominant_status && l.changed > 0)
+        .map((l: any) => ({ id: l.lga_id, status: l.dominant_status }));
+
+      const result = { active, count: active.length, timestamp: Date.now() };
+      cachedActive = result;
       cacheTime = now;
-      return NextResponse.json(rpcData, {
+
+      return NextResponse.json(result, {
         headers: { "Cache-Control": "no-cache" },
       });
     }
 
-    // Fallback: count active PUs (lightweight — no need to fetch all 188K)
-    const { count: activeCount } = await supabase
-      .from("polling_units")
-      .select("id", { count: "exact", head: true })
-      .neq("status", "NOT_STARTED");
-
-    // Only fetch PUs that changed status in the last hour (recent activity)
-    const { data: recentChanges } = await supabase
-      .from("polling_units")
-      .select("id, status, latitude, longitude")
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
-      .neq("status", "NOT_STARTED")
-      .order("updated_at", { ascending: false })
-      .limit(500);
-
-    const result = {
-      active: recentChanges || [],
-      count: activeCount || 0,
-      timestamp: Date.now(),
-    };
-
+    // Fallback: no data
+    const result = { active: [], count: 0, timestamp: Date.now() };
     cachedActive = result;
     cacheTime = now;
 
@@ -79,12 +69,10 @@ export async function GET(_request: NextRequest) {
       },
     });
   } catch (error) {
-    return NextResponse.json({ active: [], count: 0, timestamp: Date.now() }, {
-      status: 200,
-      headers: {
-        "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30",
-        "Surrogate-Control": "max-age=10, stale-if-error=120",
-      },
-    });
+    console.error("Error in status-changes API:", error);
+    return NextResponse.json(
+      { active: [], count: 0, timestamp: Date.now() },
+      { status: 500 }
+    );
   }
 }

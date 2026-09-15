@@ -22,6 +22,7 @@ interface ElectionConfig {
   display_status: string;
   status_label: string;
   total_results: number;
+  total_published_results: number;
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string; label: string }> = {
@@ -57,6 +58,7 @@ const HomePage: React.FC = () => {
     display_status: "WAITING",
     status_label: "Awaiting data",
     total_results: 0,
+    total_published_results: 0,
   });
 
   // Refresh key — bumped whenever data changes, children refetch when this changes
@@ -151,9 +153,9 @@ const HomePage: React.FC = () => {
                 <span className={`font-mono text-[10px] font-bold uppercase tracking-wider ${statusStyle.text}`}>
                   {statusStyle.label}
                 </span>
-                {config.total_results > 0 && (
+                {(config.total_published_results ?? 0) > 0 && (
                   <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
-                    • {config.total_results.toLocaleString()} results
+                    • {(config.total_published_results ?? 0).toLocaleString()} published results
                   </span>
                 )}
               </div>

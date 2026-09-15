@@ -33,8 +33,6 @@ const securityHeaders = [
       "browsing-topics=()",
       "join-ad-interest-group=()",
       "run-ad-auction=()",
-      "ad-storage=()",
-      "analytics-storage=()",
     ].join(", "),
   },
   // ── Content Security Policy — prevent injection attacks ──
@@ -43,6 +41,8 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com",
+      // MapLibre spawns its render worker from a blob: URL — required or the map degrades
+      "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
       "img-src 'self' data: https: blob:",

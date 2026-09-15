@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { waitForSession } from "@/lib/auth-helpers";
 import ExportPanel from "@/components/live/ExportPanel";
 import SimulationHistory from "@/components/admin/SimulationHistory";
+import SimulationLifecycle from "@/components/admin/SimulationLifecycle";
 
 interface AdminStats {
   totalVolunteers: number;
@@ -1665,6 +1666,9 @@ const AdminDashboard: React.FC = () => {
                     {loopRunning ? `⏳ Running ${loopProgress?.current || 0}/${loopCount}...` : `🔄 RUN ${loopCount} SIMULATIONS IN LOOP`}
                   </button>
                 </div>
+
+                {/* Simulation Lifecycle (start pre-flight / stop / purge) */}
+                <SimulationLifecycle />
 
                 {/* Simulation History */}
                 <SimulationHistory />

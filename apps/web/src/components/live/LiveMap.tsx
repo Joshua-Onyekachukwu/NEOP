@@ -6,14 +6,15 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { subscribePublishedResults, createIdDedupe } from "@/lib/realtime";
 import { useRealtimeData } from "@/components/live/RealtimeLayer";
 
-interface PollingUnit {
-  id: string;
-  official_code: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  status: string;
+interface LGAMarker {
+  lga_id: string;
+  lga_name: string;
   state_name: string;
+  total_pus: number;
+  dominant_status: string;
+  status_counts: Record<string, number>;
+  longitude: number;
+  latitude: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -29,6 +30,9 @@ const STATUS_COLORS: Record<string, string> = {
   ELECTION_NOT_HELD: "#374151",
   NO_REPORT: "#4B5563",
   AWAITING_AGENTS: "#6B7280",
+  AWAITING: "#6B7280",
+  FAILED_VERIFICATION: "#B91C1C",
+  UNAVAILABLE: "#374151",
   ONE_SUBMISSION: "#F59E0B",
   VERIFYING: "#3B82F6",
   FLAGGED: "#EF4444",
@@ -43,7 +47,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
   const maplibreglRef = useRef<any>(null);
-  const [selectedPU, setSelectedPU] = useState<PollingUnit | null>(null);
+  const [selectedPU, setSelectedPU] = useState<LGAMarker | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [totalPU, setTotalPU] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -52,11 +56,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { config } = useRealtimeData();
 
-  // Full-screen mode uses CSS position:fixed rather than a React portal:
-  // reparenting the container DOM node destroys MapLibre's WebGL context
-  // (canvas goes blank), while fixed positioning escapes ancestor overflow
-  // without touching the node. ESC exits. The same component instance
-  // keeps polling/realtime — nothing re-mounts, updates continue live.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsFullscreen(false);
@@ -65,7 +64,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // MapLibre needs an explicit resize after the container changes size.
   useEffect(() => {
     if (!isFullscreen) return;
     const t1 = setTimeout(() => map.current?.resize(), 60);
@@ -97,9 +95,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   }, [mapLoaded, refreshKey]);
 
   useEffect(() => {
-    // Central realtime module: unique per-scope channel + guarded subscribe.
-    // Dedupe by canonical result id (not PU id) so a superseding result for
-    // an already-seen PU still triggers a map refresh.
     const shouldRefresh = createIdDedupe();
     return subscribePublishedResults({
       scope: "map",
@@ -154,145 +149,90 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     fetchingRef.current = true;
 
     try {
-      // Fetch all PUs from server-side GeoJSON endpoint
       const res = await fetch("/api/public/polling-units");
-      if (!res.ok) throw new Error("Failed to fetch PUs");
+      if (!res.ok) throw new Error("Failed to fetch LGA data");
 
       const geojson = await res.json();
+
+      // Map LGA features to internal units
       const units = geojson.features.map((f: any) => ({
-        id: f.properties.id,
-        official_code: f.properties.official_code,
-        name: f.properties.name,
-        status: f.properties.status,
-        latitude: f.geometry.coordinates[1],
-        longitude: f.geometry.coordinates[0],
+        lga_id: f.properties.lga_id,
+        lga_name: f.properties.lga_name,
         state_name: f.properties.state_name,
+        total_pus: f.properties.total_pus,
+        dominant_status: f.properties.dominant_status,
+        status_counts: f.properties.status_counts || {},
+        longitude: f.geometry.coordinates[0],
+        latitude: f.geometry.coordinates[1],
       }));
 
       pollingUnitsRef.current = units;
       setTotalPU(units.length);
 
-      // Add source
+      // Add source (no clustering — 774 LGA markers render directly)
       map.current.addSource("polling-units", {
         type: "geojson",
         data: geojson,
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
+        cluster: false,
       });
 
-      // Cluster circles
-      map.current.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "polling-units",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": [
-            "step",
-            ["get", "point_count"],
-            "#1B6B3A33",
-            100,
-            "#1B6B3A66",
-            750,
-            "#1B6B3A99",
-          ],
-          "circle-radius": [
-            "step",
-            ["get", "point_count"],
-            20,
-            100,
-            30,
-            750,
-            40,
-          ],
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#1B6B3A",
-        },
-      });
-
-      // Cluster count labels
-      map.current.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "polling-units",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": "{point_count_abbreviated}",
-          "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
-          "text-size": 12,
-        },
-        paint: {
-          "text-color": "#E8E6E1",
-        },
-      });
-
-      // Individual points with status colors
+      // LGA markers — sized by PU count, colored by dominant status
       map.current.addLayer({
         id: "unclustered-point",
         type: "circle",
         source: "polling-units",
-        filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-color": [
             "match",
-            ["get", "status"],
-            "VERIFIED",
-            STATUS_COLORS.VERIFIED,
-            "VOTING",
-            STATUS_COLORS.VOTING,
-            "COUNTING",
-            STATUS_COLORS.COUNTING,
-            "RESULT_SUBMITTED",
-            STATUS_COLORS.RESULT_SUBMITTED,
-            "RESULT_ANNOUNCED",
-            STATUS_COLORS.RESULT_ANNOUNCED,
-            "VERIFICATION_PENDING",
-            STATUS_COLORS.VERIFICATION_PENDING,
-            "DISPUTED",
-            STATUS_COLORS.DISPUTED,
-            "DISRUPTED",
-            STATUS_COLORS.DISRUPTED,
-            "ELECTION_NOT_HELD",
-            STATUS_COLORS.ELECTION_NOT_HELD,
-            "NOT_STARTED",
-            STATUS_COLORS.NOT_STARTED,
+            ["get", "dominant_status"],
+            "PUBLISHED", STATUS_COLORS.PUBLISHED,
+            "VERIFIED", STATUS_COLORS.VERIFIED,
+            "VOTING", STATUS_COLORS.VOTING,
+            "COUNTING", STATUS_COLORS.COUNTING,
+            "RESULT_SUBMITTED", STATUS_COLORS.RESULT_SUBMITTED,
+            "RESULT_ANNOUNCED", STATUS_COLORS.RESULT_ANNOUNCED,
+            "VERIFICATION_PENDING", STATUS_COLORS.VERIFICATION_PENDING,
+            "DISPUTED", STATUS_COLORS.DISPUTED,
+            "HUMAN_REVIEW", STATUS_COLORS.HUMAN_REVIEW,
+            "FAILED_VERIFICATION", STATUS_COLORS.FAILED_VERIFICATION,
+            "DISRUPTED", STATUS_COLORS.DISRUPTED,
+            "UNAVAILABLE", STATUS_COLORS.UNAVAILABLE,
+            "AWAITING", STATUS_COLORS.AWAITING,
+            "NOT_STARTED", STATUS_COLORS.NOT_STARTED,
             "#4B5563",
           ],
-          "circle-radius": 5,
+          "circle-radius": [
+            "step",
+            ["get", "total_pus"],
+            6,
+            100, 8,
+            500, 10,
+            1000, 12,
+            5000, 14,
+            10000, 16,
+          ],
           "circle-stroke-width": 1,
           "circle-stroke-color": "#0C0F14",
           "circle-opacity": 0.85,
         },
       });
 
-      // Click handler for unclustered points
+      // Click handler — show LGA summary
       map.current.on("click", "unclustered-point", (e: any) => {
         if (!e.features || e.features.length === 0) return;
         const props = e.features[0].properties;
         const coords = e.features[0].geometry.coordinates.slice();
         setSelectedPU({
-          id: props.id,
-          official_code: props.official_code,
-          name: props.name,
-          latitude: coords[1],
+          lga_id: props.lga_id,
+          lga_name: props.lga_name,
+          state_name: props.state_name,
+          total_pus: props.total_pus,
+          dominant_status: props.dominant_status,
+          status_counts: typeof props.status_counts === "string"
+            ? JSON.parse(props.status_counts)
+            : props.status_counts,
           longitude: coords[0],
-          status: props.status,
-          state_name: props.state_name || "Unknown",
-        });
-      });
-
-      // Click handler for clusters — zoom in
-      map.current.on("click", "clusters", (e: any) => {
-        if (!e.features || e.features.length === 0) return;
-        const clusterId = e.features[0].properties.cluster_id;
-        const source = map.current.getSource("polling-units");
-        source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
-          if (err) return;
-          map.current.easeTo({
-            center: e.features[0].geometry.coordinates,
-            zoom: zoom,
-          });
+          latitude: coords[1],
         });
       });
 
@@ -303,24 +243,17 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       map.current.on("mouseleave", "unclustered-point", () => {
         map.current.getCanvas().style.cursor = "";
       });
-      map.current.on("mouseenter", "clusters", () => {
-        map.current.getCanvas().style.cursor = "pointer";
-      });
-      map.current.on("mouseleave", "clusters", () => {
-        map.current.getCanvas().style.cursor = "";
-      });
 
       // Fit bounds
       const bounds = new maplibreglRef.current.LngLatBounds();
-      units.forEach((pu: any) => {
-        bounds.extend([pu.longitude, pu.latitude]);
+      units.forEach((u: any) => {
+        bounds.extend([u.longitude, u.latitude]);
       });
       map.current.fitBounds(bounds, { padding: 50 });
 
-      // ── Load disruption markers ──
       loadDisruptions();
     } catch (err) {
-      console.error("Error loading polling units:", err);
+      console.error("Error loading LGA data:", err);
     } finally {
       fetchingRef.current = false;
     }
@@ -334,7 +267,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       const data = await res.json();
       if (!data.map_markers || data.map_markers.length === 0) return;
 
-      // Build GeoJSON for disruptions
       const disruptionGeoJSON = {
         type: "FeatureCollection" as const,
         features: data.map_markers.map((m: any) => ({
@@ -352,7 +284,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         })),
       };
 
-      // Add disruption source
       if (map.current.getSource("disruptions")) {
         (map.current.getSource("disruptions") as any).setData(disruptionGeoJSON);
       } else {
@@ -361,7 +292,6 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           data: disruptionGeoJSON,
         });
 
-        // Disruption markers — larger, pulsing rings
         map.current.addLayer({
           id: "disruption-pulse",
           type: "circle",
@@ -385,19 +315,19 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           },
         });
 
-        // Click handler for disruption points
         map.current.on("click", "disruption-point", (e: any) => {
           if (!e.features || e.features.length === 0) return;
           const props = e.features[0].properties;
           const coords = e.features[0].geometry.coordinates.slice();
           setSelectedPU({
-            id: props.id,
-            official_code: props.code,
-            name: props.name + " [" + props.category + "]",
-            latitude: coords[1],
-            longitude: coords[0],
-            status: props.severity,
+            lga_id: props.id,
+            lga_name: props.name + " [" + props.category + "]",
             state_name: props.state || "Unknown",
+            total_pus: 0,
+            dominant_status: props.severity,
+            status_counts: {},
+            longitude: coords[0],
+            latitude: coords[1],
           });
         });
       }
@@ -408,18 +338,19 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   const buildGeoJSON = (units: any[]) => ({
     type: "FeatureCollection" as const,
-    features: units.map((pu: any) => ({
+    features: units.map((u: any) => ({
       type: "Feature" as const,
       geometry: {
         type: "Point" as const,
-        coordinates: [pu.longitude, pu.latitude],
+        coordinates: [u.longitude, u.latitude],
       },
       properties: {
-        id: pu.id,
-        official_code: pu.official_code,
-        name: pu.name,
-        status: pu.status,
-        state_name: pu.state_name || "Unknown",
+        lga_id: u.lga_id,
+        lga_name: u.lga_name,
+        state_name: u.state_name,
+        total_pus: u.total_pus,
+        dominant_status: u.dominant_status,
+        status_counts: u.status_counts,
       },
     })),
   });
@@ -434,20 +365,21 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       const data = await res.json();
       if (!data.active || data.active.length === 0) return;
 
+      // active is now LGA-level: { id=lga_id, status=dominant_status }
       const activeMap = new Map(
-        data.active.map((pu: any) => [pu.id, pu.status])
+        data.active.map((u: any) => [u.id, u.status])
       );
 
-      const updated = pollingUnitsRef.current.map((pu) => {
-        const newStatus = activeMap.get(pu.id);
-        if (newStatus && newStatus !== pu.status) {
-          return { ...pu, status: newStatus };
+      const updated = pollingUnitsRef.current.map((u) => {
+        const newStatus = activeMap.get(u.lga_id);
+        if (newStatus && newStatus !== u.dominant_status) {
+          return { ...u, dominant_status: newStatus };
         }
-        return pu;
+        return u;
       });
 
       const changed = updated.some(
-        (pu, i) => pu.status !== pollingUnitsRef.current[i]?.status
+        (u, i) => u.dominant_status !== pollingUnitsRef.current[i]?.dominant_status
       );
 
       if (changed) {
@@ -493,7 +425,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </div>
       )}
 
-      {/* Simulation badge — persistent, impossible to miss, both modes */}
+      {/* Simulation badge */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-[var(--color-amber)]/15 border border-[var(--color-amber)]/60 px-3 py-1.5 pointer-events-none max-w-[92%]">
         <span className="font-mono text-[10px] md:text-xs font-bold tracking-wider text-[var(--color-amber)] whitespace-nowrap">
           ⚠ <span className="md:hidden">SIMULATED</span>
@@ -501,7 +433,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </span>
       </div>
 
-      {/* Full-screen controls (same component — live updates continue) */}
+      {/* Full-screen controls */}
       {isFullscreen ? (
         <button
           onClick={() => setIsFullscreen(false)}
@@ -529,103 +461,88 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </>
       )}
 
-      {/* Live update indicator */}
-      {mapLoaded && (
-        <div className="absolute top-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-[var(--color-green-bright)] animate-pulse" />
-            <span className="font-mono text-xs text-[var(--color-text-muted)]">
-              LIVE • {totalPU.toLocaleString()} PUs
-            </span>
-          </div>
+      {/* Map legend — LGA level */}
+      <div className="absolute bottom-3 left-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-2 font-mono text-[9px] space-y-0.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[var(--color-text-muted)]">LIVE •</span>
+          <span className="text-[var(--color-text)]">{totalPU}</span>
+          <span className="text-[var(--color-text-muted)]">LGAs</span>
         </div>
-      )}
-
-      {/* Legend — hidden on mobile, shown on md+ */}
-      <div className="hidden md:block absolute top-3 left-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-3 z-10">
-        <div className="font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
-          Status
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+          <span>published</span>
         </div>
-        <div className="space-y-1.5">
-          {Object.entries(STATUS_COLORS)
-            .filter(([key]) => !["NOT_STARTED", "ELECTION_NOT_HELD", "NO_REPORT"].includes(key))
-            .map(([key, color]) => (
-              <div key={key} className="flex items-center gap-2">
-                <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="font-mono text-[10px] text-[var(--color-text-muted)]">
-                  {key.replace(/_/g, " ").toLowerCase()}
-                </span>
-              </div>
-            ))}
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#F97316]" />
+          <span>disputed</span>
         </div>
-      </div>
-
-      {/* Mobile legend — compact horizontal strip at bottom */}
-      <div className="md:hidden absolute bottom-12 left-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1.5 z-10">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {Object.entries(STATUS_COLORS)
-            .filter(([key]) => !["NOT_STARTED", "ELECTION_NOT_HELD", "NO_REPORT"].includes(key))
-            .map(([key, color]) => (
-              <div key={key} className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                <span className="font-mono text-[8px] text-[var(--color-text-muted)]">
-                  {key.replace(/_/g, " ").toLowerCase()}
-                </span>
-              </div>
-            ))}
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#B91C1C]" />
+          <span>failed</span>
         </div>
-      </div>
-
-      {/* Selected PU detail */}
-      {selectedPU && (
-        <div className="absolute bottom-3 left-3 right-3 bg-[var(--color-ink)]/95 border border-[var(--color-gray-100)] p-4 z-10">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="font-mono text-lg font-bold text-[var(--color-text)]">
-                {selectedPU.official_code}
-              </div>
-              <div className="text-sm text-[var(--color-text-muted)]">{selectedPU.name}</div>
-              <div className="text-sm text-[var(--color-text-muted)]">{selectedPU.state_name}</div>
-              <div className="mt-2">
-                <span
-                  className="font-mono text-[10px] uppercase tracking-wider px-2 py-1"
-                  style={{
-                    color: getStatusColor(selectedPU.status),
-                    backgroundColor: `${getStatusColor(selectedPU.status)}1A`,
-                  }}
-                >
-                  {selectedPU.status.replace(/_/g, " ").toLowerCase()}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setSelectedPU(null)}
-              className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-mono text-sm"
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#EF4444]" />
+          <span>disrupted</span>
         </div>
-      )}
-
-      {/* Total count */}
-      <div className={
-        isFullscreen
-          ? "absolute bottom-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10"
-          : "absolute bottom-3 right-3 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-3 py-1.5 z-10 mr-28"
-      }>
-        <span className="font-mono xs text-[var(--color-text-muted)]">
-          {totalPU.toLocaleString()} polling units
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#374151]" />
+          <span>unavailable</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#6B7280]" />
+          <span>awaiting</span>
+        </div>
       </div>
     </div>
   );
 
-  return mapShell;
+  // Popup for selected LGA
+  const popup = selectedPU && (
+    <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center">
+      <div
+        className="bg-[var(--color-ink)] border border-[var(--color-gray-100)] p-3 max-w-xs pointer-events-auto font-mono text-xs"
+        onClick={() => setSelectedPU(null)}
+      >
+        <div className="font-bold text-[var(--color-text)]">
+          {selectedPU.lga_name} · {selectedPU.state_name}
+        </div>
+        <div className="text-[var(--color-text-muted)] mt-1">
+          {selectedPU.total_pus.toLocaleString()} polling units
+        </div>
+        <div className="mt-2">
+          <span
+            className="inline-block px-1.5 py-0.5 text-[10px] font-bold"
+            style={{ backgroundColor: getStatusColor(selectedPU.dominant_status), color: "#fff" }}
+          >
+            {selectedPU.dominant_status}
+          </span>
+        </div>
+        {selectedPU.status_counts && Object.keys(selectedPU.status_counts).length > 0 && (
+          <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+            {Object.entries(selectedPU.status_counts).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-4">
+                <span>{k}</span>
+                <span>{String(v)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="relative">
+      {mapShell}
+      {popup}
+      {/* Live update indicator */}
+      {lastUpdate && (
+        <div className="absolute bottom-3 right-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1 font-mono text-[9px] text-[var(--color-text-muted)]">
+          Updated {lastUpdate.toLocaleTimeString()}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default LiveMap;

@@ -46,6 +46,17 @@ export const dynamic = "force-dynamic";
 const SCENARIOS = ["landslide", "sweep", "close"] as const;
 const SYSTEM_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
 
+// Configurable outcome profile (migration 245): every PU in the 176,846
+// universe gets a ledger row and an explicit fate. Failure modes are
+// admin-configurable per launch; nothing is hard-coded in the UI.
+const OUTCOME_DEFAULTS = {
+  dispute_rate: 0.05,       // agents disagree -> HUMAN_REVIEW (admin queue)
+  failed_rate: 0.015,       // fails verification -> NOT countable
+  disrupted_rate: 0.02,     // zero votes recorded
+  unavailable_rate: 0.01,   // never reached / no data
+  max_published_pct: 0.95,  // ceiling of PUs that can successfully publish
+};
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminWithDetails(request);
@@ -84,6 +95,18 @@ export async function POST(request: NextRequest) {
     const coverage_pct = Math.max(1, Math.min(100, Number(body.coverage_pct ?? 50)));
     const reset_first = body.reset_first !== false;
 
+    // Optional per-launch outcome profile overrides (§4: configurable,
+    // not hard-coded). Rates are fractions 0-1. dispute_rate is BOUND to
+    // the engine's discrepancy_rate — the ledger's HUMAN_REVIEW pick
+    // mirrors the engine's deterministic hash, so the two must be equal.
+    const outcomes = {
+      dispute_rate: discrepancy_rate,
+      failed_rate: Math.max(0, Math.min(1, Number(body.failed_rate ?? OUTCOME_DEFAULTS.failed_rate))),
+      disrupted_rate: Math.max(0, Math.min(1, Number(body.disrupted_rate ?? OUTCOME_DEFAULTS.disrupted_rate))),
+      unavailable_rate: Math.max(0, Math.min(1, Number(body.unavailable_rate ?? OUTCOME_DEFAULTS.unavailable_rate))),
+      max_published_pct: Math.max(0, Math.min(1, Number(body.max_published_pct ?? OUTCOME_DEFAULTS.max_published_pct))),
+    };
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -100,6 +123,18 @@ export async function POST(request: NextRequest) {
       adminUuid = (uaRow as any)?.id ?? null;
     } catch {}
 
+    // ── Full-coverage lifecycle (migration 245) ─────────────────────
+    // 1. stop any running run (idempotent — it also finalizes the ledger)
+    // 2. reset live data if requested
+    // 3. start_simulation_run: acquires the single-active lock, archives
+    //    old actives, and materializes the COMPLETE PU universe ledger
+    //    (one row per polling unit — no PU silently disappears)
+    // 4. assign_simulation_outcomes: configurable realistic fates; the
+    //    disputed pick mirrors the engine's deterministic hash exactly
+    try {
+      await supabase.rpc("stop_simulation_run");
+    } catch {}
+
     let resetResult: any = null;
     if (reset_first) {
       const { data, error } = await supabase.rpc("neop_reset_live_data");
@@ -110,6 +145,76 @@ export async function POST(request: NextRequest) {
         );
       }
       resetResult = data;
+    }
+
+    const { data: runIdData, error: runErr } = await supabase.rpc("start_simulation_run", {
+      p_label: `Pipeline ${new Date().toISOString().slice(5, 16).replace("T", " ")} ${scenario}`,
+      p_scenario: scenario,
+    });
+    if (runErr || !runIdData) {
+      return NextResponse.json(
+        { error: `Could not start simulation run: ${runErr?.message || "no run id"}` },
+        { status: 409 }
+      );
+    }
+    const runId = String(runIdData);
+
+    // Materialize the FULL PU-universe ledger in chunks: one 20k-row
+    // statement per call, so no single statement can exceed even the
+    // tightest role statement_timeout (8s on pooled PostgREST).
+    let ledgerRows = 0;
+    let afterId: string | null = null;
+    for (let i = 0; i < 40; i++) {
+      const { data: chunk, error: chunkErr } = await supabase.rpc("materialize_ledger_chunk", {
+        p_run: runId,
+        p_after_id: afterId,
+        p_chunk: 20000,
+      });
+      if (chunkErr) {
+        await supabase.rpc("stop_simulation_run");
+        return NextResponse.json(
+          { error: `Ledger materialization failed: ${chunkErr.message}` },
+          { status: 500 }
+        );
+      }
+      const inserted = Number(chunk ?? 0);
+      ledgerRows += inserted;
+      if (inserted < 20000) break;
+      // Advance the cursor past the last inserted row for the next chunk
+      const { data: maxRow } = await supabase
+        .from("pu_simulation_status")
+        .select("polling_unit_id")
+        .eq("run_id", runId)
+        .order("polling_unit_id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      afterId = (maxRow as any)?.polling_unit_id ?? null;
+      if (!afterId) break;
+    }
+
+    // Record the universe size on the run
+    await supabase
+      .from("simulation_runs")
+      .update({ total_pus: ledgerRows })
+      .eq("id", runId);
+
+    const { data: outcomesData, error: outcomesErr } = await supabase.rpc(
+      "assign_simulation_outcomes",
+      {
+        p_run: runId,
+        p_dispute_rate: outcomes.dispute_rate,
+        p_failed_rate: outcomes.failed_rate,
+        p_disrupted_rate: outcomes.disrupted_rate,
+        p_unavailable_rate: outcomes.unavailable_rate,
+        p_max_published_pct: outcomes.max_published_pct,
+      }
+    );
+    if (outcomesErr) {
+      await supabase.rpc("stop_simulation_run");
+      return NextResponse.json(
+        { error: `Outcome assignment failed: ${outcomesErr.message}` },
+        { status: 500 }
+      );
     }
 
     const perWave: any[] = [];
@@ -185,13 +290,27 @@ export async function POST(request: NextRequest) {
             },
             `Wave ${w} chunk ${c}`
             );
-            if (row?.sim_election_id) simElectionId = row.sim_election_id;
+            if (row?.sim_election_id) {
+              simElectionId = row.sim_election_id;
+              // Bind the ledger to the engine's [SIM] election once known,
+              // so sync can promote planned PUs as their results publish
+              try {
+                await supabase
+                  .from("simulation_runs")
+                  .update({ election_id: simElectionId })
+                  .eq("id", runId);
+              } catch {}
+            }
             // Point the public site at the simulated dataset as soon as the
             // election exists, so the banner/stats render during the run
             // (previously written only at completion — and via .update(),
             // which no-oped because no system_config row existed).
             if (simElectionId && !pointerWritten) {
               pointerWritten = true;
+              // Ledger progress tick (also promotes PUBLISHED PUs)
+              try {
+                await supabase.rpc("sync_simulation_progress", { p_run: runId });
+              } catch {}
               try {
                 await supabase
                   .from("system_config")
@@ -218,6 +337,10 @@ export async function POST(request: NextRequest) {
               await new Promise((r) => setTimeout(r, Math.min(waitMs, 120_000)));
             }
           }
+          // Ledger progress tick after each wave
+          try {
+            await supabase.rpc("sync_simulation_progress", { p_run: runId });
+          } catch {}
         }
 
         // Point the public site at the simulated dataset (upsert: the row
@@ -240,6 +363,22 @@ export async function POST(request: NextRequest) {
           .from("simulation_config")
           .update({ status: "COMPLETED", last_tick_at: new Date().toISOString() })
           .eq("id", SYSTEM_CONFIG_ID);
+
+        // Final ledger sync: promotes remaining planned PUs, recomputes
+        // counters, flips the run COMPLETED and releases the lock once
+        // every PU is accounted for
+        try {
+          const { data: finalSync } = await supabase.rpc("sync_simulation_progress", { p_run: runId });
+          console.log(`[trigger-v2] ledger final sync: ${JSON.stringify(finalSync)}`);
+          // With engine coverage < 100% (disk-constrained), planned PUs the
+          // engine never reached cannot publish — finalize them as
+          // UNAVAILABLE so 100% of the universe still ends accounted for
+          const fin = Array.isArray(finalSync) ? finalSync[0] : finalSync;
+          if (fin?.active && fin?.status === "RUNNING") {
+            await supabase.rpc("stop_simulation_run");
+            console.log("[trigger-v2] run finalized via stop (engine coverage < 100%)");
+          }
+        } catch {}
 
         // Record the run for the dashboard Simulation History panel
         try {
@@ -272,6 +411,9 @@ export async function POST(request: NextRequest) {
             .from("simulation_config")
             .update({ status: "FAILED", last_tick_at: new Date().toISOString() })
             .eq("id", SYSTEM_CONFIG_ID);
+          // Finalize the ledger: unreached PUs become UNAVAILABLE (never
+          // silently missing), run marked FAILED, lock released
+          await supabase.rpc("stop_simulation_run");
         } catch {}
       }
     })();
@@ -290,6 +432,8 @@ export async function POST(request: NextRequest) {
         waves,
         discrepancy_rate,
         coverage_pct,
+        run_id: runId,
+        outcomes: outcomesData,
         reset: resetResult,
       },
       { status: 202 }
