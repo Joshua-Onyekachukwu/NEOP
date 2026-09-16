@@ -35,6 +35,14 @@ interface GlobalStats {
   coverage_percent: number;
   verification_percent: number;
   total_votes: number;
+  published_pus?: number | null;
+  disputed_pus?: number | null;
+  failed_pus?: number | null;
+  disrupted_pus?: number | null;
+  unavailable_pus?: number | null;
+  awaiting_pus?: number | null;
+  accounted_pus?: number | null;
+  sim_run_status?: string | null;
 }
 
 interface SimConfig {
@@ -119,7 +127,15 @@ export function RealtimeLayer({
           verified_polling_units: statsData.verified_polling_units || 0,
           coverage_percent: statsData.coverage_percent || 0,
           verification_percent: statsData.verification_percent || 0,
-          total_votes: 0,
+          total_votes: statsData.total_votes || 0,
+          published_pus: statsData.published_pus,
+          disputed_pus: statsData.disputed_pus,
+          failed_pus: statsData.failed_pus,
+          disrupted_pus: statsData.disrupted_pus,
+          unavailable_pus: statsData.unavailable_pus,
+          awaiting_pus: statsData.awaiting_pus,
+          accounted_pus: statsData.accounted_pus,
+          sim_run_status: statsData.sim_run_status,
         });
         setRestStates(statsData.state_breakdown || []);
       }
