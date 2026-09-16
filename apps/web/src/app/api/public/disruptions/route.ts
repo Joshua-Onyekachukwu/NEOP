@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     const categoryCounts: Record<string, number> = {};
     const severityCounts: Record<string, number> = {};
     for (const i of rows) {
-      const cat = String(i.category || "OTHER");
+      const cat = String((i as any).category || i.incident_type || "OTHER");
       const sev = String(i.severity || "LOW");
       categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
       severityCounts[sev] = (severityCounts[sev] || 0) + 1;

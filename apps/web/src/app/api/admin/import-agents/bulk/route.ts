@@ -283,7 +283,11 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      if (!volunteerId.startsWith("dry-run-")) {
+      if (!volunteerId || !volunteerId.startsWith("dry-run-")) {
+        if (!volunteerId) {
+          response.errors.push({ row: rowNum, email, error: "volunteer could not be resolved" });
+          continue;
+        }
         const { data: existingAssign } = await supabase
           .from("agent_assignments")
           .select("id")

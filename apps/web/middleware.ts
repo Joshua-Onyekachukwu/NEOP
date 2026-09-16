@@ -403,6 +403,21 @@ export function middleware(request: NextRequest) {
   }
 
   // ── Rate Limiting ──
+  // CRON exemption: the simulation tick endpoint is called every minute by
+  // Vercel Cron (and by the site-traffic pump). Its bucket refills slower
+  // than one call per request cycle can sustain once retries count against
+  // it, and a starved cron means production simulations stall. The secret
+  // is still verified by the route itself — the middleware only declines
+  // to throttle an already-authenticated internal caller.
+  const cronAuth = request.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    cronAuth === `Bearer ${process.env.CRON_SECRET}` &&
+    pathname.indexOf("/api/admin/simulate/tick") === 0
+  ) {
+    return NextResponse.next();
+  }
+
   const bot = isBot(request);
   const ip = getClientIp(request);
   const config = getRateConfig(pathname, bot, underAttack);

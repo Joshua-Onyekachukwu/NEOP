@@ -501,12 +501,12 @@ export async function POST(request: NextRequest) {
               );
 
               let iden =
-                Number(s1?.valid_votes) === Number(s2?.valid_votes) &&
-                Number(s1?.rejected_votes) === Number(s2?.rejected_votes) &&
-                Number(s1?.total_votes) === Number(s2?.total_votes);
+                Number(s1?.valid_votes ?? 0) === Number(s2?.valid_votes ?? 0) &&
+                Number(s1?.rejected_votes ?? 0) === Number(s2?.rejected_votes ?? 0) &&
+                Number(s1?.total_votes ?? 0) === Number(s2?.total_votes ?? 0);
               let md = 0;
               for (const abbr of allP) {
-                const d = Math.abs((pm1.get(abbr) || 0) - (pm2.get(abbr) || 0));
+                const d = Math.abs(Number(pm1.get(abbr) || 0) - Number(pm2.get(abbr) || 0));
                 if (d > 0) iden = false;
                 if (d > md) md = d;
               }

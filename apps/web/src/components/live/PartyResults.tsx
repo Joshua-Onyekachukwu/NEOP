@@ -211,7 +211,16 @@ function AnimatedPartyRow({
 // ── Main Component ──
 
 const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
-  const { parties, grandTotal, connected, source } = useRealtimeData();
+  const { parties, grandTotal, connected, source, stats } = useRealtimeData();
+
+  // "X% of PUs reporting": published PUs as a share of the full universe.
+  // null while no ledger data exists (pre-election).
+  const totalPUs = Number(stats?.total_polling_units ?? 0);
+  const publishedPUs = Number(stats?.published_pus ?? 0);
+  const reportingPercent =
+    connected && totalPUs > 0 && publishedPUs >= 0 && stats?.published_pus != null
+      ? Math.min(100, Math.round((publishedPUs / totalPUs) * 100))
+      : null;
 
   // Track previous rankings for change indicators
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
@@ -296,6 +305,14 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
                 )
               ) : (
                 <span className="text-[var(--color-amber)]">Awaiting simulation</span>
+              )}
+              {reportingPercent !== null && (
+                <span
+                  className="ml-[10px] font-mono text-[10px] font-bold text-[var(--color-green-bright)] bg-[var(--color-green)]/10 border border-[var(--color-green)]/30 rounded px-[6px] py-[1px]"
+                  title="Share of polling units whose verified results have been published"
+                >
+                  {reportingPercent}% of PUs reporting
+                </span>
               )}
             </div>
           </div>

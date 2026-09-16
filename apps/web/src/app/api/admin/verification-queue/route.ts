@@ -198,15 +198,15 @@ export async function GET(request: NextRequest) {
         const allP = Array.from(new Set([...partyMap1.keys(), ...partyMap2.keys()]));
         let max_d = 0;
         const party_diffs = allP.map((abbr) => {
-          const v1 = partyMap1.get(abbr) || 0;
-          const v2 = partyMap2.get(abbr) || 0;
+          const v1 = Number(partyMap1.get(abbr) || 0);
+          const v2 = Number(partyMap2.get(abbr) || 0);
           const d = Math.abs(v1 - v2);
           if (d > max_d) max_d = d;
           return { abbr, v1, v2, diff: v1 - v2, abs: d };
         });
         const totals_diff =
-          Math.abs((a1?.valid || 0) - (a2?.valid || 0)) +
-          Math.abs((a1?.rejected || 0) - (a2?.rejected || 0));
+          Math.abs(Number(a1?.valid || 0) - Number(a2?.valid || 0)) +
+          Math.abs(Number(a1?.rejected || 0) - Number(a2?.rejected || 0));
         if (totals_diff > max_d) max_d = totals_diff;
 
         const math_ok_agent1 =

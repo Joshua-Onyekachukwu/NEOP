@@ -131,6 +131,24 @@ export const getCachedStats = unstable_cache(
               (ledgerActive ? Number(ledger.total_pus || 0) : 0) ||
               totalPU || totalPUCount;
 
+            // ── SIMULATED display scaling (user-approved architecture) ──
+            // The backend stores a reduced dataset (disk quota); the public
+            // site renders the election-day-scale numbers. A "reporting
+            // extrapolation" converts engine-scope outcomes to the full
+            // universe: a PU outside engine scope behaves statistically
+            // like the in-scope population, so the published/disputed/...
+            // counters scale by universe/scope while AWAITING absorbs the
+            // difference. LIVE mode is never scaled.
+            const dispMult = await getDisplayScale();
+            const scopeScale =
+              ledgerActive && Number(ledger.scope_pus ?? 0) > 0
+                ? Number(ledger.total_pus ?? 0) / Number(ledger.scope_pus)
+                : 1;
+            const scaleLedger = (v: any) =>
+              ledgerActive && dispMult > 1
+                ? Math.round(Number(v ?? 0) * scopeScale)
+                : Number(v ?? 0);
+
             let mergedStates: any[] = states;
             if (ledgerActive && Array.isArray(ledger.state_breakdown) && ledger.state_breakdown.length > 0) {
               const covByState = new Map<string, any>(
@@ -141,33 +159,49 @@ export const getCachedStats = unstable_cache(
                 if (!c) return s;
                 return {
                   ...s,
-                  // Ledger coverage columns (full universe per state)
-                  published: c.published ?? 0,
-                  disputed: c.disputed ?? 0,
-                  failed: c.failed ?? 0,
-                  disrupted: c.disrupted ?? 0,
-                  unavailable: c.unavailable ?? 0,
-                  awaiting: c.awaiting ?? 0,
+                  // Ledger coverage columns (full universe per state),
+                  // display-scaled the same way as the national counters
+                  published: scaleLedger(c.published),
+                  disputed: scaleLedger(c.disputed),
+                  failed: scaleLedger(c.failed),
+                  disrupted: scaleLedger(c.disrupted),
+                  unavailable: scaleLedger(c.unavailable),
+                  awaiting: Number(c.awaiting ?? 0),
                   accounted: c.accounted ?? 0,
                   published_percent: c.published_percent ?? 0,
                 };
               });
             }
 
+            // Awaiting absorbs the extrapolation so counters still sum
+            // to the exact universe.
+            const scaledAwaiting = ledgerActive
+              ? Math.max(
+                  0,
+                  universe -
+                    scaleLedger(ledger.published_pus) -
+                    scaleLedger(ledger.dispute_pus) -
+                    scaleLedger(ledger.failed_pus) -
+                    scaleLedger(ledger.disrupted_pus) -
+                    scaleLedger(ledger.unavailable_pus)
+                )
+              : Number(ledger?.awaiting_pus ?? 0);
+
             return {
               inec_total_polling_units: universe,
               total_polling_units: universe,
               covered_polling_units: ledgerActive ? Number(ledger.accounted_pus ?? 0) : covered,
               verified_polling_units: verified,
-              // Full-coverage accounting (banner + dashboards). Only
-              // meaningful while a ledger run exists; null otherwise so
-              // the UI falls back to result-derived counters.
-              published_pus: ledgerActive ? Number(ledger.published_pus ?? 0) : null,
-              disputed_pus: ledgerActive ? Number(ledger.dispute_pus ?? 0) : null,
-              failed_pus: ledgerActive ? Number(ledger.failed_pus ?? 0) : null,
-              disrupted_pus: ledgerActive ? Number(ledger.disrupted_pus ?? 0) : null,
-              unavailable_pus: ledgerActive ? Number(ledger.unavailable_pus ?? 0) : null,
-              awaiting_pus: ledgerActive ? Number(ledger.awaiting_pus ?? 0) : null,
+              // Full-coverage accounting (banner + dashboards), display-
+              // scaled in SIMULATED mode. Only meaningful while a ledger
+              // run exists; null otherwise so the UI falls back to
+              // result-derived counters.
+              published_pus: ledgerActive ? scaleLedger(ledger.published_pus) : null,
+              disputed_pus: ledgerActive ? scaleLedger(ledger.dispute_pus) : null,
+              failed_pus: ledgerActive ? scaleLedger(ledger.failed_pus) : null,
+              disrupted_pus: ledgerActive ? scaleLedger(ledger.disrupted_pus) : null,
+              unavailable_pus: ledgerActive ? scaleLedger(ledger.unavailable_pus) : null,
+              awaiting_pus: ledgerActive ? scaledAwaiting : null,
               accounted_pus: ledgerActive ? Number(ledger.accounted_pus ?? 0) : null,
               published_percent: ledgerActive ? ledger.published_percent : null,
               sim_run_id: ledger?.run_id ?? null,

@@ -1,44 +1,37 @@
 /**
  * POST /api/admin/simulate/trigger-v2
  *
- * Batch PIPELINE simulation (migrations 230/232 — chunked waves).
- * Unlike the legacy run_sim_upgraded() (which wrote result_submissions
- * only and never rendered), this drives the REAL pipeline set-based
- * inside Postgres:
+ * Launches a pipeline simulation through the DB-CHECKPOINTED engine
+ * (migration 251). The entire pipeline — ledger materialization,
+ * outcome assignment, wave data chunks — is enqueued as idempotent
+ * steps in sim_run_steps. The route returns 202 immediately; steps are
+ * executed by whichever pump ticks next:
  *
- *   reset live data (optional, default ON)
- *     -> [wave 0] [SIM] election + sim agents + 2 assignments/PU
- *     -> per wave: submissions (2 agents/PU) -> trg_rs_timeline pairing
- *        -> deterministic comparison -> MATCH rows published through the
- *        REAL publish_canonical_result RPC -> DISCREPANCY -> HUMAN_REVIEW
- *     -> system_config.data_mode = SIMULATED (+ active/sim election)
+ *   • this request's fire-and-forget pumper,
+ *   • the admin dashboard poller (/api/admin/simulate/tick), or
+ *   • Vercel Cron hitting /api/admin/simulate/tick every minute
+ *     (production runs progress across serverless cold starts).
  *
- * Because published rows land in canonical_pu_results /
- * canonical_party_results, the public site renders the run through the
- * exact same projection used on election day.
+ * Because the queue state lives in Postgres, a run survives any number
+ * of function restarts — no more "run stuck at 0 published" on prod.
  *
  * Body: {
  *   scenario?: "landslide" | "sweep" | "close" | "random"   (default landslide)
- *   target_voters?: number                                  (default 20,000,000)
- *   duration_minutes?: number  0 = flat out                 (default 5)
- *   waves?: number            1-12                          (default 6)
- *   discrepancy_rate?: number 0-1                           (default 0.05)
- *   coverage_pct?: number     1-100    % of PUs in scope     (default 50;
- *                             turnout per covered PU scales up so total
- *                             votes still hit target_voters)
- *   reset_first?: boolean                                   (default true)
+ *   target_voters?: number     real votes stored in the DB   (min 100k, default 1M)
+ *   display_voters?: number    votes the public site renders (>= target_voters)
+ *   duration_minutes?: number  0 = flat out                  (0-30, default 5)
+ *   waves?: number             1-12                          (default 6)
+ *   discrepancy_rate?: number  0-1                           (default 0.05)
+ *   coverage_pct?: number      1-100    % of PUs in scope    (default 50)
+ *   reset_first?: boolean                                    (default true)
  * }
- *
- * Returns 202 immediately; the wave loop continues in the background and
- * heartbeats progress into simulation_config (visible via
- * GET /api/admin/simulate/progress). Every wave commits progressively,
- * so an interrupted run keeps everything completed so far.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminWithDetails, isAdminDetailsSuccess } from "@/lib/admin-auth";
 import { createClient } from "@supabase/supabase-js";
 import { invalidateAllCaches } from "@/lib/api-cache";
+import { LEDGER_CHUNKS } from "@/lib/sim-engine";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -46,8 +39,8 @@ export const dynamic = "force-dynamic";
 const SCENARIOS = ["landslide", "sweep", "close"] as const;
 const SYSTEM_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
 
-// Configurable outcome profile (migration 245): every PU in the 176,846
-// universe gets a ledger row and an explicit fate. Failure modes are
+// Configurable outcome profile (migration 245): every PU in the universe
+// gets a ledger row and an explicit fate. Failure modes are
 // admin-configurable per launch; nothing is hard-coded in the UI.
 const OUTCOME_DEFAULTS = {
   dispute_rate: 0.05,       // agents disagree -> HUMAN_REVIEW (admin queue)
@@ -72,14 +65,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Unknown scenario: ${scenario}` }, { status: 400 });
     }
 
+    // Real votes kept small so the Free-plan DB quota is never hit;
+    // display_voters is what the public site renders (SIMULATED mode
+    // only, via system_config.display_multiplier). Live elections
+    // never scale.
     const target_voters = Math.max(
-      1_000_000,
-      Math.min(200_000_000, Number(body.target_voters) || 20_000_000)
+      100_000,
+      Math.min(200_000_000, Number(body.target_voters) || 1_000_000)
     );
-    // The sim stores REAL vote counts (kept small so the Free-plan DB
-    // quota is never hit); display_voters is what the public site renders
-    // (e.g. 50M for a 5M backend sim) — applied ONLY in SIMULATED mode
-    // via system_config.display_multiplier. Live elections never scale.
     const display_voters = Math.max(
       target_voters,
       Math.min(5_000_000_000, Number(body.display_voters) || target_voters)
@@ -90,15 +83,13 @@ export async function POST(request: NextRequest) {
     const waves = Math.max(1, Math.min(12, Number(body.waves) || 6));
     const discrepancy_rate = Math.max(0, Math.min(1, Number(body.discrepancy_rate ?? 0.05)));
     // Coverage % of polling units in scope. Disk/row cost tracks coverage,
-    // not voters — the hosted DB disk quota failed at 100%/20M, so default
-    // to 50% with per-PU turnout scaled up to keep 20M+ votes on target.
+    // not voters — coverage is the knob for staying under disk quotas.
     const coverage_pct = Math.max(1, Math.min(100, Number(body.coverage_pct ?? 50)));
     const reset_first = body.reset_first !== false;
 
     // Optional per-launch outcome profile overrides (§4: configurable,
-    // not hard-coded). Rates are fractions 0-1. dispute_rate is BOUND to
-    // the engine's discrepancy_rate — the ledger's HUMAN_REVIEW pick
-    // mirrors the engine's deterministic hash, so the two must be equal.
+    // not hard-coded). dispute_rate is BOUND to discrepancy_rate — the
+    // ledger's HUMAN_REVIEW pick mirrors the engine's deterministic hash.
     const outcomes = {
       dispute_rate: discrepancy_rate,
       failed_rate: Math.max(0, Math.min(1, Number(body.failed_rate ?? OUTCOME_DEFAULTS.failed_rate))),
@@ -111,26 +102,11 @@ export async function POST(request: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // verifications.decided_by / audit context expect a user_accounts.id
-    // (admin_users.id is a different keyspace — J.5 lesson from Sep 13).
-    let adminUuid: string | null = null;
-    try {
-      const { data: uaRow } = await supabase
-        .from("user_accounts")
-        .select("id")
-        .eq("email", auth.admin_user.email)
-        .maybeSingle();
-      adminUuid = (uaRow as any)?.id ?? null;
-    } catch {}
-
     // ── Full-coverage lifecycle (migration 245) ─────────────────────
     // 1. stop any running run (idempotent — it also finalizes the ledger)
     // 2. reset live data if requested
-    // 3. start_simulation_run: acquires the single-active lock, archives
-    //    old actives, and materializes the COMPLETE PU universe ledger
-    //    (one row per polling unit — no PU silently disappears)
-    // 4. assign_simulation_outcomes: configurable realistic fates; the
-    //    disputed pick mirrors the engine's deterministic hash exactly
+    // 3. start_simulation_run: acquires the single-active lock and
+    //    materializes the COMPLETE PU universe ledger (queued as steps)
     try {
       await supabase.rpc("stop_simulation_run");
     } catch {}
@@ -159,253 +135,59 @@ export async function POST(request: NextRequest) {
     }
     const runId = String(runIdData);
 
-    const perWave: any[] = [];
-    let simElectionId: string | null = null;
-    let pointerWritten = false;
+    // ── Enqueue the entire pipeline as durable, idempotent steps ──
+    const { error: enqErr } = await supabase.rpc("enqueue_simulation_run", {
+      p_run: runId,
+      p_scenario: scenario,
+      p_target_voters: target_voters,
+      p_waves: waves,
+      p_discrepancy_rate: discrepancy_rate,
+      p_coverage_pct: coverage_pct,
+      p_ledger_chunks: LEDGER_CHUNKS,
+    });
+    if (enqErr) {
+      await supabase.rpc("stop_simulation_run");
+      return NextResponse.json(
+        { error: `Could not enqueue run steps: ${enqErr.message}` },
+        { status: 500 }
+      );
+    }
 
-    // The hosted PostgREST gateway kills multi-minute RPC calls with
-    // "upstream request timeout", so every wave is chunked into many
-    // short calls (migration 232/237), each committing progressively:
-    //   24 chunks/wave (~7.4k PUs each: agents + submissions -> pairing -> publish)
-    //   wave 0 additionally mints the [SIM] election and its agents per chunk
-    const DATA_CHUNKS = 24;
+    // Persist engine params (incl. display multiplier) for the executor
+    try {
+      await supabase
+        .from("simulation_runs")
+        .update({
+          display_multiplier,
+          params: {
+            scenario,
+            target_voters,
+            waves,
+            discrepancy_rate,
+            coverage_pct,
+            display_multiplier,
+            duration_seconds,
+            ...outcomes,
+          } as any,
+        })
+        .eq("id", runId);
+    } catch {}
 
-    // Chunk calls are idempotent (ON CONFLICT / status guards / chunk hash
-    // filters). A call that times out at the gateway KEEPS RUNNING server-
-    // side (function statement_timeout), so retries must wait out that
-    // window or they block on the dead call's uncommitted rows.
-    const callRpc = async (args: Record<string, unknown>, label: string) => {
-      for (let attempt = 1; ; attempt++) {
-        const { data, error } = await supabase.rpc("neop_sim_wave", args);
-        if (!error) return Array.isArray(data) ? data[0] : data;
-        if (attempt >= 4) throw new Error(`${label} failed: ${error.message}`);
-        // A timed-out wave-0 call may have already committed server-side,
-        // creating the [SIM] election. Re-read the heartbeat before retrying
-        // and adopt that election — otherwise the retry would create a
-        // second one and split the run across two elections.
-        if (!args.p_election_id) {
-          try {
-            const { data: cfg } = await supabase
-              .from("simulation_config")
-              .select("scenario")
-              .eq("id", SYSTEM_CONFIG_ID)
-              .maybeSingle();
-            const eid = cfg?.scenario
-              ? (JSON.parse(cfg.scenario)?.sim_election_id ?? null)
-              : null;
-            if (eid) {
-              args.p_election_id = eid;
-              simElectionId = eid;
-            }
-          } catch {}
-        }
-        const backoff = attempt === 1 ? 30000 : attempt === 2 ? 45000 : 60000;
-        console.warn(`[trigger-v2] ${label} attempt ${attempt} failed (${error.message}); retrying in ${backoff / 1000}s`);
-        await new Promise((r) => setTimeout(r, backoff));
-      }
-    };
+    invalidateAllCaches();
 
-    // Chunked loop runs in the background (progressive commits; the route
-    // returns 202 immediately). sim status is RUNNING while looping and
-    // flips to COMPLETED/FAILED at the end — the dashboard polls /progress.
-    // Wave 0 self-initializes: the RPC creates the [SIM] election and mints
-    // the sim agents for each wave-0 chunk's PUs (at coverage_pct).
+    // Fire-and-forget pumper: executes queued steps until the platform
+    // reclaims this function. Cron / dashboard polling continue the run.
     (async () => {
       try {
-        const startMs = Date.now();
-
-        // ── 1. Materialize the FULL PU-universe ledger in chunks ──
-        // (moved out of the request path: ~9 × 20k-row statements take
-        // minutes and MUST NOT block the launch response — a blocked
-        // response makes clients retry and stack duplicate pipelines)
-        let ledgerRows = 0;
-        let afterId: string | null = null;
-        for (let i = 0; i < 40; i++) {
-          const { data: chunk, error: chunkErr } = await supabase.rpc("materialize_ledger_chunk", {
-            p_run: runId,
-            p_after_id: afterId,
-            p_chunk: 20000,
-          });
-          if (chunkErr) throw new Error(`Ledger materialization failed: ${chunkErr.message}`);
-          const inserted = Number(chunk ?? 0);
-          ledgerRows += inserted;
-          if (inserted < 20000) break;
-          // Advance the cursor past the last inserted row for the next chunk
-          const { data: maxRow } = await supabase
-            .from("pu_simulation_status")
-            .select("polling_unit_id")
-            .eq("run_id", runId)
-            .order("polling_unit_id", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          afterId = (maxRow as any)?.polling_unit_id ?? null;
-          if (!afterId) break;
-        }
-
-        // Record the universe size on the run
-        await supabase
-          .from("simulation_runs")
-          .update({ total_pus: ledgerRows })
-          .eq("id", runId);
-
-        // ── 2. Assign the configurable outcome profile ──
-        const { error: outcomesErr } = await supabase.rpc(
-          "assign_simulation_outcomes",
-          {
-            p_run: runId,
-            p_dispute_rate: outcomes.dispute_rate,
-            p_failed_rate: outcomes.failed_rate,
-            p_disrupted_rate: outcomes.disrupted_rate,
-            p_unavailable_rate: outcomes.unavailable_rate,
-            p_max_published_pct: outcomes.max_published_pct,
-            p_coverage_pct: coverage_pct,
-          }
-        );
-        if (outcomesErr) throw new Error(`Outcome assignment failed: ${outcomesErr.message}`);
-
-        // Data waves, paced route-side to the configured duration
-        for (let w = 0; w < waves; w++) {
-          for (let c = 0; c < DATA_CHUNKS; c++) {
-            const row: any = await callRpc(
-              {
-                p_scenario: scenario,
-                p_total_voters: target_voters,
-                p_waves: waves,
-                p_wave_index: w,
-                p_discrepancy_rate: discrepancy_rate,
-                p_admin_user_id: adminUuid,
-                p_election_id: simElectionId,
-              p_data_chunk: c,
-              p_data_chunks: DATA_CHUNKS,
-              p_coverage_pct: coverage_pct,
-            },
-            `Wave ${w} chunk ${c}`
-            );
-            if (row?.sim_election_id) {
-              simElectionId = row.sim_election_id;
-              // Bind the ledger to the engine's [SIM] election once known,
-              // so sync can promote planned PUs as their results publish
-              try {
-                await supabase
-                  .from("simulation_runs")
-                  .update({ election_id: simElectionId })
-                  .eq("id", runId);
-              } catch {}
-            }
-            // Point the public site at the simulated dataset as soon as the
-            // election exists, so the banner/stats render during the run
-            // (previously written only at completion — and via .update(),
-            // which no-oped because no system_config row existed).
-            if (simElectionId && !pointerWritten) {
-              pointerWritten = true;
-              // Ledger progress tick (also promotes PUBLISHED PUs)
-              try {
-                await supabase.rpc("sync_simulation_progress", { p_run: runId });
-              } catch {}
-              try {
-                await supabase
-                  .from("system_config")
-                  .upsert(
-                    {
-                      id: SYSTEM_CONFIG_ID,
-                      data_mode: "SIMULATED",
-                      simulation_election_id: simElectionId,
-                      active_election_id: simElectionId,
-                      display_multiplier,
-                      last_updated_at: new Date().toISOString(),
-                    },
-                    { onConflict: "id" }
-                  );
-                invalidateAllCaches();
-              } catch {}
-            }
-            perWave.push(row);
-          }
-          if (duration_seconds > 0 && w < waves - 1) {
-            const targetMs = ((w + 1) * duration_seconds * 1000) / waves;
-            const waitMs = targetMs - (Date.now() - startMs);
-            if (waitMs > 0) {
-              await new Promise((r) => setTimeout(r, Math.min(waitMs, 120_000)));
-            }
-          }
-          // Ledger progress tick after each wave
-          try {
-            await supabase.rpc("sync_simulation_progress", { p_run: runId });
-          } catch {}
-        }
-
-        // Point the public site at the simulated dataset (upsert: the row
-        // may not exist if the launch-time write was skipped)
-        await supabase
-          .from("system_config")
-          .upsert(
-            {
-              id: SYSTEM_CONFIG_ID,
-              data_mode: "SIMULATED",
-              simulation_election_id: simElectionId,
-              active_election_id: simElectionId,
-              display_multiplier,
-              last_updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id" }
-          );
-
-        await supabase
-          .from("simulation_config")
-          .update({ status: "COMPLETED", last_tick_at: new Date().toISOString() })
-          .eq("id", SYSTEM_CONFIG_ID);
-
-        // Final ledger sync: promotes remaining planned PUs, recomputes
-        // counters, flips the run COMPLETED and releases the lock once
-        // every PU is accounted for
-        try {
-          const { data: finalSync } = await supabase.rpc("sync_simulation_progress", { p_run: runId });
-          console.log(`[trigger-v2] ledger final sync: ${JSON.stringify(finalSync)}`);
-          // With engine coverage < 100% (disk-constrained), planned PUs the
-          // engine never reached cannot publish — finalize them as
-          // UNAVAILABLE so 100% of the universe still ends accounted for
-          const fin = Array.isArray(finalSync) ? finalSync[0] : finalSync;
-          if (fin?.active && fin?.status === "RUNNING") {
-            await supabase.rpc("stop_simulation_run");
-            console.log("[trigger-v2] run finalized via stop (engine coverage < 100%)");
-          }
-        } catch {}
-
-        // Record the run for the dashboard Simulation History panel
-        try {
-          const last: any = perWave[perWave.length - 1] || {};
-          await supabase.from("simulation_history").insert({
-            scenario,
-            election_type: "PRESIDENTIAL",
-            status: "COMPLETED",
-            total_polling_units: 176846,
-            results_created:
-              perWave.reduce((s, w: any) => s + (w?.published_this_wave || 0), 0) || null,
-            party_results_created:
-              perWave.reduce((s, w: any) => s + (w?.party_rows_published || 0), 0) || null,
-            total_votes: last?.votes_cumulative || null,
-            duration_seconds: Math.round((Date.now() - startMs) / 1000) || null,
-            ndc_wins: true,
-            started_at: new Date(Date.now() - (last?.seconds || 0) * 1000).toISOString(),
-            completed_at: new Date().toISOString(),
-          });
-        } catch {}
-
-        invalidateAllCaches();
-        console.log(
-          `[trigger-v2] Simulation complete: election=${simElectionId} scenario=${scenario} waves=${waves}`
-        );
+        const { executeTickSteps } = await import("@/lib/sim-engine");
+        const r = await executeTickSteps(supabase, {
+          runId,
+          maxSteps: 60,
+          budgetMs: 50_000,
+        });
+        console.log(`[trigger-v2] launch pumper: ${r.processed} steps, ${r.remaining} left`);
       } catch (e: any) {
-        console.error("[trigger-v2] Wave loop failed:", e?.message);
-        try {
-          await supabase
-            .from("simulation_config")
-            .update({ status: "FAILED", last_tick_at: new Date().toISOString() })
-            .eq("id", SYSTEM_CONFIG_ID);
-          // Finalize the ledger: unreached PUs become UNAVAILABLE (never
-          // silently missing), run marked FAILED, lock released
-          await supabase.rpc("stop_simulation_run");
-        } catch {}
+        console.warn("[trigger-v2] launch pumper ended:", e?.message);
       }
     })();
 
@@ -413,12 +195,13 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message:
-          `Pipeline simulation started: ${waves} waves × ` +
-          `${(target_voters / 1e6).toFixed(0)}M voters` +
+          `Simulation queued: ${waves} waves × ` +
+          `${(target_voters / 1e6).toFixed(1)}M voters ×${display_multiplier} display` +
           (duration_seconds > 0 ? ` over ~${duration_minutes} min` : " (flat out)"),
-        engine: "pipeline_batch",
+        engine: "checkpoint_queue",
         scenario,
         target_voters,
+        display_multiplier,
         duration_minutes,
         waves,
         discrepancy_rate,

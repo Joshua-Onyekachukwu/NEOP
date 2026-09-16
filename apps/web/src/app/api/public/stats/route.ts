@@ -4,6 +4,14 @@
  * Dashboard statistics endpoint.
  * Uses shared api-cache layer — database hit only once per 30 seconds.
  * CDN serves from edge for 30s, stale for 120s.
+ *
+ * Also acts as an OPPORTUNISTIC SIMULATION PUMP: while a simulation run
+ * is active, each request (throttled to once per minute per warm
+ * instance, fire-and-forget) calls the tick endpoint so queued steps
+ * keep executing. This keeps production runs progressing across
+ * serverless cold starts even when Vercel Cron is unavailable
+ * (Hobby plans run crons at most once/day). The pump is a no-op when
+ * no run is active.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,10 +20,45 @@ import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rat
 
 export const dynamic = "force-dynamic";
 
+// ── Opportunistic pump state (per warm serverless instance) ─────
+let lastPumpAt = 0;
+const PUMP_INTERVAL_MS = 60_000;
+
+function pumpSimulationQueue(request: NextRequest): void {
+  const now = Date.now();
+  if (now - lastPumpAt < PUMP_INTERVAL_MS) return;
+  lastPumpAt = now;
+
+  // Fire-and-forget: never delays or fails the public response.
+  (async () => {
+    try {
+      const secret = process.env.CRON_SECRET;
+      const origin = request.nextUrl.origin;
+      const res = await fetch(`${origin}/api/admin/simulate/tick?max=10`, {
+        method: "POST",
+        headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+        signal: AbortSignal.timeout(50_000),
+      });
+      const body: any = await res.json().catch(() => null);
+      if (body?.processed || body?.last_error) {
+        console.log(
+          `[stats-pump] steps=${body.processed ?? 0} remaining=${body.remaining ?? "?"}` +
+            (body.last_error ? ` err=${body.last_error}` : "")
+        );
+      }
+    } catch {
+      // Pump is best-effort only; public stats never fails because of it.
+    }
+  })();
+}
+
 export async function GET(request: NextRequest) {
   // Rate limiting
   const rateResult = publicLimiter.check(request);
   if (!rateResult.ok) return rateLimitResponse(rateResult);
+
+  // Drive the active simulation run if one exists (throttled, async).
+  pumpSimulationQueue(request);
 
   try {
     const stats = await getCachedStats();

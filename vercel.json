@@ -6,6 +6,12 @@
   "outputDirectory": "apps/web/.next",
   "regions": ["iad1"],
   "cleanUrls": true,
+  "crons": [
+    {
+      "path": "/api/admin/simulate/tick",
+      "schedule": "* * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/:path*",

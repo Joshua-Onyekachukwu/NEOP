@@ -139,8 +139,8 @@ export async function POST(request: NextRequest) {
     let identical = totals_ok;
     const perPartyDiffs: any[] = [];
     for (const abbr of partiesCommon) {
-      const v1 = partyMap1.get(abbr) || 0;
-      const v2 = new Map(p2.map((p: any) => [p.abbr, p.votes])).get(abbr) || 0;
+      const v1 = Number(partyMap1.get(abbr) || 0);
+      const v2 = Number(new Map(p2.map((p: any) => [p.abbr, p.votes])).get(abbr) || 0);
       const d = Math.abs(v1 - v2);
       if (d > 0) identical = false;
       if (d > max_diff) max_diff = d;

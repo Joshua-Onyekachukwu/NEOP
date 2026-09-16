@@ -275,8 +275,8 @@ function rowsToObjects(rows: string[][]): { headers: string[]; records: ParsedRo
 // +2348030001234→ +2348030001234
 // 8030001234    → +2348030001234  (assumed NG)
 // Anything else non-digit-10+ left as-is with + prefix if digits-only.
-function normalizePhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
+function normalizePhone(raw?: string): string {
+  const digits = (raw ?? "").replace(/\D/g, "");
   if (digits.length === 0) return "";
   if (digits.startsWith("234")) return "+" + digits;
   if (digits.length === 11 && digits.startsWith("0")) return "+234" + digits.slice(1);
@@ -513,7 +513,7 @@ export async function POST(request: NextRequest) {
         summary.volunteer_errors++;
         continue;
       }
-      const normPhone = normalizePhone(r.phone);
+      const normPhone: string = normalizePhone(r.phone);
       if (normPhone.length < 10) {
         summary.errors.push({
           row: rowNum,
@@ -550,7 +550,7 @@ export async function POST(request: NextRequest) {
         if (existingVol) {
           volunteerId = existingVol.id;
           summary.volunteer_skipped++;
-          phonesProcessedThisBatch.set(normPhone, volunteerId);
+          phonesProcessedThisBatch.set(normPhone, volunteerId as string);
         } else {
           // Need geography for a clean new volunteer record, but don't fail
           // outright — just log if missing state/lga and continue anyway
@@ -592,7 +592,7 @@ export async function POST(request: NextRequest) {
                 continue;
               }
               volunteerId = newVol.id;
-              phonesProcessedThisBatch.set(normPhone, volunteerId);
+              phonesProcessedThisBatch.set(normPhone, volunteerId as string);
               summary.volunteer_inserted++;
             } else {
               // dry run — simulate
@@ -631,6 +631,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Check DB: existing assignment for (volunteer, election)
+      if (!volunteerId) {
+        summary.errors.push({
+          row: rowNum,
+          phone: r.phone,
+          error: "volunteer could not be resolved",
+        });
+        continue;
+      }
       if (!volunteerId.startsWith("dry-run-")) {
         const { data: existingAssign } = await supabase
           .from("agent_assignments")
