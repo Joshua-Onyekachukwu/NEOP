@@ -436,7 +436,7 @@ const AdminDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           scenario: simScenario,
-          target_voters: simVoters * 1_000_000,
+          target_voters: Math.round(simVoters * 1_000_000),
           display_voters: simDisplayVoters * 1_000_000,
           duration_minutes: simDuration,
           waves: 6,
@@ -490,7 +490,7 @@ const AdminDashboard: React.FC = () => {
           },
           body: JSON.stringify({
             scenario,
-            target_voters: simVoters * 1_000_000,
+            target_voters: Math.round(simVoters * 1_000_000),
             display_voters: simDisplayVoters * 1_000_000,
             duration_minutes: simDuration,
             waves: 6,
@@ -539,7 +539,7 @@ const AdminDashboard: React.FC = () => {
       scenario: "loop",
       description: `Completed ${completedCount}/${loopCount} simulations`,
       duration_minutes: 0,
-      target_voters: simVoters * 1_000_000,
+      target_voters: Math.round(simVoters * 1_000_000),
       total_polling_units: 176846,
       results_created: 0,
       party_results_created: 0,
@@ -1356,11 +1356,19 @@ const AdminDashboard: React.FC = () => {
                         Real Voters Stored (millions)
                       </div>
                       <div className="flex items-center gap-3">
+                        {/*
+                          Backend work is deliberately separable from the
+                          displayed total: a small real dataset (0.1M) with
+                          a large display multiplier renders the same big
+                          national numbers without writing millions of rows.
+                          That is what keeps a full-coverage run inside the
+                          database quota and comfortable on serverless.
+                        */}
                         <input
                           type="range"
-                          min={1}
+                          min={0.1}
                           max={10}
-                          step={1}
+                          step={0.1}
                           value={simVoters}
                           onChange={(e) => {
                             const v = Number(e.target.value);
@@ -1375,7 +1383,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-1">
-                        Actual votes written to the DB (kept small for the DB quota)
+                        0.1M–10M real votes written to the DB. Keep this small and raise Display Voters instead — the site multiplies, so big national numbers never need big rows on disk.
                       </div>
                     </div>
                     <div className="p-3 border border-[var(--color-gray-200)]">

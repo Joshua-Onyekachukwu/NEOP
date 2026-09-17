@@ -57,14 +57,23 @@ const SimulationTicker: React.FC = () => {
         if (!res.ok) return;
         const config = await res.json();
 
-        const isRunning = config.display_status === "SIMULATION" || config.status === "RUNNING";
+        const simMode = config.display_status === "SIMULATION" || config.status === "RUNNING";
+
+        // SIMULATED mode keeps its result dataset on the site after a run
+        // finishes, so config alone cannot tell us whether a run is live.
+        // The ledger's run status is authoritative: this strip is a progress
+        // indicator for an *active* run, never a completed one.
+        let stats: any = null;
+        if (simMode) {
+          const statsRes = await fetch("/api/public/stats");
+          if (statsRes.ok) stats = await statsRes.json();
+        }
+        const isRunning = simMode && stats?.sim_run_status === "RUNNING";
 
         if (isRunning) {
           setVisible(true);
 
-          const statsRes = await fetch("/api/public/stats");
-          if (statsRes.ok) {
-            const stats = await statsRes.json();
+          if (stats) {
 
             // Ledger counters (migration 245) are authoritative while a
             // run exists. With no active run the site must still show a

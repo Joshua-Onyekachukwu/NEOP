@@ -154,16 +154,69 @@ npm run build:web && cd apps/web && npx next start -p 3000
 # 3. Log in as admin and grab a session token (see NEOP_ADMIN_* in .env.local)
 #    POST {NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password
 
-# 4. Launch (from repo root)
+# 4. Launch (from repo root).
+#    target_voters = what the DB stores; display_voters = what the site
+#    renders. The engine derives display_multiplier from the ratio, so
+#    a small real dataset can render a big national total.
 curl -X POST http://localhost:3000/api/admin/simulate/trigger-v2 \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"target_voters":300000,"duration_minutes":10,"coverage_pct":8,"display_multiplier":10}'
+  -d '{"target_voters":300000,"display_voters":30000000,"duration_minutes":10,"coverage_pct":100,"scenario":"close","max_published_pct":0.78}'
 
-# 5. Drive it (or just browse the site — traffic pumps the queue)
-curl -X POST http://localhost:3000/api/admin/simulate/tick -H "x-cron-secret: $CRON_SECRET"
+# 5. Drive it. `Authorization: Bearer $CRON_SECRET` is the cron path.
+curl -X POST http://localhost:3000/api/admin/simulate/tick?max=1 \
+  -H "Authorization: Bearer $CRON_SECRET"
 
 # Full automated lifecycle test with assertions:
 node _scripts/e2e-sim-test.mjs
+```
+
+#### Driving the queue reliably
+
+```bash
+# Serial pump against a long-lived server (no serverless time cap).
+# Run this instead of hand-calling /tick when a run must finish.
+bash _scripts/local-pump.sh http://localhost:3000 1
+```
+
+Three hard limits shape how a run must be driven. **Every queue step has to
+finish inside all three**, or it is marked FAILED and its slice of polling
+units never publishes:
+
+| Limit | Value | Where it comes from |
+|---|---|---|
+| Function `statement_timeout` | 60–300s | per-function, migration 257 |
+| API gateway | ~120s | Supabase PostgREST request ceiling |
+| Serverless invocation | ~60s | Vercel `maxDuration` on `/api/admin/simulate/tick` |
+
+Consequences worth remembering:
+
+- **One step per tick.** Claiming many heavy wave steps at once (`max=10`)
+  makes them contend for the same rows and the database starts cancelling
+  them with `statement timeout`. The pump therefore defaults to `max=1`.
+- **Full coverage is genuinely heavy.** 100% coverage means all 176,846 polling
+  units get a ledger row and ~141k of them publish. That is hours of database
+  work on the Free plan, so keep `target_voters` small and let
+  `display_voters` do the scaling.
+- **Chunk size is the knob for step duration.** `sim_run_steps.chunk_count`
+  controls how many slices a wave is split into; more, smaller slices fit
+  inside the gateway limit where fewer, larger ones time out.
+- A step that does time out can be re-queued safely — every step is
+  idempotent. Reset it and let the pump pick it up again:
+
+```sql
+update sim_run_steps set status='PENDING', attempts=0, claimed_at=null,
+       finished_at=null
+ where run_id = '<run uuid>' and status='FAILED';
+select reclaim_stale_steps(0);   -- release steps whose worker died
+```
+
+If it is specifically the last LEDGER step that keeps failing, its expensive
+half is the whole-universe outcome assignment. That one call can be made
+directly (and then the step marked DONE), which unblocks every wave step —
+they publish nothing until outcomes exist:
+
+```bash
+node _scripts/assign-outcomes.mjs <run uuid> 100
 ```
 
 Note: the middleware rate-limits `/api/admin/simulate/*`; valid `CRON_SECRET` and admin-session requests are exempt. Local Node on Windows may exit with a libuv teardown crash after success — check the log tail, not the exit code.
