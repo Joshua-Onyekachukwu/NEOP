@@ -182,7 +182,7 @@ const AgentDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen">
+      <div className="min-h-dvh">
         <header className="border-b border-[var(--color-gray-100)] px-4 py-3">
           <div className="max-w-lg mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -213,7 +213,7 @@ const AgentDashboard: React.FC = () => {
 
   if (!status) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <div className="font-mono text-sm text-[var(--color-text-dim)]">Failed to load status</div>
       </div>
     );
@@ -229,7 +229,7 @@ const AgentDashboard: React.FC = () => {
   const isPending = latestSubmission?.status === "UNVERIFIED";
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* Offline banner */}
       {!isOnline && (
         <div className="bg-[var(--color-red)] text-white text-center py-2 text-xs font-mono">

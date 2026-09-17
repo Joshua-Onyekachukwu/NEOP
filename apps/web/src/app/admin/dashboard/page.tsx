@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { waitForSession } from "@/lib/auth-helpers";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import ExportPanel from "@/components/live/ExportPanel";
 import SimulationHistory from "@/components/admin/SimulationHistory";
 import SimulationLifecycle from "@/components/admin/SimulationLifecycle";
@@ -89,6 +90,9 @@ const AdminDashboard: React.FC = () => {
     disc_rate: 0.05,
   });
   const [resolveOpen, setResolveOpen] = useState<any>(null);
+  // The discrepancy dialog is a full-screen overlay: lock the page behind it
+  // (the hook always restores scrolling on close/unmount).
+  useBodyScrollLock(Boolean(resolveOpen));
   const [resolveDecision, setResolveDecision] = useState<string>("ACCEPT_AGENT_1");
   const [resolveReason, setResolveReason] = useState<string>("");
   const [resolveManualValues, setResolveManualValues] = useState<any>({
@@ -563,7 +567,7 @@ const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* Header */}
       <header className="border-b border-[var(--color-gray-100)] px-4 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -582,8 +586,11 @@ const AdminDashboard: React.FC = () => {
       </header>
 
       {/* Tabs */}
-      <nav className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-6xl mx-auto flex overflow-x-auto scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+      <nav className="border-b border-[var(--color-gray-100)] overflow-x-auto scrollbar-hide">
+        {/* Edge gutters live on a non-scrolling inner wrapper: padding on the
+            scroll container itself would clip the first/last tab's focus ring
+            and keep its padding from participating in the scroll length. */}
+        <div className="max-w-6xl mx-auto flex px-4 md:px-0 min-w-max">
           {tabs.map((t) => (
             <button key={t} onClick={() => setActiveTab(t)} className={`flex-shrink-0 px-3 py-3 font-mono text-[11px] border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${
               activeTab === t ? "border-[var(--color-green)] text-[var(--color-green-bright)]" : "border-transparent text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]"
@@ -642,7 +649,9 @@ const AdminDashboard: React.FC = () => {
                     {(systemConfig?.data_mode || "AWAITING_DATA").replace(/_/g, " ")}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 mb-3">
+                {/* Stacked on phones: three mode buttons side by side squeezed
+                    their labels into ~90px each. */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
                   {[
                     { key: "AWAITING_DATA", label: "AWAITING DATA", cls: "border-[var(--color-gray-200)] text-[var(--color-text-dim)] hover:border-[var(--color-text-dim)]" },
                     { key: "SIMULATED", label: "SIMULATED", cls: "border-[var(--color-amber)]/50 text-[var(--color-amber)] hover:border-[var(--color-amber)]" },
@@ -808,8 +817,12 @@ const AdminDashboard: React.FC = () => {
                   )}
                 </div>
                 {resolveOpen && (
-                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setResolveOpen(null)}>
-                    <div className="bg-[var(--color-ink)] border border-[var(--color-gray-200)] max-w-lg w-full max-h-[85vh] overflow-y-auto p-4" onClick={(e) => e.stopPropagation()}>
+                  /* z-[60] keeps the dialog above the fixed navbar (z-50).
+                     The panel is height-capped and scrolls internally, so a
+                     long form stays reachable on a phone and the close
+                     control is never pushed off screen. */
+                  <div className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-[60] p-4 overflow-y-auto" onClick={() => setResolveOpen(null)}>
+                    <div className="bg-[var(--color-ink)] border border-[var(--color-gray-200)] max-w-lg w-full my-auto max-h-[85dvh] overflow-y-auto p-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-between mb-3">
                         <h3 className="font-display font-bold text-sm text-[var(--color-text)]">Resolve Discrepancy</h3>
                         <button onClick={() => setResolveOpen(null)} className="font-mono text-xs text-[var(--color-text-dim)]">✕ CLOSE</button>

@@ -10,7 +10,7 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <div className="min-h-screen bg-[var(--color-ink)] flex items-center justify-center p-6">
+    <div className="min-h-dvh bg-[var(--color-ink)] flex items-center justify-center p-6">
       <div className="text-center max-w-md">
         <div className="text-5xl mb-4">⚠️</div>
         <h1 className="text-xl font-bold text-[var(--color-text)] mb-2 font-display">

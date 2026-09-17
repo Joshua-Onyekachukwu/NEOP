@@ -237,7 +237,7 @@ const SubmitResult: React.FC = () => {
 
   if (!assignment) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <div className="text-center">
           <div className="font-mono text-sm text-[var(--color-text-dim)] mb-2">No active assignment</div>
           <Link href="/agent/dashboard" className="font-mono text-xs text-[var(--color-green)]">← Back to dashboard</Link>
@@ -247,7 +247,7 @@ const SubmitResult: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* Header */}
       <header className="border-b border-[var(--color-gray-100)] px-4 py-3">
         <div className="max-w-lg mx-auto flex items-center gap-3">

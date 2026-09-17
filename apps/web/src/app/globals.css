@@ -58,6 +58,28 @@
   /* Shadows */
   --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-glow: 0 0 20px rgba(27,107,58,0.15);
+
+  /* ── Spacing scale (single source of truth) ──
+     4px base; every margin/padding in the live site should come from here
+     rather than one-off arbitrary values, so vertical rhythm stays even. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Page-level rhythm. Sections must breathe: the previous 16px mobile /
+     20px desktop gaps made unrelated blocks collide. */
+  --section-py: var(--space-6);
+  --gutter: var(--space-4);
+  --section-gap: var(--space-5);
+  --container-max: 1400px;
+  /* Height of the fixed navbar + sticky section nav, so sticky offsets and
+     scroll-margins stay in step with the real chrome. */
+  --chrome-height: 104px;
 }
 
 /** Body — newsroom dark as default */
@@ -240,23 +262,36 @@ button {
   h2, .h2 {
     font-size: 20px;
   }
-  /* Larger touch targets on mobile */
-  a, button {
+  /* Comfortable touch targets for real controls only.
+     A blanket `a, button { min-height: 44px }` also inflated dense table
+     rows, map toolbars, chips and horizontal strips, which made those
+     layouts jump and collide on phones. Dense controls opt out via
+     .tap-sm (or by living inside a table / scroll strip). */
+  button,
+  a.btn,
+  [role="button"] {
     min-height: 44px;
+  }
+  table button,
+  table a,
+  .tap-sm,
+  .tap-sm button,
+  .scrollbar-none button,
+  .scrollbar-none a,
+  .scroll-panel button {
+    min-height: 0;
   }
   /* Prevent horizontal overflow on tables */
   table {
     font-size: 11px;
   }
-  /* Stack grid sections on mobile */
-  section .grid.grid-cols-1.lg\:grid-cols-2 > div:first-child {
-    border-right: none !important;
-    border-bottom: 1px solid var(--color-gray-100);
-  }
-  /* Reduce padding on mobile */
-  .max-w-6xl {
-    padding-left: 12px;
-    padding-right: 12px;
+}
+
+/* Stacked side-by-side panels: drop the desktop divider so the stacked
+   blocks are separated by a border rather than a dangling right edge. */
+@media (max-width: 1023px) {
+  .split-panels > * + * {
+    border-top: 1px solid var(--color-gray-100);
   }
 }
 
@@ -310,7 +345,57 @@ button {
   }
 }
 
-/* ── Hide scrollbar for tab navigation ── */
+/* ─────────────────────────────────────────────────────────────
+   Reusable layout primitives
+   ───────────────────────────────────────────────────────────── */
+
+/* Consistent page gutter + max width. Every major section uses this so
+   content never runs edge-to-edge on mobile or stretches on a 1920px
+   display. */
+.container-x {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* Vertical rhythm between major page sections. */
+.section-py {
+  padding-block: var(--section-py);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --section-py: var(--space-7);
+    --gutter: var(--space-5);
+    --section-gap: var(--space-6);
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --section-py: 56px;
+  }
+}
+
+/* A contained scroll area, used ONLY at lg and above where the panels sit
+   side by side (a familiar dashboard pane with its own scrollbar).
+   Below lg the cap is removed entirely and the page scrolls as one document,
+   so a phone user is never trapped in a fixed-height box.
+   overscroll-behavior is intentionally left at the default: reaching the end
+   of the list hands scrolling straight back to the page. */
+.scroll-panel {
+  position: relative;
+}
+
+@media (min-width: 1024px) {
+  .scroll-panel {
+    max-height: min(70vh, 640px);
+    overflow-y: auto;
+  }
+}
+
+/* Hide scrollbar for tab navigation */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;

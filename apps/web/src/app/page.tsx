@@ -121,7 +121,7 @@ const HomePage: React.FC = () => {
   const glowClass = config.display_status === "LIVE" ? "glow-live" : config.display_status === "SIMULATION" ? "glow-simulation" : "glow-waiting";
 
   return (
-    <div className="min-h-screen pt-[56px]">
+    <div className="min-h-dvh pt-[56px]">
       <main id="main-content">
       {/* Disclaimer */}
       <Disclaimer />
@@ -134,7 +134,7 @@ const HomePage: React.FC = () => {
 
       {/* Hero */}
       <section className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px] md:py-[48px]">
+        <div className="container-x py-[24px] md:py-[48px]">
           <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-[16px] md:gap-[24px]">
             <div>
               <div className="flex items-center gap-[10px] mb-[8px]">
@@ -182,16 +182,16 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Stats row */}
-      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
+      <section className="border-b border-[var(--color-gray-100)] section-py">
+        <div className="container-x">
           <StatsBar refreshKey={refreshKey} />
         </div>
       </section>
 
       {/* Map + Feed */}
-      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
+      <section className="border-b border-[var(--color-gray-100)] section-py">
+        <div className="container-x">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0 split-panels">
             <div id="section-map" className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
               <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
                 <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
@@ -208,13 +208,18 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* State Breakdown + Party Results */}
-      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
-            <div id="section-states" className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
+      <section className="border-b border-[var(--color-gray-100)] section-py">
+        <div className="container-x">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0 split-panels">
+            {/* Below lg these two are stacked, so a fixed-height inner scroll
+                would trap the user in a 600px box inside the page scroll.
+                .scroll-panel only caps height from lg up (migration: the
+                previous unconditional max-h-[600px] held back 2,036px of
+                state rows on a 320px phone). */}
+            <div id="section-states" className="scroll-panel border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)]">
               <StateTable refreshKey={refreshKey} />
             </div>
-            <div id="section-leaderboard" className="max-h-[600px] overflow-y-auto">
+            <div id="section-leaderboard" className="scroll-panel">
               <PartyResults refreshKey={refreshKey} />
             </div>
           </div>
@@ -222,26 +227,26 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Disruptions & Incidents Feed */}
-      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
-        <div className="max-w-[1400px] mx-auto">
+      <section className="border-b border-[var(--color-gray-100)] section-py">
+        <div className="container-x">
           <DisruptionFeed refreshKey={refreshKey} />
         </div>
       </section>
 
       {/* Export Results */}
-      <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
+      <section className="border-b border-[var(--color-gray-100)] section-py">
+        <div className="container-x">
           <ExportPanel variant="public" />
         </div>
       </section>
 
       {/* Methodology */}
       <section id="methodology" className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
+        <div className="container-x section-py">
           <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[24px]">
             How We Collect Data
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[16px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[16px] md:gap-[24px]">
             {[
               { step: "01", title: "Recruit & Verify", desc: "Volunteers register, verify their identity, and are confirmed as qualified observers.", icon: "📋" },
               { step: "02", title: "Train & Assign", desc: "Volunteers complete mandatory training. Each is assigned to a specific polling unit.", icon: "🎓" },
@@ -272,11 +277,11 @@ const HomePage: React.FC = () => {
 
       {/* Limitations */}
       <section className="border-b border-[var(--color-gray-100)]">
-        <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[32px] md:py-[40px]">
+        <div className="container-x section-py">
           <h2 className="font-display font-bold text-xl md:text-2xl text-[var(--color-text)] mb-[16px]">
             Our Limitations
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-[16px]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-[16px] md:gap-[24px]">
             {[
               { title: "Coverage Gaps", desc: "We cannot guarantee coverage of every polling unit. Some areas may be inaccessible due to security concerns, logistical challenges, or other factors." },
               { title: "Not Official Results", desc: "We do not determine official results. Official election results are declared by INEC. Our platform provides independent, parallel observation to complement — not replace — the official process." },

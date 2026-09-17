@@ -182,7 +182,7 @@ const Onboarding: React.FC = () => {
   // ─── Render: Module List ─────────────────────────
   if (view === "module-list") {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="min-h-dvh bg-[var(--color-bg)]">
         <Header
           progress={globalProgress}
           completed={completedModules.length}
@@ -280,7 +280,7 @@ const Onboarding: React.FC = () => {
     const scenarioAnswer = scenarioAnswered[scenarioKey];
 
     return (
-      <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="min-h-dvh bg-[var(--color-bg)]">
         <Header
           progress={globalProgress}
           completed={completedModules.length}
@@ -416,7 +416,7 @@ const Onboarding: React.FC = () => {
   // ─── Render: Quiz View ───────────────────────────
   if (view === "quiz" && currentModule) {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="min-h-dvh bg-[var(--color-bg)]">
         <Header
           progress={globalProgress}
           completed={completedModules.length}
@@ -544,7 +544,7 @@ const Onboarding: React.FC = () => {
   // ─── Render: Results / All Complete ──────────────
   if (view === "results") {
     return (
-      <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="min-h-dvh bg-[var(--color-bg)]">
         <Header progress={100} completed={TRAINING_MODULES.length} total={TRAINING_MODULES.length} />
         <div className="max-w-[640px] mx-auto px-4 py-6">
           <div className="text-center mb-6">

@@ -64,7 +64,7 @@ const Navbar: React.FC = () => {
           : "bg-[var(--color-ink)]/90 backdrop-blur-sm"
       }`}
     >
-      <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
+      <div className="container-x">
         <div className="flex items-center justify-between h-[56px]">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-[8px]">
@@ -169,7 +169,10 @@ const Navbar: React.FC = () => {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden pb-[16px] border-t border-[var(--color-gray-100)] bg-[var(--color-ink)]">
+          /* Capped to the viewport so a long menu (agent + admin links) can
+             never run off the bottom of a small screen; it scrolls within
+             itself only if it has to. */
+          <div className="md:hidden pb-[16px] border-t border-[var(--color-gray-100)] bg-[var(--color-ink)] max-h-[calc(100dvh-56px)] overflow-y-auto">
             {/* Live link — always first */}
             <Link
               href="/"

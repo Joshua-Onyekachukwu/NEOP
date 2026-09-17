@@ -33,6 +33,12 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [lastUpdate, setLastUpdate] = useState("");
   const [loading, setLoading] = useState(true);
   const seenCanonicalIds = useRef<Set<string>>(new Set());
+  // Progressive disclosure: the API returns up to 50 rich rows, which is a
+  // ~6,000px wall on a phone. Rendering a pageful at a time keeps the section
+  // from capturing the whole viewport, and the button hands control back to
+  // the reader instead of burying the rest of the page.
+  const VISIBLE_STEP = 12;
+  const [visible, setVisible] = useState(VISIBLE_STEP);
 
   useEffect(() => {
     fetchResults();
@@ -147,8 +153,11 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       </div>
 
       {/* Results */}
+      {/* Below lg the list grows with the page (no nested scroll trap); at lg
+          and above — where this panel sits beside the map — it becomes a
+          bounded pane so the two columns stay comparable in height. */}
       <div
-        className="flex-1 overflow-y-auto max-h-[600px]"
+        className="flex-1 scroll-panel"
         aria-live="polite"
         aria-label="Latest election results"
       >
@@ -162,7 +171,7 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
             </div>
           </div>
         ) : (
-          results.map((result) => (
+          results.slice(0, visible).map((result) => (
             <div
               key={result.id}
               className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] hover:bg-[var(--color-ink-light)] transition-colors"
@@ -235,6 +244,15 @@ const ResultFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
               ) : null}
             </div>
           ))
+        )}
+
+        {results.length > visible && (
+          <button
+            onClick={() => setVisible((v) => v + VISIBLE_STEP)}
+            className="w-full py-[14px] border-t border-[var(--color-gray-100)] font-mono text-xs text-[var(--color-green-bright)] hover:bg-[var(--color-ink-light)] transition-colors"
+          >
+            SHOW MORE RESULTS ({results.length - visible} more)
+          </button>
         )}
       </div>
     </div>

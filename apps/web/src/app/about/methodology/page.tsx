@@ -5,7 +5,7 @@ import Link from "next/link";
 
 const Methodology: React.FC = () => {
   return (
-    <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#0a0e19] py-[40px]">
+    <div className="min-h-dvh bg-[#f8f9fa] dark:bg-[#0a0e19] py-[40px]">
       <div className="container mx-auto px-[12px] max-w-[800px]">
         <h1 className="text-3xl font-bold text-[#06201B] dark:text-white mb-[30px]">
           Our Methodology

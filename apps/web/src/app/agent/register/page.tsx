@@ -214,7 +214,7 @@ const AgentRegister: React.FC = () => {
   const selectedWardInfo = wards.find(w => w.id === selectedWard);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8">
+    <div className="min-h-dvh flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-6 text-center">

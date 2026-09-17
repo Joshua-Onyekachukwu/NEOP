@@ -40,7 +40,7 @@ const AgentSafety: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <header className="border-b border-[var(--color-gray-100)] px-4 py-3">
         <div className="max-w-lg mx-auto flex items-center gap-3">
           <button onClick={() => router.push("/agent/dashboard")} className="font-mono text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)]">← Back</button>

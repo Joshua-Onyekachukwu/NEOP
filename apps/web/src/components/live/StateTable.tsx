@@ -15,8 +15,12 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   return (
     <div>
-      {/* Header */}
-      <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] sticky top-0 bg-[var(--color-ink)] z-10">
+      {/* Header.
+          Sticky ONLY from lg up: there the table lives inside its own scroll
+          panel, so `top-0` pins it to the panel. Below lg the panel is gone
+          and the page scrolls, which would make it stick under the fixed
+          navbar (top-0) and collide with the quick-jump bar. */}
+      <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)] lg:sticky lg:top-0 bg-[var(--color-ink)] z-10">
         <div className="flex items-center justify-between">
           <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
             STATE BREAKDOWN
@@ -34,8 +38,11 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           Derived from polling-unit canonical results — same source as the national totals.
         </div>
       </div>
+      {/* Only the TABLE scrolls horizontally when it must; the page never
+          does. min-width is kept just above the 320px content box so a phone
+          rarely needs the horizontal scroll at all. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[320px]">
+        <table className="w-full min-w-[280px]">
           <thead>
             <tr className="border-b border-[var(--color-gray-100)]">
               <th className="px-[16px] md:px-[24px] py-[8px] text-left font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">

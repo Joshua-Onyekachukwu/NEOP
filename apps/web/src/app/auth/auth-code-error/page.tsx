@@ -9,7 +9,7 @@ const AuthCodeErrorContent: React.FC = () => {
   const error = searchParams?.get("error") || "Unknown error";
 
   return (
-    <div className="min-h-screen bg-[var(--color-ink)] flex items-center justify-center p-[20px]">
+    <div className="min-h-dvh bg-[var(--color-ink)] flex items-center justify-center p-[20px]">
       <div className="text-center max-w-[400px]">
         <div className="text-5xl mb-[20px]">⚠️</div>
         <h1 className="text-xl font-bold text-[var(--color-text)] mb-[10px]">
@@ -35,7 +35,7 @@ const AuthCodeErrorContent: React.FC = () => {
 const AuthCodeError: React.FC = () => {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[var(--color-ink)] flex items-center justify-center">
+      <div className="min-h-dvh bg-[var(--color-ink)] flex items-center justify-center">
         <div className="font-mono text-sm text-[var(--color-text-dim)]">Loading…</div>
       </div>
     }>

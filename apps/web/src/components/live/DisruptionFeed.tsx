@@ -151,8 +151,9 @@ const DisruptionFeed: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         )}
       </div>
 
-      {/* Incident list */}
-      <div className="flex-1 overflow-y-auto max-h-[500px]">
+      {/* Incident list — unbounded below lg so the page scrolls as one;
+          a bounded pane only on wide screens (see .scroll-panel). */}
+      <div className="flex-1 scroll-panel">
         {displayDisruptions.map((d) => (
           <div
             key={d.id}

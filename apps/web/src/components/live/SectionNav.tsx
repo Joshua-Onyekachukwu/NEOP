@@ -4,19 +4,24 @@
  * SectionNav — sticky quick-jump bar for the live-results page.
  *
  * Lets users jump straight to Map / Feed / Leaderboard / State Breakdown.
- * - Sticky directly under the main navbar (56px), horizontally scrollable
- *   on small screens.
+ * - Sticky directly under the main navbar (56px).
  * - Active section tracked with an IntersectionObserver; clicking smooth-
- *   scrolls to the target (targets carry scroll-margin via CSS below).
+ *   scrolls to the target with an explicit offset.
+ *
+ * Each item carries a short label below sm: with the full words the strip
+ * needed ~380px, so a 320px phone had to swipe the bar horizontally to reach
+ * "State Breakdown". The compact labels fit in one row, so nothing is hidden
+ * behind a horizontal gesture any more. (overflow-x-auto stays as a safety
+ * net for very large text / zoom levels.)
  */
 
 import React, { useEffect, useState, useCallback } from "react";
 
 const SECTIONS = [
-  { id: "section-map", label: "Map" },
-  { id: "section-feed", label: "Feed" },
-  { id: "section-leaderboard", label: "Leaderboard" },
-  { id: "section-states", label: "State Breakdown" },
+  { id: "section-map", label: "Map", short: "Map" },
+  { id: "section-feed", label: "Feed", short: "Feed" },
+  { id: "section-leaderboard", label: "Leaderboard", short: "Parties" },
+  { id: "section-states", label: "State Breakdown", short: "States" },
 ] as const;
 
 const SectionNav: React.FC = () => {
@@ -64,8 +69,8 @@ const SectionNav: React.FC = () => {
       aria-label="Jump to section"
       className="sticky top-[56px] z-40 bg-[var(--color-ink)]/95 backdrop-blur-sm border-b border-[var(--color-gray-100)]"
     >
-      <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px]">
-        <div className="flex items-center gap-[4px] overflow-x-auto scrollbar-none py-[6px]">
+      <div className="container-x">
+        <div className="flex items-center justify-start gap-[4px] overflow-x-auto scrollbar-none py-[6px]">
           {SECTIONS.map((s) => {
             const isActive = active === s.id;
             return (
@@ -79,7 +84,8 @@ const SectionNav: React.FC = () => {
                     : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-ink-light)]"
                 }`}
               >
-                {s.label}
+                <span className="sm:hidden">{s.short}</span>
+                <span className="hidden sm:inline">{s.label}</span>
               </button>
             );
           })}

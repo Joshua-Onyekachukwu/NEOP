@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { subscribePublishedResults, createIdDedupe } from "@/lib/realtime";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useRealtimeData } from "@/components/live/RealtimeLayer";
 
 interface LGAMarker {
@@ -74,6 +75,12 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     };
   }, [isFullscreen]);
 
+  // While the map covers the viewport, the page behind it must not scroll.
+  // The shared hook restores the previous styles on exit and on unmount, so
+  // closing full screen (button, Escape, or a route change) can never leave
+  // the document unscrollable.
+  useBodyScrollLock(isFullscreen);
+
   useEffect(() => {
     if (mapContainer.current && !map.current) {
       initMap();
@@ -134,6 +141,11 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       zoom: 6,
       minZoom: 5,
       maxZoom: 18,
+      // Cooperative gestures: on touch devices a ONE-finger swipe scrolls the
+      // page as the user expects, and the map is panned with two fingers.
+      // Without this the map swallowed page scrolling on mobile, which is one
+      // of the ways the page felt "stuck".
+      cooperativeGestures: true,
     });
 
     map.current.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -409,7 +421,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         className={
           isFullscreen
             ? "w-full h-full"
-            : "w-full h-[400px] md:h-[500px] overflow-hidden border border-[var(--color-gray-100)]"
+            : "w-full h-[320px] sm:h-[420px] md:h-[500px] overflow-hidden border border-[var(--color-gray-100)]"
         }  role="application"
         aria-label="Interactive map showing polling unit locations across Nigeria. Click a point for details."
       />
@@ -461,9 +473,12 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
         </>
       )}
 
-      {/* Map legend — 5 statuses */}
-      <div className="absolute bottom-3 left-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-2 font-mono text-[9px] space-y-0.5">
-        <div className="flex items-center gap-1.5 mb-0.5">
+      {/* Map legend — 5 statuses.
+          Below md it sits UNDER the map instead of on top of it: a 6-row
+          legend pinned to the corner of a 320px-wide map swallowed a large
+          part of the canvas. From md up it overlays the map as before. */}
+      <div className="static mt-[8px] grid grid-cols-2 gap-x-[12px] gap-y-[2px] md:mt-0 md:block md:absolute md:bottom-3 md:left-3 md:z-20 md:space-y-0.5 bg-[var(--color-ink)]/95 md:bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] p-2 font-mono text-[9px]">
+        <div className="flex items-center gap-1.5 mb-0.5 col-span-2 md:col-span-1">
           <span className="text-[var(--color-text-muted)]">LIVE •</span>
           <span className="text-[var(--color-text)]">{totalPU}</span>
           <span className="text-[var(--color-text-muted)]">LGAs</span>
@@ -494,9 +509,11 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
 
   // Popup for selected LGA
   const popup = selectedPU && (
-    <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center">
+    <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center p-[12px]">
+      {/* w-full + a clamped max-width keeps the detail card inside the map on
+          a 320px screen instead of spilling past it. */}
       <div
-        className="bg-[var(--color-ink)] border border-[var(--color-gray-100)] p-3 max-w-xs pointer-events-auto font-mono text-xs"
+        className="bg-[var(--color-ink)] border border-[var(--color-gray-100)] p-3 w-full max-w-[min(320px,100%)] pointer-events-auto font-mono text-xs"
         onClick={() => setSelectedPU(null)}
       >
         <div className="font-bold text-[var(--color-text)]">
@@ -532,8 +549,11 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
       {mapShell}
       {popup}
       {/* Live update indicator */}
+      {/* Top-left: the only corner that is free on every breakpoint
+          (centre badge, top-right controls, bottom-left legend,
+          bottom-right scale). */}
       {lastUpdate && (
-        <div className="absolute bottom-3 right-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1 font-mono text-[9px] text-[var(--color-text-muted)]">
+        <div className="absolute top-3 left-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1 font-mono text-[9px] text-[var(--color-text-muted)]">
           Updated {lastUpdate.toLocaleTimeString()}
         </div>
       )}
