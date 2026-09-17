@@ -1,12 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-browser";
 
 const AdminLogin: React.FC = () => {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,40 +16,49 @@ const AdminLogin: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) {
-      setError(authError.message);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setError("Session error"); return; }
+
+      let { data: admin } = await supabase
+        .from("admin_users").select("id").eq("user_id", session.user.id).eq("is_active", true).maybeSingle();
+      if (!admin) {
+        try {
+          const checkRes = await fetch("/api/admin/check-auth", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+          const checkData = await checkRes.json();
+          if (checkData.isAdmin) admin = { id: "server-verified" };
+        } catch { /* server check failed */ }
+      }
+
+      if (!admin) {
+        await supabase.auth.signOut();
+        setError("Not authorized as admin");
+        return;
+      }
+
+      // Hard navigation, not router.push: the edge middleware gates /admin/*
+      // on the sb-<ref>-auth-token cookie, which the browser client mirrors as
+      // soon as a session exists. A real navigation makes the middleware
+      // re-evaluate with that cookie, so the redirect can never be swallowed
+      // back to this page (which previously left the button on "Signing in…").
+      window.location.assign("/admin/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Sign in failed");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setError("Session error"); setLoading(false); return; }
-
-    let { data: admin } = await supabase
-      .from("admin_users").select("id").eq("user_id", session.user.id).eq("is_active", true).single();
-    if (!admin) {
-      try {
-        const checkRes = await fetch("/api/admin/check-auth", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        const checkData = await checkRes.json();
-        if (checkData.isAdmin) admin = { id: "server-verified" };
-      } catch { /* server check failed */ }
-    }
-
-    if (!admin) {
-      await supabase.auth.signOut();
-      setError("Not authorized as admin");
-      setLoading(false);
-      return;
-    }
-
-    router.push("/admin/dashboard");
   };
 
   // ── Google OAuth Login ──
@@ -146,7 +153,7 @@ const AdminLogin: React.FC = () => {
 
         <div className="mt-6 text-center">
           <Link href="/" className="font-mono text-[10px] text-[var(--color-text-dim)] hover:text-[var(--color-text-muted)] transition-colors">
-            ← Back to dashboard
+            ← Back to site
           </Link>
         </div>
       </div>
