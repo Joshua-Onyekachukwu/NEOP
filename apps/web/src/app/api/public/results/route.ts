@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
           has_prev: !!cached.pagination?.has_prev,
         },
         disclaimer: DISCLAIMER,
-        source: cached.source || "supabase",
+        source: cached.source || "live",
         refreshed_at: cached.refreshed_at || new Date().toISOString(),
       },
       {

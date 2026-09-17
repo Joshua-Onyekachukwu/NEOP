@@ -12,14 +12,28 @@ export interface Party {
   color: string;
 }
 
+/**
+ * Palette rule (product requirement): no two parties may share a colour
+ * family, so a viewer can identify any party at a glance on the dark
+ * leaderboard, the map legend and the state table. Nine parties therefore
+ * occupy nine well-separated hues:
+ *
+ *   NDC white · APC green · PDP navy · LP red · NNPP orange
+ *   APGA yellow · SDP sky blue · ADC teal · YPP violet
+ *
+ * NNPP previously shared red with LP (#E53935 vs #FF0000) and SDP shared
+ * blue with PDP navy (#1565C0 vs #000080); both were indistinguishable at
+ * swatch size. Keep this list and public.parties.color in lock-step —
+ * migration 259 carries the same values for fresh environments.
+ */
 export const PARTIES: Party[] = [
   { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#FFFFFF" },
   { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#00A859" },
   { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#000080" },
   { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF0000" },
-  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#E53935" },
+  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#FF6D00" },
   { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#FFD600" },
-  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#1565C0" },
+  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#00B0FF" },
   { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#6A1B9A" },
   { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#00838F" },
 ];

@@ -132,22 +132,20 @@ export const getCachedStats = unstable_cache(
               totalPU || totalPUCount;
 
             // ── SIMULATED display scaling (user-approved architecture) ──
-            // The backend stores a reduced dataset (disk quota); the public
-            // site renders the election-day-scale numbers. A "reporting
-            // extrapolation" converts engine-scope outcomes to the full
-            // universe: a PU outside engine scope behaves statistically
-            // like the in-scope population, so the published/disputed/...
-            // counters scale by universe/scope while AWAITING absorbs the
-            // difference. LIVE mode is never scaled.
-            const dispMult = await getDisplayScale();
-            const scopeScale =
-              ledgerActive && Number(ledger.scope_pus ?? 0) > 0
-                ? Number(ledger.total_pus ?? 0) / Number(ledger.scope_pus)
-                : 1;
-            const scaleLedger = (v: any) =>
-              ledgerActive && dispMult > 1
-                ? Math.round(Number(v ?? 0) * scopeScale)
-                : Number(v ?? 0);
+            // Only VOTE MAGNITUDES are display-scaled: the engine stores a
+            // reduced dataset (disk quota) and the public site renders
+            // election-day-scale totals, so every vote figure the user sees
+            // is the stored figure × display_multiplier (LIVE mode: ×1).
+            //
+            // POLLING-UNIT COUNTERS ARE NEVER EXTRAPOLATED. An earlier
+            // version multiplied the ledger's published/disputed/... counts
+            // by universe/scope, which made the banner claim 146,291
+            // published PUs while the same payload reported 32,188 verified
+            // results and 18.2% reporting — three answers to one question.
+            // The ledger already sums to the exact PU universe (the AWAITING
+            // remainder absorbs every unreported unit), so the real counts
+            // are also the complete ones.
+            const scaleLedger = (v: any) => Number(v ?? 0);
 
             let mergedStates: any[] = states;
             if (ledgerActive && Array.isArray(ledger.state_breakdown) && ledger.state_breakdown.length > 0) {
@@ -159,8 +157,9 @@ export const getCachedStats = unstable_cache(
                 if (!c) return s;
                 return {
                   ...s,
-                  // Ledger coverage columns (full universe per state),
-                  // display-scaled the same way as the national counters
+                  // Ledger coverage columns: REAL per-state counts (the
+                  // ledger accounts for every PU in the universe, so no
+                  // extrapolation is needed or wanted).
                   published: scaleLedger(c.published),
                   disputed: scaleLedger(c.disputed),
                   failed: scaleLedger(c.failed),
@@ -173,8 +172,8 @@ export const getCachedStats = unstable_cache(
               });
             }
 
-            // Awaiting absorbs the extrapolation so counters still sum
-            // to the exact universe.
+            // AWAITING is the remainder, so the counters always sum to the
+            // exact PU universe (176,846).
             const scaledAwaiting = ledgerActive
               ? Math.max(
                   0,
@@ -214,7 +213,7 @@ export const getCachedStats = unstable_cache(
               verification_percent: covered > 0 ? Number(((verified / covered) * 100).toFixed(1)) : 0,
               last_updated: sum.generated_at || new Date().toISOString(),
               disclaimer: "These are independently collected field observations and are not official INEC election results.",
-              source: "supabase" as const,
+              source: "live" as const,
             };
           }
         } catch {}
@@ -339,7 +338,7 @@ export const getCachedStats = unstable_cache(
           verification_percent: totalCovered > 0 ? Number(((totalVerified / totalCovered) * 100).toFixed(1)) : (totalPUCount > 0 ? Number(((totalVerified / totalPUCount) * 100).toFixed(1)) : 0),
           last_updated: new Date().toISOString(),
           disclaimer: "These are independently collected field observations and are not official INEC election results.",
-          source: "supabase" as const,
+          source: "live" as const,
         };
       })(),
       SB_TIMEOUT_MS,
@@ -382,7 +381,7 @@ export const getCachedStats = unstable_cache(
       last_updated: new Date().toISOString(),
       disclaimer: "These are independently collected field observations and are not official INEC election results.",
       data_status: "UNAVAILABLE" as const,
-      source: "supabase" as const,
+      source: "live" as const,
     };
   },
   ["stats"],
@@ -524,7 +523,7 @@ export const getCachedPartyResults = unstable_cache(
           total_results: totalResults,
           verified_results: verifiedResults,
           last_updated: new Date().toISOString(),
-          source: "supabase" as const,
+          source: "live" as const,
         };
         const m = await getDisplayScale();
         if (m > 1) {
@@ -586,7 +585,7 @@ export const getCachedConfig = unstable_cache(
           display_status: isRunning ? "SIMULATION" : "LIVE",
           status_label: isRunning ? "Simulation Running" : "Live Election Data",
           total_results: data.total_results_submitted || 0,
-          source: "supabase" as const,
+          source: "live" as const,
         };
       })(),
       SB_TIMEOUT_MS,
@@ -606,7 +605,7 @@ export const getCachedConfig = unstable_cache(
       total_results: 0,
       total_published_results: 0,
       data_status: "UNAVAILABLE" as const,
-      source: "supabase" as const,
+      source: "live" as const,
     };
   },
   ["config-v3"],
@@ -648,7 +647,7 @@ export const getCachedPublicResults = unstable_cache(
         const total = Number(count || 0);
 
         if (total === 0) {
-          return { results: [], pagination: { limit, offset, total: 0, has_next: false, has_prev: false }, source: "supabase" as const };
+          return { results: [], pagination: { limit, offset, total: 0, has_next: false, has_prev: false }, source: "live" as const };
         }
 
         const baseQuery = supabase
@@ -774,7 +773,7 @@ export const getCachedPublicResults = unstable_cache(
             has_next: offset + limit < total,
             has_prev: offset > 0,
           },
-          source: "supabase" as const,
+          source: "live" as const,
           refreshed_at: new Date().toISOString(),
         };
       })(),
@@ -812,7 +811,7 @@ export const getCachedPublicDisruptions = unstable_cache(
 
         const total = Number(count || 0);
         if (total === 0) {
-          return { incidents: [], pagination: { limit, offset, total: 0 }, source: "supabase" as const, refreshed_at: new Date().toISOString() };
+          return { incidents: [], pagination: { limit, offset, total: 0 }, source: "live" as const, refreshed_at: new Date().toISOString() };
         }
 
         const { data: rows, error } = await supabase
@@ -845,7 +844,7 @@ export const getCachedPublicDisruptions = unstable_cache(
         return {
           incidents: rows || [],
           pagination: { limit, offset, total, has_next: offset + limit < total, has_prev: offset > 0 },
-          source: "supabase" as const,
+          source: "live" as const,
           refreshed_at: new Date().toISOString(),
         };
       })(),

@@ -265,9 +265,9 @@ const PartyResults: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
     { abbreviation: "APC", name: "All Progressives Congress", color: "#00A859", total_votes: 0, percentage: 0 },
     { abbreviation: "PDP", name: "Peoples Democratic Party", color: "#000080", total_votes: 0, percentage: 0 },
     { abbreviation: "LP", name: "Labour Party", color: "#FF0000", total_votes: 0, percentage: 0 },
-    { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#E53935", total_votes: 0, percentage: 0 },
+    { abbreviation: "NNPP", name: "New Nigeria Peoples Party", color: "#FF6D00", total_votes: 0, percentage: 0 },
     { abbreviation: "APGA", name: "All Progressives Grand Alliance", color: "#FFD600", total_votes: 0, percentage: 0 },
-    { abbreviation: "SDP", name: "Social Democratic Party", color: "#1565C0", total_votes: 0, percentage: 0 },
+    { abbreviation: "SDP", name: "Social Democratic Party", color: "#00B0FF", total_votes: 0, percentage: 0 },
     { abbreviation: "YPP", name: "Young Progressives Party", color: "#6A1B9A", total_votes: 0, percentage: 0 },
     { abbreviation: "ADC", name: "African Democratic Congress", color: "#00838F", total_votes: 0, percentage: 0 },
   ];

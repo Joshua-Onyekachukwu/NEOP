@@ -71,7 +71,12 @@ export async function executeTickSteps(
 
     const step = (Array.isArray(claimed) ? claimed[0] : claimed) as StepRow | null;
 
-    if (!step) {
+    // claim_simulation_step() returns an EMPTY COMPOSITE (every column NULL)
+    // rather than SQL NULL when the queue is drained. Left unchecked that
+    // phantom step failed with "unknown step kind: null", which broke the
+    // pump loop and — worse — skipped finalization, leaving a finished run
+    // marked RUNNING with its lock still held.
+    if (!step || step.id == null || step.kind == null) {
       // Nothing pending. If the active run is out of work, finalize it.
       runFinished = await maybeFinalizeRun(supabase);
       break;

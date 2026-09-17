@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
         summary,
         map_markers: mapMarkers,
         pagination: cached.pagination || { limit, offset: 0, total: rows.length },
-        source: cached.source || "supabase",
+        source: cached.source || "live",
         refreshed_at: cached.refreshed_at || new Date().toISOString(),
         disclaimer: DISCLAIMER,
       },
