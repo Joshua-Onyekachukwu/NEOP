@@ -47,7 +47,7 @@ jobs:
           cd apps/web
           npx vitest run src/lib/realtime.test.ts
 
-      - name: Lint: no hard-coded PU counts in UI
+      - name: "Lint: no hard-coded PU counts in UI"
         run: |
           cd apps/web
           npx vitest run src/lib/no-hardcoded-pu-counts.test.ts
