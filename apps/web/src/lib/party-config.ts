@@ -13,15 +13,15 @@ export interface Party {
 }
 
 export const PARTIES: Party[] = [
-  { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#1B5E20" },
-  { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#1565C0" },
-  { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#B71C1C" },
-  { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF6F00" },
-  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#4A148C" },
-  { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#F9A825" },
-  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#00838F" },
-  { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#AD1457" },
-  { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#37474F" },
+  { id: "ndc", name: "Nigeria Democratic Congress", abbr: "NDC", color: "#FFFFFF" },
+  { id: "apc", name: "All Progressives Congress", abbr: "APC", color: "#00A859" },
+  { id: "pdp", name: "Peoples Democratic Party", abbr: "PDP", color: "#000080" },
+  { id: "lp", name: "Labour Party", abbr: "LP", color: "#FF0000" },
+  { id: "nnpp", name: "New Nigeria Peoples Party", abbr: "NNPP", color: "#E53935" },
+  { id: "apga", name: "All Progressives Grand Alliance", abbr: "APGA", color: "#FFD600" },
+  { id: "sdp", name: "Social Democratic Party", abbr: "SDP", color: "#1565C0" },
+  { id: "ypp", name: "Young Progressives Party", abbr: "YPP", color: "#6A1B9A" },
+  { id: "adc", name: "African Democratic Congress", abbr: "ADC", color: "#00838F" },
 ];
 
 /** National party vote shares by scenario (sums to ~1.0) */

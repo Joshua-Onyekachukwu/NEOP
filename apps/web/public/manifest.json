@@ -1,11 +1,11 @@
 {
-  "name": "Nigeria Election Observer",
-  "short_name": "Election Observer",
+  "name": "NEOP — Nigeria Election Observation Platform",
+  "short_name": "NEOP",
   "description": "Field observation app for election observers",
   "start_url": "/agent/dashboard",
   "display": "standalone",
-  "background_color": "#1e3a5f",
-  "theme_color": "#1e3a5f",
+  "background_color": "#0B1210",
+  "theme_color": "#0B1210",
   "orientation": "portrait",
   "icons": [
     {

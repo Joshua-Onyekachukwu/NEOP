@@ -68,8 +68,15 @@ const Navbar: React.FC = () => {
         <div className="flex items-center justify-between h-[56px]">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-[8px]">
+            <img
+              src="/images/logo-mark-inverse.svg"
+              alt="NEOP"
+              width={24}
+              height={24}
+              className="rounded-[6px]"
+            />
             <span className="font-display font-bold text-base text-[var(--color-text)]">
-              NG<span className="text-[var(--color-green)]">EO</span>
+              NE<span className="text-[var(--color-green)]">O</span>P
             </span>
             {isAdmin && (
               <span className="hidden sm:inline font-mono text-[10px] text-[var(--color-amber)] uppercase tracking-wider">

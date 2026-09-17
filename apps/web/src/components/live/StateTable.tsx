@@ -22,7 +22,7 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
             STATE BREAKDOWN
           </h3>
           <div className="flex items-center gap-[8px]">
-            {source === "supabase" && (
+            {source === "live" && (
               <span className="font-mono text-[9px] text-[var(--color-green-bright)]">● LIVE</span>
             )}
             <span className="font-mono text-[10px] text-[var(--color-text-dim)]">

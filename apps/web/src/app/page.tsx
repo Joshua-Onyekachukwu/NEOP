@@ -92,7 +92,7 @@ const HomePage: React.FC = () => {
     return () => clearInterval(t);
   }, []);
 
-  // Supabase Realtime (central module) — signals authoritative data changed;
+  // Realtime (central module) — signals authoritative data changed;
   // consumers refetch from the central results APIs.
   useEffect(() => {
     return subscribeDashboardEvents({

@@ -406,17 +406,17 @@ const AdminDashboard: React.FC = () => {
     setSimRunning(true);
     setSimError("");
     setSimResult(null);
-    setSimProgress("Starting simulation via Supabase...");
+    setSimProgress("Starting simulation on the backend...");
 
     // Simulate progress messages while the API works
     const progressMessages = [
-      "Querying Supabase for real INEC polling unit hierarchy...",
+      "Querying the INEC polling unit hierarchy...",
       "Distributing voters across states based on population...",
       "Applying regional vote patterns for NDC coalition...",
       "Processing polling units in batches...",
       "Computing party-level vote breakdowns (9 parties)...",
       "Updating live aggregations...",
-      "Simulation running on Supabase (fire-and-forget)...",
+      "Simulation running on the backend (fire-and-forget)...",
     ];
 
     let msgIdx = 0;
@@ -427,7 +427,7 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Use trigger-v2 endpoint — runs via Supabase
+      // Use trigger-v2 endpoint — runs via the results backend
       const res = await fetch("/api/admin/simulate/trigger-v2", {
         method: "POST",
         headers: {
@@ -456,7 +456,7 @@ const AdminDashboard: React.FC = () => {
 
       const data = await res.json();
       // Simulation started — progress bar will poll for updates
-      setSimProgress("Simulation started on Supabase. Monitoring progress...");
+      setSimProgress("Simulation started. Monitoring progress...");
       fetchStats(); // refresh stats
     } catch (e: any) {
       setSimError(e.message || "Network error");

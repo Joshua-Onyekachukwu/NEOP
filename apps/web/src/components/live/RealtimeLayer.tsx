@@ -5,7 +5,7 @@
  *
  * Wraps the live dashboard and provides real-time data via React context.
  * Only renders on the client side (no SSR issues).
- * Polls Supabase REST API every 10 seconds for live data.
+ * Polls the results API every 10 seconds for live data.
  */
 
 import React, {
@@ -60,7 +60,7 @@ interface RealtimeData {
   stats: GlobalStats;
   config: SimConfig;
   states: any[];
-  source: "supabase" | "seeded";
+  source: "live" | "seeded";
   connected: boolean;
 }
 
@@ -194,7 +194,7 @@ export function RealtimeLayer({
       total_results: 0,
     },
     states: restStates,
-    source: restLoaded ? "supabase" : "seeded",
+    source: restLoaded ? "live" : "seeded",
     connected: restLoaded,
   };
 
