@@ -318,3 +318,20 @@ button {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ── SectionNav: hide scrollbar on horizontal quick-jump strip ── */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Scroll-margin so sticky SectionNav + navbar never cover targets ── */
+#section-map,
+#section-feed,
+#section-leaderboard,
+#section-states {
+  scroll-margin-top: 100px;
+}

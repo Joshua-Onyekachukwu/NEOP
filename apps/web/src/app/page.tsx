@@ -8,6 +8,7 @@ import PartyResults from "@/components/live/PartyResults";
 import IncidentBar from "@/components/live/IncidentBar";
 import Disclaimer from "@/components/live/Disclaimer";
 import LiveMap from "@/components/live/LiveMap";
+import SectionNav from "@/components/live/SectionNav";
 import ExportPanel from "@/components/live/ExportPanel";
 import DisruptionFeed from "@/components/live/DisruptionFeed";
 import SimulationTicker from "@/components/live/SimulationTicker";
@@ -128,6 +129,9 @@ const HomePage: React.FC = () => {
       {/* Live Simulation Ticker — shows during simulation */}
       <SimulationTicker />
 
+      {/* Quick-jump section nav (sticky) */}
+      <SectionNav />
+
       {/* Hero */}
       <section className="border-b border-[var(--color-gray-100)]">
         <div className="max-w-[1400px] mx-auto px-[16px] md:px-[24px] py-[24px] md:py-[48px]">
@@ -188,7 +192,7 @@ const HomePage: React.FC = () => {
       <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
-            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
+            <div id="section-map" className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] overflow-hidden">
               <div className="px-[16px] md:px-[24px] py-[12px] border-b border-[var(--color-gray-100)]">
                 <h3 className="font-display font-semibold text-sm text-[var(--color-text-muted)]">
                   NATIONAL MAP
@@ -196,7 +200,7 @@ const HomePage: React.FC = () => {
               </div>
               <LiveMap refreshKey={refreshKey} />
             </div>
-            <div>
+            <div id="section-feed">
               <ResultFeed refreshKey={refreshKey} />
             </div>
           </div>
@@ -207,10 +211,10 @@ const HomePage: React.FC = () => {
       <section className="border-b border-[var(--color-gray-100)] py-[16px] md:py-[20px]">
         <div className="max-w-[1400px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px] lg:gap-0">
-            <div className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
+            <div id="section-states" className="border-b lg:border-b-0 lg:border-r border-[var(--color-gray-100)] max-h-[600px] overflow-auto">
               <StateTable refreshKey={refreshKey} />
             </div>
-            <div className="max-h-[600px] overflow-y-auto">
+            <div id="section-leaderboard" className="max-h-[600px] overflow-y-auto">
               <PartyResults refreshKey={refreshKey} />
             </div>
           </div>

@@ -57,8 +57,7 @@ nigeria-election-platform/
 ├── supabase/
 │   ├── migrations/             # Numbered migrations (apply newest via Supabase MCP/SQL editor)
 │   └── RECOVERY_DISK_FULL.sql  # Emergency cleanup for Supabase free-tier disk limit
-├── convex/                     # LEGACY — not imported by any app; scheduled for deletion
-├── scripts/                    # Seeding, health checks, deployment helpers
+├── _scripts/                   # Ops: E2E sim test, debris cleanup, favicon build, secret upload
 └── docs/
     ├── ARCHITECTURE_RUNBOOK.md # Architecture + runbook
     └── ...                     # Audits and operational procedures
@@ -101,18 +100,80 @@ get_election_summary()  — ONE authoritative RPC
 
 Invariants (verified by E2E tests): national total == sum of state totals == sum of party totals; duplicate submissions supersede rather than add; per-row feed party chips sum exactly to the row's valid votes.
 
-## Simulation
+## Simulation Architecture
 
-The simulation is a **backend SQL engine** — the frontend never fakes numbers. It generates polling-unit result events through the same ingestion path as live data (`publish_canonical_result`), paced in waves, with a configurable display multiplier (simulation only) and coverage. Simulated mode is labelled prominently on every public surface (`SIMULATION` badge + ticker).
+The simulation is a **backend SQL engine** — the frontend never fakes numbers. It generates polling-unit result events through the same ingestion path as live data (`publish_canonical_result`), so everything the public site shows during a simulation is produced by the real pipeline.
 
-Admin controls: `/admin/dashboard` → Run Simulation (target voters, duration, coverage, display multiplier).
+### Lifecycle
+
+```
+Launch (POST /api/admin/simulate/trigger-v2)          → 202 in ~2s
+   ↓ (background)
+1. INIT      — archive any prior run, mint [SIM] election
+2. LEDGER    — every PU in Nigeria is assigned a coverage status
+               (chunked, hash-sliced, resumable)
+3. OUTCOMES  — dispute/failed/disrupted profile applied INSIDE the
+               engine's coverage scope only (migration 250/253)
+4. WAVES     — 6 paced waves; each wave = N idempotent chunks
+               (agents file submissions → pair → verify → publish)
+5. FINALIZE  — run marked COMPLETE, pointer flips back, banner updates
+```
+
+The engine state lives **in the database** (`sim_run_steps` queue, migrations 251/252), not in a serverless function. Every step is claimed/completed atomically, so runs **survive restarts and serverless timeouts** — anyone (or anything) can drive the queue forward:
+
+- **Site-traffic pump** — every public `/api/public/stats` request opportunistically ticks the queue (throttled, fire-and-forget)
+- **Tick endpoint** — `POST /api/admin/simulate/tick` with `x-cron-secret: $CRON_SECRET` (or admin session)
+- **E2E script** — `_scripts/e2e-sim-test.mjs` launches, pumps, and asserts the full lifecycle
+
+### Coverage ledger (full-PU accounting)
+
+Every one of the 176,846 INEC polling units is accounted for at all times (migration 245). The invariant `published + disputed + failed + disrupted + unavailable + awaiting == total_pus` is asserted by the E2E test. "Unavailable" is a real outcome — PUs the engine never reached — never a silent gap.
+
+### Display multiplier (simulation only)
+
+Real elections render exactly what the backend stores. During simulations, `system_config.display_multiplier` scales every public number (votes, PU counts) so a backend handling e.g. 1M real voters can render as 30M on the site. The multiplier is set at launch and applies **only** while `data_mode = SIMULATION`; live mode always uses ×1.
+
+### Admin controls (`/admin/dashboard`)
+
+| Control | Effect |
+|---|---|
+| **Run Simulation** | Params: target voters, duration (min), coverage %, display multiplier. Archives any prior run first (single-active lock). |
+| **Stop** | Finalizes the coverage ledger (unreached PUs → UNAVAILABLE), marks the run STOPPED, releases the lock. Idempotent. |
+| **Purge** | Deletes a stopped run's [SIM] election and all debris (submissions, agents, canonicals). Requires typed confirmation. |
+
+Progress is visible on the dashboard (steps done/total) and publicly via the SIMULATION ticker banner.
+
+### Running a simulation locally
+
+```bash
+# 1. Build & serve the production build (dev server works too)
+npm run build:web && cd apps/web && npx next start -p 3000
+
+# 2. Ensure CRON_SECRET exists in apps/web/.env.local (copied from repo root)
+
+# 3. Log in as admin and grab a session token (see NEOP_ADMIN_* in .env.local)
+#    POST {NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password
+
+# 4. Launch (from repo root)
+curl -X POST http://localhost:3000/api/admin/simulate/trigger-v2 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"target_voters":300000,"duration_minutes":10,"coverage_pct":8,"display_multiplier":10}'
+
+# 5. Drive it (or just browse the site — traffic pumps the queue)
+curl -X POST http://localhost:3000/api/admin/simulate/tick -H "x-cron-secret: $CRON_SECRET"
+
+# Full automated lifecycle test with assertions:
+node _scripts/e2e-sim-test.mjs
+```
+
+Note: the middleware rate-limits `/api/admin/simulate/*`; valid `CRON_SECRET` and admin-session requests are exempt. Local Node on Windows may exit with a libuv teardown crash after success — check the log tail, not the exit code.
 
 ## Deployment
 
-- **Auto-deploy:** push to `main` → Vercel builds with root `vercel.json` (`npm run build:web` across the workspace).
+- **Auto-deploy:** push to `main` → Vercel builds with root `vercel.json` (`npm run build:web` across the workspace). The project's Git integration `productionBranch` is `main` (fixed via `POST /v10/projects/{id}/link` with `productionBranch` — the field lives on the link object, not the project).
+- **CI validation:** GitHub Actions (`.github/workflows/production-deploy.yml`) runs typecheck, tests, the PU-count lint, and a **no-env production build** on every push — it validates without deploying, so Vercel never double-deploys.
 - **CLI deploy (fallback):** run `npx vercel deploy --prod --yes` **from the repo root** — never from `apps/web/` (a subdirectory deploy misses the `packages/` workspace and uses the wrong build).
-- Vercel Hobby plan does not allow scheduled crons — the dead-letter reaper runs via **pg_cron** inside Supabase (migration 244).
-- **Vercel dashboard → ngeop → Settings → Git → Production Branch** must be set to `main` (dashboard-only setting; until flipped, pushes build previews and production ships via CLI deploys).
+- Vercel Hobby plan does not allow scheduled crons — the dead-letter reaper runs via **pg_cron** inside Supabase (migration 244), and the simulation queue is driven by site traffic / the tick endpoint (see Simulation Architecture).
 
 ## Deployment verification
 
