@@ -172,8 +172,20 @@ export async function POST(request: NextRequest) {
     //    budget instead of this HTTP request. The browser gets its 202
     //    in milliseconds; the previous run's outcome is cleared out and
     //    the new run's numbers become what the live site renders.
+    // Best-effort release of any stale run lock. This RPC also resets live
+    // data, so when a previous run left bulk rows behind it can run for
+    // minutes — far past the platform's request budget. Awaiting it here is
+    // what produced the admin-facing "NetworkError when attempting to fetch
+    // resource": the click blocked on a request that never returned.
+    //
+    // The queued CLEANUP step already supersedes previous runs inside the
+    // engine's own step budget (migrations 261/262), so this call is pure
+    // belt-and-braces. Bound it, and proceed either way.
     try {
-      await supabase.rpc("stop_simulation_run");
+      await Promise.race([
+        supabase.rpc("stop_simulation_run"),
+        new Promise((resolve) => setTimeout(resolve, 6000)),
+      ]);
     } catch {}
 
     const { data: runIdData, error: runErr } = await supabase.rpc("start_simulation_run", {
