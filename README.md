@@ -133,11 +133,30 @@ Every one of the 176,846 INEC polling units is accounted for at all times (migra
 
 Real elections render exactly what the backend stores. During simulations, `system_config.display_multiplier` scales every public number (votes, PU counts) so a backend handling e.g. 1M real voters can render as 30M on the site. The multiplier is set at launch and applies **only** while `data_mode = SIMULATION`; live mode always uses ×1.
 
+### Capacity envelope (Supabase Free plan)
+
+Storage cost tracks **coverage**, not voters: the ledger is ~850 B per polling unit (× 176,846 ≈ 150 MB) and each *published* PU drags in its canonical rows at ~6.2 KB all-in. Target/display voters are never materialised — only the totals are, so `display_voters` is free.
+
+Every launch runs `simulation_quota_check(coverage_pct)` **before any state is touched**. It projects the peak, nets out what the queued CLEANUP step will purge, and refuses the launch with HTTP 400 (naming the coverage that *would* fit and how many PUs that is) when the projection exceeds the plan envelope: **850 MB ceiling, 120 MB safety margin → ~730 MB usable**.
+
+Measured against real runs from a clean baseline (~215 MB after compaction):
+
+| Coverage | Projected peak | Observed / verdict |
+|---|---|---|
+| 20% | 584 MB | 558 MB observed — ✓ comfortable |
+| 25% | 639 MB | ✓ comfortable |
+| 30% | 694 MB | ✓ tight but fits |
+| ≥ 40% | > 730 MB usable | ✗ refused pre-flight with a recommended maximum |
+
+**Every launch clears the previous simulation first.** Step 1 of each run is a durable `CLEANUP` step that purges the prior run — results, ledger, sim observer accounts, `[SIM]` elections — and resets live data, so relaunching never accumulates debris and the new run's outcome becomes what the live site renders. It runs inside the engine's step budget (10-minute statement timeout), never inside the HTTP request, so the browser gets its 202 in milliseconds.
+
+Want bigger on-screen numbers? Raise **display_voters**, not coverage — it costs no storage.
+
 ### Admin controls (`/admin/dashboard`)
 
 | Control | Effect |
 |---|---|
-| **Run Simulation** | Params: target voters, duration (min), coverage %, display multiplier. Archives any prior run first (single-active lock). |
+| **Run Simulation** | Params: target voters, duration (min), coverage %, display multiplier. Refused pre-flight if the projected peak would breach the plan envelope; on success the first queued step purges the previous run and resets live data (see *Capacity envelope*). Archives any prior run first (single-active lock). |
 | **Stop** | Finalizes the coverage ledger (unreached PUs → UNAVAILABLE), marks the run STOPPED, releases the lock. Idempotent. |
 | **Purge** | Deletes a stopped run's [SIM] election and all debris (submissions, agents, canonicals). Requires typed confirmation. |
 
@@ -160,7 +179,8 @@ npm run build:web && cd apps/web && npx next start -p 3000
 #    a small real dataset can render a big national total.
 curl -X POST http://localhost:3000/api/admin/simulate/trigger-v2 \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"target_voters":300000,"display_voters":30000000,"duration_minutes":10,"coverage_pct":100,"scenario":"close","max_published_pct":0.78}'
+  # coverage_pct must fit the envelope above (25% is comfortable on a clean DB)
+  -d '{"target_voters":300000,"display_voters":30000000,"duration_minutes":10,"coverage_pct":25,"scenario":"close","max_published_pct":0.78}'
 
 # 5. Drive it. `Authorization: Bearer $CRON_SECRET` is the cron path.
 curl -X POST http://localhost:3000/api/admin/simulate/tick?max=1 \
