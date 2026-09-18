@@ -181,24 +181,29 @@ const ExportPanel: React.FC<ExportPanelProps> = ({ variant = "admin" }) => {
 
   return (
     <div className="border border-[var(--color-gray-100)] bg-[var(--color-ink-light)]">
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[var(--color-ink)]/50 transition-colors"
+      {/* Header — a real <button> so keyboard users can expand/collapse.
+          It was a click-only <div>: reachable by pointer but invisible to
+          Tab, so the whole export workflow was unusable without a mouse. */}
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[var(--color-ink)]/50 transition-colors text-left"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        aria-controls="export-panel-body"
       >
         <div className="flex items-center gap-2">
-          <span className="text-lg">📥</span>
+          <span className="text-lg" aria-hidden="true">📥</span>
           <h3 className="font-display font-semibold text-sm text-[var(--color-text)]">
             Export Results
           </h3>
         </div>
-        <span className="font-mono text-[10px] text-[var(--color-text-dim)]">
+        <span className="font-mono text-[10px] text-[var(--color-text-dim)]" aria-hidden="true">
           {expanded ? "▼ COLLAPSE" : "▶ EXPAND"}
         </span>
-      </div>
+      </button>
 
       {expanded && (
-        <div className="px-4 pb-4 space-y-3 border-t border-[var(--color-gray-100)] pt-3">
+        <div id="export-panel-body" className="px-4 pb-4 space-y-3 border-t border-[var(--color-gray-100)] pt-3">
           {/* Quick summary */}
           {preview && (
             <div className="p-3 border border-[var(--color-green)]/20 bg-[var(--color-green-dim)]">

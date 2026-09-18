@@ -23,8 +23,14 @@
  *   waves?: number             1-12                          (default 6)
  *   discrepancy_rate?: number  0-1                           (default 0.05)
  *   coverage_pct?: number      1-100    % of PUs in scope    (default 50)
- *   reset_first?: boolean                                    (default true)
+ *   reset_first?: boolean      accepted for compatibility; the reset ALWAYS
+ *                              runs as the queue's first CLEANUP step, so
+ *                              every launch starts from a clean baseline
  * }
+ *
+ * Pre-flight (migration 261): the launch is REFUSED (400) when the
+ * projected peak database size exceeds the Free-plan envelope. Storage
+ * scales with coverage_pct, not with voters.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -102,26 +108,46 @@ export async function POST(request: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Full-coverage lifecycle (migration 245) ─────────────────────
-    // 1. stop any running run (idempotent — it also finalizes the ledger)
-    // 2. reset live data if requested
-    // 3. start_simulation_run: acquires the single-active lock and
-    //    materializes the COMPLETE PU universe ledger (queued as steps)
+    // ── Pre-flight quota guard ──────────────────────────────────
+    // Storage cost tracks COVERAGE (published PUs × ~6.2 KB + the full
+    // ledger), not voters — target/display voters are never materialised.
+    // The projection nets out what the queued CLEANUP step will purge
+    // (previous run's results + ledger), so relaunching never accumulates.
+    // Refuse before any state is touched when the projection exceeds the
+    // Free-plan envelope (850 MB ceiling, 120 MB safety margin).
+    const { data: quota, error: quotaErr } = await supabase
+      .rpc("simulation_quota_check", { p_coverage_pct: coverage_pct });
+    if (quotaErr) {
+      console.warn("[trigger-v2] quota check unavailable, continuing:", quotaErr.message);
+    } else if (quota && !quota.ok) {
+      const gb = (n: number) => (n / 1e9).toFixed(2) + " GB";
+      return NextResponse.json(
+        {
+          error:
+            `Coverage ${coverage_pct}% would push the database to ~${gb(quota.projected_peak_bytes)} — ` +
+            `over the plan ceiling (${gb(quota.quota_bytes)}). The launch was refused BEFORE any data ` +
+            `was changed. Re-run with coverage ≤ ${quota.recommended_max_coverage_pct}% ` +
+            `(projected published PUs: ${(quota.projected_published_pus || 0).toLocaleString()}). ` +
+            `Display figures do not depend on coverage — raise display_voters instead if you ` +
+            `want bigger on-screen numbers.`,
+          quota,
+        },
+        { status: 400 }
+      );
+    }
+
+    // ── Full-coverage lifecycle (migration 245 + 261) ──────────────
+    // 1. stop any stale run (cheap, releases the single-active lock)
+    // 2. start_simulation_run: acquires the lock and hands back a run id
+    // 3. enqueue: the FIRST queued step (CLEANUP) purges every previous
+    //    run — results, ledger, sim observer accounts, [SIM] elections —
+    //    and resets live data, all inside the engine's 10-minute step
+    //    budget instead of this HTTP request. The browser gets its 202
+    //    in milliseconds; the previous run's outcome is cleared out and
+    //    the new run's numbers become what the live site renders.
     try {
       await supabase.rpc("stop_simulation_run");
     } catch {}
-
-    let resetResult: any = null;
-    if (reset_first) {
-      const { data, error } = await supabase.rpc("neop_reset_live_data");
-      if (error) {
-        return NextResponse.json(
-          { error: `Reset failed: ${error.message}` },
-          { status: 500 }
-        );
-      }
-      resetResult = data;
-    }
 
     const { data: runIdData, error: runErr } = await supabase.rpc("start_simulation_run", {
       p_label: `Pipeline ${new Date().toISOString().slice(5, 16).replace("T", " ")} ${scenario}`,
@@ -208,7 +234,8 @@ export async function POST(request: NextRequest) {
         coverage_pct,
         run_id: runId,
         outcomes,
-        reset: resetResult,
+        cleanup: "queued as first step — previous run's data is purged before this run publishes",
+        reset: { queued: true, mode: "CLEANUP step (migration 261)" },
       },
       { status: 202 }
     );

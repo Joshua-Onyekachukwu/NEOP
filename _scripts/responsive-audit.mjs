@@ -34,9 +34,19 @@ const ROUTES = arg(
 ).split(",").map((s) => s.trim()).filter(Boolean);
 const WIDTHS = arg("widths", "320,375,390,430,768,820,1024,1280,1440,1920")
   .split(",").map(Number).filter((n) => n > 0);
-const SETTLE_MS = Number(arg("settle", "1800"));
+const SETTLE_MS = Number(arg("settle", "1500"));
+// Per-width reflow wait after a resize (route-major mode). 300ms lets the
+// renderer finish reflow without a full reload; the previous per-width
+// full-navigate+settle cost ~25s per route, this costs ~3s.
+const REFLOW_MS = Number(arg("reflow", "300"));
 const JSON_OUT = arg("json", "_logs/responsive-audit.json");
 const PORT = Number(arg("port", "9223"));
+// CI gate: exit 1 when any MOBILE width (<=430px, the phone bucket) shows
+// page-level horizontal overflow. Full-matrix runs still report every width.
+const FAIL_MOBILE = process.argv.includes("--fail-on-mobile-overflow");
+// Realtime-stability watch: after the matrix, scroll the LAST route to 40%
+// and sample scroll/height/overflow every 2s for N seconds. Reports drift.
+const WATCH_SECONDS = Number(arg("watch", "0"));
 // Optional session cookie so authenticated screens (admin console, agent
 // area) can be measured too, e.g. --cookie "sb-<ref>-auth-token=<json>".
 const COOKIE = arg("cookie", "");
@@ -275,34 +285,45 @@ async function main() {
   }
 
   const results = [];
-  let prevMobile = null;
-  for (const width of WIDTHS) {
-    // Flushing the emulation change keeps the mobile→desktop transition from
-    // leaking stale metrics into the next measurement (Chromium applies the
-    // override lazily, so a narrow viewport was occasionally measured at the
-    // previous width). Re-measure and retry once if the viewport is wrong.
-    await ws.send("Emulation.setDeviceMetricsOverride", {
-      width, height: 900, deviceScaleFactor: 1, mobile: width <= 430,
+  // ROUTE-MAJOR iteration: navigate once per route, then resize across every
+  // width in place. Chromium reflows the same DOM on resize, so every width
+  // still measures the fully-settled live page — but we pay ONE navigation
+  // + ONE settle per route instead of per (width × route). Full matrix:
+  // 7 routes × (1×2s settle + 10×0.4s reflow) ≈ 40s instead of ~3.5min.
+  for (const route of ROUTES) {
+    const url = BASE + route;
+    ws.drain();
+    const loaded = new Promise((res) => {
+      const timer = setTimeout(res, 12000);
+      ws.on((m) => { if (m.method === "Page.loadEventFired") { clearTimeout(timer); res(); } });
     });
-    if (prevMobile !== null && prevMobile !== width <= 430) {
-      await ws.send("Page.navigate", { url: BASE + "/" });
-      await sleep(800);
+    try {
+      await ws.send("Page.navigate", { url });
+    } catch (e) {
+      // navigation aborted (e.g. redirect chain) — measurement still useful
     }
-    prevMobile = width <= 430;
-    for (const route of ROUTES) {
-      const url = BASE + route;
-      ws.drain();
-      const loaded = new Promise((res) => {
-        const timer = setTimeout(res, 12000);
-        ws.on((m) => { if (m.method === "Page.loadEventFired") { clearTimeout(timer); res(); } });
+    await loaded;
+    await sleep(SETTLE_MS);
+
+    let prevMobile = null;
+    for (const width of WIDTHS) {
+      const isMobile = width <= 430;
+      await ws.send("Emulation.setDeviceMetricsOverride", {
+        width, height: 900, deviceScaleFactor: 1, mobile: isMobile,
       });
-      try {
+      // Only a mobile→desktop flip forces a reload to flush the emulation
+      // change (Chromium applies it lazily); desktop→mobile applies instantly.
+      if (prevMobile !== null && prevMobile !== isMobile && !isMobile) {
         await ws.send("Page.navigate", { url });
-      } catch (e) {
-        // navigation aborted (e.g. redirect chain) — measurement still useful
+        const reloaded = new Promise((res) => {
+          const timer = setTimeout(res, 12000);
+          ws.on((m) => { if (m.method === "Page.loadEventFired") { clearTimeout(timer); res(); } });
+        });
+        await reloaded;
+        await sleep(SETTLE_MS);
       }
-      await loaded;
-      await sleep(SETTLE_MS);
+      prevMobile = isMobile;
+      await sleep(REFLOW_MS);
 
       let rec = { route, width };
       try {
@@ -314,7 +335,7 @@ async function main() {
         // measured viewport doesn't match the requested width, give the
         // renderer a beat and measure once more.
         if (rec.vw && rec.vw !== width) {
-          await sleep(700);
+          await sleep(500);
           const r2 = await ws.send("Runtime.evaluate", {
             expression: MEASURE, returnByValue: true, awaitPromise: false,
           });
@@ -344,12 +365,65 @@ async function main() {
     }
   }
 
+  // ── Realtime stability watch (optional) ────────────────────────────────
+  if (WATCH_SECONDS > 0) {
+    const route = ROUTES[ROUTES.length - 1];
+    console.log(`\nWATCH ${route} at 375px for ${WATCH_SECONDS}s (realtime stability)...`);
+    await ws.send("Emulation.setDeviceMetricsOverride", {
+      width: 375, height: 800, deviceScaleFactor: 1, mobile: true,
+    });
+    const loaded = new Promise((res) => {
+      const timer = setTimeout(res, 12000);
+      ws.on((m) => { if (m.method === "Page.loadEventFired") { clearTimeout(timer); res(); } });
+    });
+    await ws.send("Page.navigate", { url: BASE + route });
+    await loaded;
+    await sleep(SETTLE_MS);
+    await ws.send("Runtime.evaluate", {
+      expression: `window.scrollTo(0, (document.documentElement.scrollHeight - innerHeight) * 0.4); window.scrollY`,
+      returnByValue: true,
+    });
+    const W = `({ y: window.scrollY, docH: document.documentElement.scrollHeight, over: document.documentElement.scrollWidth - innerWidth })`;
+    const samples = [];
+    const t0 = Date.now();
+    while ((Date.now() - t0) / 1000 < WATCH_SECONDS) {
+      await sleep(2000);
+      try {
+        const r = await ws.send("Runtime.evaluate", { expression: W, returnByValue: true });
+        const v = r.result.value;
+        if (v) { samples.push(v); console.log(`  t=${Math.round((Date.now() - t0) / 1000)}s scrollY=${v.y} docH=${v.docH} overflow=${v.over}`); }
+      } catch {}
+    }
+    const heights = [...new Set(samples.map((s) => s.docH))];
+    const overflows = samples.filter((s) => s.over > 1).length;
+    const yDrift = Math.max(...samples.map((s) => Math.abs(s.y - samples[0].y)));
+    console.log(
+      `WATCH: ${samples.length} samples · height variants: ${heights.join(",") || "n/a"}` +
+      ` · overflow samples: ${overflows} · scroll drift: ${yDrift}px (expected — data arrival grows content)`
+    );
+    (results.watch = { samples: samples.length, heightVariants: heights, overflowSamples: overflows, scrollDriftPx: yDrift });
+  }
+
   writeFileSync(JSON_OUT, JSON.stringify({ base: BASE, routes: ROUTES, widths: WIDTHS, results }, null, 1));
   console.log(`\nWrote ${JSON_OUT}`);
 
   const worst = results.filter((r) => r.hOverflow > 0).length;
   const trapped = results.filter((r) => r.canScroll === false).length;
   console.log(`Summary: ${results.length} measurements · ${worst} with horizontal overflow · ${trapped} without page scroll`);
+
+  // CI gate: only MOBILE widths (≤430px) may fail the run — desktop inner
+  // scrollers (e.g. the lg+ dashboard panes) are deliberate design.
+  if (FAIL_MOBILE) {
+    const bad = results.filter((r) => (r.width <= 430) && r.hOverflow > 0);
+    if (bad.length > 0) {
+      console.error(`\nMOBILE OVERFLOW FAILURES (${bad.length}):`);
+      bad.forEach((r) => console.error(`  ${r.width}px ${r.route}: +${r.hOverflow}px`));
+      console.error("Fix the layout — do not hide with overflow-x: hidden.");
+      ws.close(); child.kill();
+      process.exit(1);
+    }
+    console.log("CI gate: 0 mobile-width overflow — PASS");
+  }
 
   ws.close();
   child.kill();

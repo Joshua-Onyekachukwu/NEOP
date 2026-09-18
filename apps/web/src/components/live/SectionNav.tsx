@@ -78,6 +78,7 @@ const SectionNav: React.FC = () => {
                 key={s.id}
                 onClick={() => jump(s.id)}
                 aria-current={isActive ? "true" : undefined}
+                aria-controls={s.id}
                 className={`flex-shrink-0 font-mono text-[11px] uppercase tracking-wider px-[10px] py-[5px] rounded-[4px] transition-colors ${
                   isActive
                     ? "bg-[var(--color-green)]/15 text-[var(--color-green-bright)] font-bold"

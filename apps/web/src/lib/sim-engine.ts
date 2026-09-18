@@ -26,7 +26,7 @@ interface StepRow {
   id: number;
   run_id: string;
   seq: number;
-  kind: "LEDGER" | "INIT" | "WAVE";
+  kind: "LEDGER" | "INIT" | "WAVE" | "CLEANUP";
   wave_index: number | null;
   chunk_index: number | null;
   chunk_count: number | null;
@@ -117,6 +117,8 @@ export async function executeTickSteps(
 
 async function executeStep(supabase: SupabaseClient, step: StepRow): Promise<any> {
   switch (step.kind) {
+    case "CLEANUP":
+      return executeCleanupStep(supabase, step);
     case "LEDGER":
       return executeLedgerStep(supabase, step);
     case "INIT":
@@ -126,6 +128,24 @@ async function executeStep(supabase: SupabaseClient, step: StepRow): Promise<any
     default:
       throw new Error(`unknown step kind: ${step.kind}`);
   }
+}
+
+/**
+ * First step of every run (migration 261): purge every previous run —
+ * results, ledger, sim observer accounts, [SIM] elections — and reset
+ * live data, so each launch starts from a clean baseline and the new
+ * run's outcome becomes what the site renders. Runs inside the engine's
+ * step budget (statement_timeout 600s), never inside the HTTP request.
+ */
+async function executeCleanupStep(supabase: SupabaseClient, step: StepRow): Promise<any> {
+  const { data, error } = await supabase.rpc("sim_preflight_cleanup", {
+    p_keep_run: step.run_id,
+  });
+  if (error) throw new Error(`cleanup: ${error.message}`);
+  // Compaction is skipped on purpose: VACUUM FULL needs an exclusive lock
+  // and its space return is unnecessary for the quota math (the guard
+  // already projects the DELETEd size). Autovacuum reclaims the rest.
+  return data ?? {};
 }
 
 async function executeLedgerStep(supabase: SupabaseClient, step: StepRow): Promise<any> {

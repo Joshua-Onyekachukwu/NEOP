@@ -49,6 +49,7 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const map = useRef<any>(null);
   const maplibreglRef = useRef<any>(null);
   const [selectedPU, setSelectedPU] = useState<LGAMarker | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [totalPU, setTotalPU] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -57,13 +58,25 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { config } = useRealtimeData();
 
+  // When a marker opens the detail card, move focus onto it so keyboard and
+  // screen-reader users land in the dialog instead of staying on the canvas.
+  useEffect(() => {
+    if (selectedPU) cardRef.current?.focus();
+  }, [selectedPU]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFullscreen(false);
+      if (e.key === "Escape") {
+        // Escape dismisses the open LGA detail card first; only when no card
+        // is up does it leave full-screen. Otherwise the first Escape in
+        // full-screen with a card open kicked the user out entirely.
+        if (selectedPU) setSelectedPU(null);
+        else setIsFullscreen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selectedPU]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -504,61 +517,90 @@ const LiveMap: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           <span>awaiting</span>
         </div>
       </div>
-    </div>
-  );
-
-  // Popup for selected LGA
-  const popup = selectedPU && (
-    <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center p-[12px]">
-      {/* w-full + a clamped max-width keeps the detail card inside the map on
-          a 320px screen instead of spilling past it. */}
-      <div
-        className="bg-[var(--color-ink)] border border-[var(--color-gray-100)] p-3 w-full max-w-[min(320px,100%)] pointer-events-auto font-mono text-xs"
-        onClick={() => setSelectedPU(null)}
-      >
-        <div className="font-bold text-[var(--color-text)]">
-          {selectedPU.lga_name} · {selectedPU.state_name}
-        </div>
-        <div className="text-[var(--color-text-muted)] mt-1">
-          {selectedPU.total_pus.toLocaleString()} polling units
-        </div>
-        <div className="mt-2">
-          <span
-            className="inline-block px-1.5 py-0.5 text-[10px] font-bold"
-            style={{ backgroundColor: getStatusColor(selectedPU.dominant_status), color: "#fff" }}
-          >
-            {selectedPU.dominant_status}
-          </span>
-        </div>
-        {selectedPU.status_counts && Object.keys(selectedPU.status_counts).length > 0 && (
-          <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
-            {Object.entries(selectedPU.status_counts).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-4">
-                <span>{k}</span>
-                <span>{String(v)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="relative">
-      {mapShell}
-      {popup}
-      {/* Live update indicator */}
-      {/* Top-left: the only corner that is free on every breakpoint
-          (centre badge, top-right controls, bottom-left legend,
-          bottom-right scale). */}
+      {/* Live update indicator — top-left: the only corner that is free on
+          every breakpoint (centre badge, top-right controls, bottom-left
+          legend, bottom-right scale). Inside the shell so full-screen keeps
+          it too. */}
       {lastUpdate && (
         <div className="absolute top-3 left-3 z-20 bg-[var(--color-ink)]/90 border border-[var(--color-gray-100)] px-2 py-1 font-mono text-[9px] text-[var(--color-text-muted)]">
           Updated {lastUpdate.toLocaleTimeString()}
         </div>
       )}
+
+      {/* Selected-LGA detail card. Lives INSIDE the map shell (not as a
+          sibling overlay) so that in full-screen mode — where the shell is
+          a fixed z-[9999] layer — the card shares that stacking context and
+          renders above the map canvas. As a sibling it sat underneath the
+          full-screen map and clicking a marker appeared to do nothing.
+
+          Full details on click: the card shows the LGA name, state, PU count,
+          dominant status badge (with its actual status color), AND the full
+          status_counts breakdown — the same data shown in the non-fullscreen
+          state. In full-screen this card renders at z-30 inside the z-[9999]
+          shell, so it sits above the map canvas and is visible when a marker
+          is clicked. */}
+      {selectedPU && (
+        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center p-[12px]">
+          {/* w-full + a clamped max-width keeps the detail card inside the map on
+              a 320px screen instead of spilling past it.
+
+              Accessibility: role="dialog" + aria-label announce the card to
+              screen readers when a marker is clicked; tabIndex={-1} + the
+              focus effect move keyboard focus onto it so the next Tab stops
+              here (and Escape has a sensible focus origin); clicking anywhere
+              on the card (not just ✕) dismisses it, matching pointer UX. */}
+          <div
+            ref={cardRef}
+            role="dialog"
+            aria-label={`${selectedPU.lga_name} polling unit details`}
+            tabIndex={-1}
+            className="bg-[var(--color-ink)] border border-[var(--color-gray-100)] p-3 w-full max-w-[min(360px,100%)] pointer-events-auto font-mono text-xs shadow-xl"
+            onClick={() => setSelectedPU(null)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-[var(--color-text)]">
+                {selectedPU.lga_name}
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedPU(null); }}
+                aria-label={`Close ${selectedPU.lga_name} details`}
+                className="font-mono text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] px-1 py-0.5"
+              >
+                ✕ CLOSE
+              </button>
+            </div>
+            <div className="text-[var(--color-text-muted)] mt-1">
+              {selectedPU.state_name} · {selectedPU.total_pus.toLocaleString()} polling units
+            </div>
+            <div className="mt-2">
+              <span
+                className="inline-block px-1.5 py-0.5 text-[10px] font-bold"
+                style={{ backgroundColor: getStatusColor(selectedPU.dominant_status), color: "#fff" }}
+              >
+                {selectedPU.dominant_status}
+              </span>
+            </div>
+            {selectedPU.status_counts && Object.keys(selectedPU.status_counts).length > 0 && (
+              <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+                <div className="text-[var(--color-text)] font-bold mb-1">STATUS BREAKDOWN</div>
+                {Object.entries(selectedPU.status_counts).map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-4 border-b border-[var(--color-gray-100)]/50 pb-0.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(k) }} />
+                      <span>{k.replace(/_/g, " ")}</span>
+                    </span>
+                    <span className="font-bold text-[var(--color-text)]">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  return <div className="relative">{mapShell}</div>;
 };
 
 export default LiveMap;

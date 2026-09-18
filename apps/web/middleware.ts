@@ -176,7 +176,13 @@ function getRateConfig(pathname: string, bot: boolean, underAttack: boolean): Ra
   if (pathname.indexOf("/api/auth") === 0) {
     base = { maxTokens: 15, refillRate: 0.0017, label: "auth" };        // 10/min
   } else if (pathname.indexOf("/api/admin/simulate") === 0) {
-    base = { maxTokens: 8, refillRate: 0.00008, label: "simulate" };    // 5/min
+    // Launches are rare admin actions; but the simulation LOOP feature fires
+    // one launch per cycle plus /progress every 5s while a run is live, and
+    // the previous 5/min budget consumed the whole bucket on the progress
+    // polls — admins then saw "Rate limit exceeded" on a legitimate launch.
+    // 60/min covers loop+progress comfortably; abuse impact is unchanged
+    // (each launch is queued server-side work, not a raw query).
+    base = { maxTokens: 60, refillRate: 0.001, label: "simulate" };      // 60/min
   } else if (pathname.indexOf("/api/admin") === 0) {
     base = { maxTokens: 80, refillRate: 0.002, label: "admin" };        // 120/min
   } else if (pathname.indexOf("/api/me") === 0) {

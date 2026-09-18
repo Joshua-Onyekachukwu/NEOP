@@ -212,17 +212,28 @@ const AdminDashboard: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       setSimV2({ status: "STARTING", progress_pct: 0, total_pus: simV2Cfg.pu_count });
-      const res = await fetch("/api/admin/simulate/v2-pipeline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          mode: simV2Cfg.mode,
-          speed: simV2Cfg.speed,
-          pu_count: simV2Cfg.pu_count,
-          discrepancy_rate: simV2Cfg.disc_rate,
-          require_ai: false,
-        }),
-      });
+      // AbortController caps the launch call at 8s: the route returns 202
+      // immediately, so anything longer means a network stall — surface a
+      // clear timeout message instead of a raw NetworkError.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8_000);
+      let res: Response;
+      try {
+        res = await fetch("/api/admin/simulate/v2-pipeline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            mode: simV2Cfg.mode,
+            speed: simV2Cfg.speed,
+            pu_count: simV2Cfg.pu_count,
+            discrepancy_rate: simV2Cfg.disc_rate,
+            require_ai: false,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (res.ok) {
         const data = await res.json();
         setSimV2({
@@ -240,9 +251,13 @@ const AdminDashboard: React.FC = () => {
           elapsed_seconds: 0,
         });
         fetchStats();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setSimV2((prev: any) => ({ ...(prev || {}), status: "ERROR", errors: [...((prev as any)?.errors || []), { message: body.error || `v2-pipeline returned ${res.status}` }] }));
       }
     } catch (e: any) {
-      setSimV2((prev: any) => ({ ...(prev || {}), status: "ERROR", errors: [...((prev as any)?.errors || []), { message: e?.message || "Start failed" }] }));
+      const aborted = e?.name === "AbortError";
+      setSimV2((prev: any) => ({ ...(prev || {}), status: "ERROR", errors: [...((prev as any)?.errors || []), { message: aborted ? "v2-pipeline timed out after 8s (retry, or use the Simulation tab)" : e?.message || "Start failed" }] }));
     }
   };
 
@@ -250,17 +265,18 @@ const AdminDashboard: React.FC = () => {
     const init = async () => {
       const session = await waitForSession();
       if (!session) { router.push("/admin/login"); return; }
-      // Check admin role — use parallel queries
+      // Pre-flight checks: the admin gate (SECURITY DEFINER helper,
+      // migration 260 — no RLS recursion) + current data mode.
+      // Fail fast: the dashboard must paint within a heartbeat.
       const [adminCheck, configCheck] = await Promise.all([
-        supabase.from("admin_users").select("id")
-          .eq("user_id", session.user.id)
-          .eq("is_active", true).single(),
-        supabase.from("simulation_config")
-          .select("election_type")
+        supabase.rpc("is_active_admin", { p_user: session.user.id }),
+        supabase
+          .from("system_config")
+          .select("data_mode, active_election_id, last_updated_at, election_type")
           .eq("id", "00000000-0000-0000-0000-000000000001")
           .single(),
       ]);
-      if (!adminCheck.data) { router.push("/admin/login"); return; }
+      if (!adminCheck) { router.push("/admin/login"); return; }
       if (configCheck.data?.election_type) setSimElectionType(configCheck.data.election_type);
       fetchStats();
       fetchElections();
@@ -325,7 +341,23 @@ const AdminDashboard: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      // Single RPC call replaces 8 separate COUNT queries
+      // Fast path (migration 261): planner estimates, no table scans —
+      // paints the header instantly even while heavy sim writes run.
+      const fast = await supabase.rpc("get_admin_stats_fast");
+      if (fast.data) {
+        setStats({
+          totalVolunteers: fast.data.total_volunteers || 0,
+          activeVolunteers: fast.data.active_volunteers || 0,
+          totalAssignments: fast.data.total_assignments || 0,
+          checkedInAssignments: fast.data.checked_in_assignments || 0,
+          totalResults: fast.data.total_results || 0,
+          verifiedResults: fast.data.verified_results || 0,
+          pendingVerification: fast.data.pending_verification || 0,
+          totalIncidents: fast.data.total_incidents || 0,
+        });
+      }
+      // Exact counts in the background replace the estimates without
+      // blocking the initial paint.
       const { data, error } = await supabase.rpc("get_admin_stats");
       if (data) {
         setStats({
@@ -338,7 +370,7 @@ const AdminDashboard: React.FC = () => {
           pendingVerification: data.pending_verification || 0,
           totalIncidents: data.total_incidents || 0,
         });
-      } else {
+      } else if (!fast.data) {
         // Fallback: parallel individual queries if RPC not available
         const [tv, av, ta, ci, tr, vr, pv, ti] = await Promise.all([
           supabase.from("volunteers").select("*", { count: "exact", head: true }),
@@ -431,7 +463,12 @@ const AdminDashboard: React.FC = () => {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Use trigger-v2 endpoint — runs via the results backend
+      // Use trigger-v2 endpoint — runs via the results backend.
+      // 30s AbortController: the launch is queued work (202 in <1s normally);
+      // if the request stalls, fail with a CLEAR message instead of the
+      // browser's opaque "NetworkError when attempting to fetch resource".
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const res = await fetch("/api/admin/simulate/trigger-v2", {
         method: "POST",
         headers: {
@@ -448,22 +485,31 @@ const AdminDashboard: React.FC = () => {
           coverage_pct: simCoverage,
           reset_first: true,
         }),
+        signal: controller.signal,
       });
 
       clearInterval(progressInterval);
-
+      clearTimeout(timeoutId);
       if (!res.ok) {
-        const err = await res.json();
-        setSimError(err.error || "Simulation failed");
+        const err = await res.json().catch(() => ({}));
+        setSimError(err.error || `Simulation failed (HTTP ${res.status})`);
+        setSimRunning(false);
+        setSimProgress("");
         return;
       }
 
-      const data = await res.json();
+      await res.json();
       // Simulation started — progress bar will poll for updates
       setSimProgress("Simulation started. Monitoring progress...");
       fetchStats(); // refresh stats
     } catch (e: any) {
-      setSimError(e.message || "Network error");
+      clearInterval(progressInterval);
+      const aborted = e?.name === "AbortError";
+      setSimError(
+        aborted
+          ? "The launch request timed out after 30s. Nothing was lost — the run may still have been queued; check the progress panel, and retry only if it stays idle."
+          : e?.message || "Network error while contacting the simulation API."
+      );
       setSimRunning(false);
       setSimProgress("");
     }
@@ -484,8 +530,10 @@ const AdminDashboard: React.FC = () => {
       setLoopProgress({ current: i + 1, total: loopCount, scenario });
 
       try {
-        // Trigger simulation via API
+        // Trigger simulation via API (same 30s guard as the single launch)
         const { data: { session } } = await supabase.auth.getSession();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30_000);
         const res = await fetch("/api/admin/simulate/trigger-v2", {
           method: "POST",
           headers: {
@@ -502,11 +550,13 @@ const AdminDashboard: React.FC = () => {
             coverage_pct: simCoverage,
             reset_first: true,
           }),
+          signal: controller.signal,
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          console.error(`[loop] Simulation ${i + 1} failed to start:`, err.error);
+          const err = await res.json().catch(() => ({}));
+          console.error(`[loop] Simulation ${i + 1} failed to start:`, err.error || res.status);
+          setSimError(err.error || `Simulation ${i + 1} failed to start (HTTP ${res.status})`);
           continue; // Skip this sim, try next
         }
 

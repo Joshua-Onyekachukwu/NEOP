@@ -43,21 +43,24 @@ const StateTable: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           rarely needs the horizontal scroll at all. */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[280px]">
+          <caption className="sr-only">
+            State-by-state polling unit coverage, verified results and reporting status
+          </caption>
           <thead>
             <tr className="border-b border-[var(--color-gray-100)]">
-              <th className="px-[16px] md:px-[24px] py-[8px] text-left font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              <th scope="col" className="px-[16px] md:px-[24px] py-[8px] text-left font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
                 State
               </th>
-              <th className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              <th scope="col" className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
                 PUs
               </th>
-              <th className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              <th scope="col" className="px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
                 Cov
               </th>
-              <th className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              <th scope="col" className="hidden sm:table-cell px-[8px] md:px-[12px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
                 Ver
               </th>
-              <th className="px-[16px] md:px-[24px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
+              <th scope="col" className="px-[16px] md:px-[24px] py-[8px] text-right font-mono text-[10px] font-medium text-[var(--color-text-dim)] uppercase tracking-wider">
                 Cov%
               </th>
             </tr>
