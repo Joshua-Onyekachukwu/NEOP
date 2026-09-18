@@ -259,8 +259,10 @@ export async function POST(request: NextRequest) {
         coverage_pct,
         run_id: runId,
         outcomes,
-        cleanup: "queued as first step — previous run's data is purged before this run publishes",
-        reset: { queued: true, mode: "CLEANUP step (migration 261)" },
+        cleanup:
+          "queued as first step — reclaims superseded batches only; the dataset " +
+          "currently published on the live site is retained until this run publishes",
+        reset: { queued: true, mode: "CLEANUP step (migrations 261+262)" },
       },
       { status: 202 }
     );
