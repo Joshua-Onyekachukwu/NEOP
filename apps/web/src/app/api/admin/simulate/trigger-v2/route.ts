@@ -111,29 +111,54 @@ export async function POST(request: NextRequest) {
     // ── Pre-flight quota guard ──────────────────────────────────
     // Storage cost tracks COVERAGE (published PUs × ~6.2 KB + the full
     // ledger), not voters — target/display voters are never materialised.
-    // The projection nets out what the queued CLEANUP step will purge
-    // (previous run's results + ledger), so relaunching never accumulates.
     // Refuse before any state is touched when the projection exceeds the
     // Free-plan envelope (850 MB ceiling, 120 MB safety margin).
+    //
+    // Since migration 262 the currently published dataset is RETAINED for the
+    // whole run (that is what keeps the live site populated while a new batch
+    // runs), so its footprint is added to the projection. This is the honest
+    // cost of persistence: a smaller maximum coverage per batch, never a
+    // blanked demo. Absent until 262 is applied — treated as 0.
     const { data: quota, error: quotaErr } = await supabase
       .rpc("simulation_quota_check", { p_coverage_pct: coverage_pct });
+
+    let retainedBytes = 0;
+    try {
+      const { data: retained, error: retainedErr } = await supabase.rpc(
+        "simulation_retained_bytes"
+      );
+      if (!retainedErr) retainedBytes = Number(retained ?? 0) || 0;
+    } catch {
+      /* migration 262 not applied yet */
+    }
+
     if (quotaErr) {
       console.warn("[trigger-v2] quota check unavailable, continuing:", quotaErr.message);
-    } else if (quota && !quota.ok) {
-      const gb = (n: number) => (n / 1e9).toFixed(2) + " GB";
-      return NextResponse.json(
-        {
-          error:
-            `Coverage ${coverage_pct}% would push the database to ~${gb(quota.projected_peak_bytes)} — ` +
-            `over the plan ceiling (${gb(quota.quota_bytes)}). The launch was refused BEFORE any data ` +
-            `was changed. Re-run with coverage ≤ ${quota.recommended_max_coverage_pct}% ` +
-            `(projected published PUs: ${(quota.projected_published_pus || 0).toLocaleString()}). ` +
-            `Display figures do not depend on coverage — raise display_voters instead if you ` +
-            `want bigger on-screen numbers.`,
-          quota,
-        },
-        { status: 400 }
-      );
+    } else if (quota) {
+      const projectedPeak = Number(quota.projected_peak_bytes ?? 0) + retainedBytes;
+
+      if (!quota.ok || projectedPeak > Number(quota.quota_bytes ?? 0)) {
+        const gb = (n: number) => (n / 1e9).toFixed(2) + " GB";
+        const retainedNote =
+          retainedBytes > 0
+            ? ` Of that, ${gb(retainedBytes)} is the simulation currently published on the live ` +
+              `site, which is kept intact for the whole run so the demo never goes blank. `
+            : " ";
+        return NextResponse.json(
+          {
+            error:
+              `Coverage ${coverage_pct}% would push the database to ~${gb(projectedPeak)} — ` +
+              `over the plan ceiling (${gb(quota.quota_bytes)}).${retainedNote}` +
+              `The launch was refused BEFORE any data was changed. Re-run with coverage ≤ ` +
+              `${quota.recommended_max_coverage_pct}% ` +
+              `(projected published PUs: ${(quota.projected_published_pus || 0).toLocaleString()}). ` +
+              `Display figures do not depend on coverage — raise display_voters instead if you ` +
+              `want bigger on-screen numbers.`,
+            quota: { ...quota, retained_bytes: retainedBytes, projected_peak_with_retained: projectedPeak },
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // ── Full-coverage lifecycle (migration 245 + 261) ──────────────

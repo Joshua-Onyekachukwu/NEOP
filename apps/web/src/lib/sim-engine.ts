@@ -131,11 +131,14 @@ async function executeStep(supabase: SupabaseClient, step: StepRow): Promise<any
 }
 
 /**
- * First step of every run (migration 261): purge every previous run —
- * results, ledger, sim observer accounts, [SIM] elections — and reset
- * live data, so each launch starts from a clean baseline and the new
- * run's outcome becomes what the site renders. Runs inside the engine's
- * step budget (statement_timeout 600s), never inside the HTTP request.
+ * First step of every run: reclaim the storage of superseded batches —
+ * results, ledger, sim observer accounts, [SIM] elections — while KEEPING the
+ * dataset currently published on the live site (migration 262). Runs inside
+ * the engine's step budget (statement_timeout 600s), never inside the HTTP
+ * request, so the browser is never blocked on a multi-minute purge.
+ *
+ * It no longer clears the live site on launch: the previous successful
+ * simulation keeps rendering until the new batch completes and publishes.
  */
 async function executeCleanupStep(supabase: SupabaseClient, step: StepRow): Promise<any> {
   const { data, error } = await supabase.rpc("sim_preflight_cleanup", {
@@ -242,8 +245,14 @@ async function executeWaveStep(supabase: SupabaseClient, step: StepRow): Promise
 
   const row = Array.isArray(data) ? data[0] : data;
 
-  // First time we learn the sim election id: bind the run, point the
-  // public site at the dataset, tick the ledger.
+  // First time we learn the sim election id: bind the run to it and tick the
+  // ledger. Nothing public is touched here (migration 262).
+  //
+  // This used to also point system_config.active_election_id at the new
+  // election on the first wave — which blanked the live site the moment an
+  // admin pressed Run, because the new dataset is empty at that point and
+  // stayed empty if the batch later failed. The public dataset now switches
+  // atomically in publish_simulation_run(), and only on success.
   if (row?.sim_election_id) {
     const eid = row.sim_election_id as string;
     if (!electionId) {
@@ -252,18 +261,6 @@ async function executeWaveStep(supabase: SupabaseClient, step: StepRow): Promise
         .update({ election_id: eid })
         .eq("id", step.run_id);
     }
-    const multiplier = Number(p.display_multiplier ?? 1);
-    await supabase.from("system_config").upsert(
-      {
-        id: "00000000-0000-0000-0000-000000000001",
-        data_mode: "SIMULATED",
-        simulation_election_id: eid,
-        active_election_id: eid,
-        display_multiplier: multiplier > 0 ? multiplier : 1,
-        last_updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" }
-    );
     try {
       await supabase.rpc("sync_simulation_progress", { p_run: step.run_id });
     } catch {}
@@ -315,7 +312,70 @@ async function maybeFinalizeRun(supabase: SupabaseClient): Promise<boolean> {
     .eq("run_id", run.id)
     .in("status", ["PENDING", "RUNNING"]);
 
+  // Publish-on-success (migration 262). Only a batch that actually produced
+  // canonical results becomes what the public site renders; the RPC refuses
+  // to switch on an empty dataset, so a failed batch can never blank the
+  // demo. The previously published dataset stays live if this does nothing.
+  try {
+    const { data: pub, error: pubErr } = await supabase.rpc("publish_simulation_run", {
+      p_run: run.id,
+    });
+    if (pubErr) {
+      console.warn(`[sim-engine] publish failed: ${pubErr.message}`);
+    } else if (pub && (pub as any).published === false) {
+      console.warn(`[sim-engine] run kept unpublished: ${(pub as any).reason}`);
+    } else {
+      console.log(
+        `[sim-engine] published run ${run.id} — ` +
+          `${(pub as any)?.canonical_rows ?? "?"} canonical rows, ` +
+          `${(pub as any)?.superseded_purged ?? 0} superseded run(s) reclaimed`
+      );
+    }
+  } catch (e: any) {
+    // publish_simulation_run() missing (migration 262 not applied yet). Fall
+    // back to the legacy pointer switch so a completed batch is still
+    // visible — this keeps the code safe to deploy in either order, instead
+    // of a build that silently never publishes anything.
+    console.warn(
+      `[sim-engine] publish RPC unavailable (${e?.message}) — using the legacy pointer switch`
+    );
+    await legacyPublish(supabase, run.id);
+  }
+
   return true;
+}
+
+/**
+ * Pre-262 behaviour: point the public site straight at the run's election.
+ * Used only when publish_simulation_run() does not exist, so a deploy can
+ * never outrun its migration.
+ */
+async function legacyPublish(supabase: SupabaseClient, runId: string): Promise<void> {
+  const { data: run } = await supabase
+    .from("simulation_runs")
+    .select("election_id, params")
+    .eq("id", runId)
+    .maybeSingle();
+
+  const eid = (run as any)?.election_id as string | undefined;
+  if (!eid) return;
+
+  const multiplier = Number((run as any)?.params?.display_multiplier ?? 1);
+  try {
+    await supabase.from("system_config").upsert(
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        data_mode: "SIMULATED",
+        simulation_election_id: eid,
+        active_election_id: eid,
+        display_multiplier: multiplier > 0 ? multiplier : 1,
+        last_updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+  } catch (e: any) {
+    console.warn(`[sim-engine] legacy publish failed: ${e?.message}`);
+  }
 }
 
 export { LEDGER_CHUNKS, LEDGER_CHUNK_SIZE, DATA_CHUNKS };
