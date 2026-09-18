@@ -49,6 +49,20 @@ jobs:
           cd apps/web
           npx vitest run src/lib/no-hardcoded-pu-counts.test.ts
 
+      # Isolated and database-free: both of these assert contracts that used to
+      # fail silently. The quota gate decides whether a launch may touch data at
+      # all, and the degraded-data notice is the difference between an outage
+      # reading as "0 votes" and reading as an outage.
+      - name: Unit tests (simulation pre-flight quota gate)
+        run: |
+          cd apps/web
+          npx vitest run src/lib/sim-quota-gate.test.ts
+
+      - name: Unit tests (degraded-data notice in the live results UI)
+        run: |
+          cd apps/web
+          npx vitest run src/lib/data-health.test.ts
+
       - name: Build (no env — proves prerender safety, matches CI)
         run: |
           mv apps/web/.env.local /tmp/web-env-local.bak 2>/dev/null || true

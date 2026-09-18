@@ -16,6 +16,11 @@ import React, {
   useCallback,
 } from "react";
 import { INEC_TOTAL_PUS } from "@/lib/party-config";
+import {
+  resolveDataStatus,
+  dataHealthNotice,
+  type DataStatus,
+} from "@/lib/data-health";
 
 // ── Types ──
 
@@ -71,8 +76,40 @@ interface RealtimeData {
   source: "live" | "seeded";
   connected: boolean;
   /** Surfaces a degraded data plane to the UI — never silently shows zeros. */
-  dataStatus: "OK" | "STALE" | "UNAVAILABLE";
+  dataStatus: DataStatus;
 }
+
+/**
+ * The degraded-data notice. Amber, never fabricated numbers: it reports
+ * provenance, not results.
+ *
+ * The wording and the show/hide rule live in lib/data-health.ts (pure, tested in
+ * isolation); this component only renders them, so what a viewer sees and what
+ * the tests assert cannot drift apart.
+ */
+export const DataHealthNotice: React.FC<{
+  dataStatus: DataStatus;
+  restLoaded: boolean;
+}> = ({ dataStatus, restLoaded }) => {
+  const notice = dataHealthNotice(dataStatus, restLoaded);
+  if (!notice) return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center gap-[8px] px-[16px] md:px-[24px] py-[10px] border-b border-[color-mix(in_srgb,var(--color-amber,#d97706)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-amber,#d97706)_12%,transparent)]"
+    >
+      <span
+        className="inline-block w-[8px] h-[8px] rounded-full bg-[var(--color-amber,#d97706)] animate-pulse"
+        aria-hidden="true"
+      />
+      <span className="font-mono text-[11px] md:text-xs text-[var(--color-text)] tracking-[0.02em]">
+        {notice.text}
+      </span>
+    </div>
+  );
+};
 
 const RealtimeContext = createContext<RealtimeData>({
   parties: [],
@@ -116,7 +153,7 @@ export function RealtimeLayer({
   const [restConfig, setRestConfig] = useState<SimConfig | null>(null);
   const [restStates, setRestStates] = useState<any[]>([]);
   const [restLoaded, setRestLoaded] = useState(false);
-  const [dataStatus, setDataStatus] = useState<"OK" | "STALE" | "UNAVAILABLE">("OK");
+  const [dataStatus, setDataStatus] = useState<DataStatus>("OK");
 
   const fetchRestData = useCallback(async () => {
     try {
@@ -161,14 +198,7 @@ export function RealtimeLayer({
       // failed outright we are equally without numbers — show the outage
       // rather than a confident wall of zeros.
       const statsOk = statsRes.status === "fulfilled" && statsRes.value.ok;
-      if (!statsOk) {
-        setDataStatus("UNAVAILABLE");
-      } else {
-        const ds = restStatsData?.data_status;
-        setDataStatus(
-          ds === "UNAVAILABLE" ? "UNAVAILABLE" : ds === "STALE" ? "STALE" : "OK"
-        );
-      }
+      setDataStatus(resolveDataStatus(restStatsData?.data_status, statsOk));
       if (configRes.status === "fulfilled" && configRes.value.ok) {
         const configData = await configRes.value.json();
         setRestConfig({
@@ -236,23 +266,7 @@ export function RealtimeLayer({
         confident wall of zeros ("0 votes"), which on an election-results site
         is misleading. Amber = degraded, never fabricated numbers.
       */}
-      {restLoaded && dataStatus !== "OK" && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex items-center gap-[8px] px-[16px] md:px-[24px] py-[10px] border-b border-[color-mix(in_srgb,var(--color-amber,#d97706)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-amber,#d97706)_12%,transparent)]"
-        >
-          <span
-            className="inline-block w-[8px] h-[8px] rounded-full bg-[var(--color-amber,#d97706)] animate-pulse"
-            aria-hidden="true"
-          />
-          <span className="font-mono text-[11px] md:text-xs text-[var(--color-text)] tracking-[0.02em]">
-            {dataStatus === "STALE"
-              ? "Live data delayed — showing last known snapshot"
-              : "Live data temporarily unavailable — reconnecting"}
-          </span>
-        </div>
-      )}
+      <DataHealthNotice dataStatus={dataStatus} restLoaded={restLoaded} />
       {children}
     </RealtimeContext.Provider>
   );

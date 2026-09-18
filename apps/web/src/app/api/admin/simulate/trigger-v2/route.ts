@@ -38,6 +38,7 @@ import { requireAdminWithDetails, isAdminDetailsSuccess } from "@/lib/admin-auth
 import { createClient } from "@supabase/supabase-js";
 import { invalidateAllCaches } from "@/lib/api-cache";
 import { LEDGER_CHUNKS } from "@/lib/sim-engine";
+import { evaluateQuotaGate } from "@/lib/sim-quota-gate";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -132,33 +133,34 @@ export async function POST(request: NextRequest) {
       /* migration 262 not applied yet */
     }
 
-    if (quotaErr) {
-      console.warn("[trigger-v2] quota check unavailable, continuing:", quotaErr.message);
-    } else if (quota) {
-      const projectedPeak = Number(quota.projected_peak_bytes ?? 0) + retainedBytes;
+    // The decision itself lives in a pure module (lib/sim-quota-gate.ts) so it
+    // can be unit-tested in isolation, without a database.
+    const verdict = evaluateQuotaGate({
+      quota,
+      quotaError: quotaErr?.message ?? null,
+      retainedBytes,
+      coveragePct: coverage_pct,
+    });
 
-      if (!quota.ok || projectedPeak > Number(quota.quota_bytes ?? 0)) {
-        const gb = (n: number) => (n / 1e9).toFixed(2) + " GB";
-        const retainedNote =
-          retainedBytes > 0
-            ? ` Of that, ${gb(retainedBytes)} is the simulation currently published on the live ` +
-              `site, which is kept intact for the whole run so the demo never goes blank. `
-            : " ";
-        return NextResponse.json(
-          {
-            error:
-              `Coverage ${coverage_pct}% would push the database to ~${gb(projectedPeak)} — ` +
-              `over the plan ceiling (${gb(quota.quota_bytes)}).${retainedNote}` +
-              `The launch was refused BEFORE any data was changed. Re-run with coverage ≤ ` +
-              `${quota.recommended_max_coverage_pct}% ` +
-              `(projected published PUs: ${(quota.projected_published_pus || 0).toLocaleString()}). ` +
-              `Display figures do not depend on coverage — raise display_voters instead if you ` +
-              `want bigger on-screen numbers.`,
-            quota: { ...quota, retained_bytes: retainedBytes, projected_peak_with_retained: projectedPeak },
+    if (verdict.degraded) {
+      console.warn(
+        "[trigger-v2] quota guard unavailable, continuing:",
+        quotaErr?.message ?? "no quota projection returned"
+      );
+    } else if (!verdict.allowed) {
+      // Refuse here — before stop_simulation_run / start_simulation_run — so a
+      // rejected launch cannot disturb the run currently being published.
+      return NextResponse.json(
+        {
+          error: verdict.message,
+          quota: {
+            ...quota,
+            retained_bytes: verdict.retainedBytes,
+            projected_peak_with_retained: verdict.projectedPeakBytes,
           },
-          { status: 400 }
-        );
-      }
+        },
+        { status: 400 }
+      );
     }
 
     // ── Full-coverage lifecycle (migration 245 + 261) ──────────────
