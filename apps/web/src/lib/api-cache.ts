@@ -367,7 +367,12 @@ export const getCachedStats = unstable_cache(
     // numbers. Now we serve the most recent successful snapshot instead,
     // or an honest empty dataset on a truly cold start.
     const lastGood = lastGoodStats.value;
-    if (lastGood) return lastGood;
+    if (lastGood) {
+      // This cycle's database read failed and we are re-serving an older
+      // snapshot. Mark it STALE so the UI can say "last known data" rather
+      // than presenting possibly-old numbers as if they were live.
+      return { ...lastGood, data_status: "STALE" as const };
+    }
 
     return {
       inec_total_polling_units: totalPUCount,
