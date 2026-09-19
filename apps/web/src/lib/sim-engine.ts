@@ -52,7 +52,9 @@ export async function executeTickSteps(
 
   // Reclaim steps whose executor died mid-flight (cold start, crash)
   try {
-    await supabase.rpc("reclaim_stale_steps", { p_older_than_seconds: 180 });
+    // 600s = 10 min — wave RPCs can legitimately take several minutes
+    // under load; 180s caused a death spiral of concurrent re-executions.
+    await supabase.rpc("reclaim_stale_steps", { p_older_than_seconds: 600 });
   } catch {}
 
   // Retryable failures: a FAILED step (e.g. transient FK/gateway error)
