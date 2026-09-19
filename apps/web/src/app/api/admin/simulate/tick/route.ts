@@ -4,8 +4,10 @@
  * Vercel-safe simulation pump. Claims the next PENDING step(s) of the
  * active run from sim_run_steps (DB checkpoint queue), executes them,
  * and marks them DONE. Called by:
- *   • Vercel Cron (every minute) with CRON_SECRET — keeps production
- *     runs progressing across serverless cold starts.
+ *   • Vercel Cron with CRON_SECRET (where the plan supports frequent crons)
+ *   • pg_cron's neop_sim_driver() with the DB-stored driver secret — the
+ *     database itself drives the queue whenever a run is active, so runs
+ *     progress even where Vercel cron is unavailable (Hobby fires once/day).
  *   • The admin dashboard / launch route pumper with an admin token.
  *
  * Every step is idempotent and durably recorded, so a run resumes from
@@ -19,27 +21,48 @@ import { executeTickSteps } from "@/lib/sim-engine";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-async function authorize(request: NextRequest): Promise<boolean> {
-  // 1. Vercel Cron header (set automatically when CRON_SECRET is configured)
+function serviceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
+async function authorize(request: NextRequest, supabase: ReturnType<typeof serviceClient>): Promise<boolean> {
   const authHeader = request.headers.get("authorization");
+  // 1. Vercel Cron header (set automatically when CRON_SECRET is configured)
   if (process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`) {
     return true;
   }
-  // 2. Admin session (dashboard pumper)
+  // 2. DB-stored simulation driver secret — pg_cron's neop_sim_driver() posts
+  //    with this credential. Lives in sim_driver_config (RLS-locked; service
+  //    role only), rotates with a single UPDATE.
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice("Bearer ".length);
+    if (token.length >= 24 && token.length <= 256) {
+      const { data } = await supabase
+        .from("sim_driver_config")
+        .select("cron_secret")
+        .eq("id", 1)
+        .maybeSingle();
+      if (data?.cron_secret && data.cron_secret === token) {
+        return true;
+      }
+    }
+  }
+  // 3. Admin session (dashboard pumper)
   const { requireAdminWithDetails, isAdminDetailsSuccess } = await import("@/lib/admin-auth");
   const auth = await requireAdminWithDetails(request);
   return isAdminDetailsSuccess(auth);
 }
 
 async function handle(request: NextRequest) {
-  const ok = await authorize(request);
+  const supabase = serviceClient();
+
+  const ok = await authorize(request, supabase);
   if (!ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
 
   const url = new URL(request.url);
   const maxSteps = Math.max(1, Math.min(60, Number(url.searchParams.get("max")) || 12));
