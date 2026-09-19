@@ -1,4 +1,8 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+// Public-data caches are per-lambda unstable_cache entries; a run that
+// publishes without invalidating them leaves warm instances serving the
+// previous dataset well past the config cache's 300s TTL.
+import { invalidateAllCaches } from "@/lib/api-cache";
 
 /**
  * DB-checkpointed simulation engine executor.
@@ -311,7 +315,6 @@ async function maybeFinalizeRun(supabase: SupabaseClient): Promise<boolean> {
     .update({ status: "FAILED", finished_at: new Date().toISOString() })
     .eq("run_id", run.id)
     .in("status", ["PENDING", "RUNNING"]);
-
   // Publish-on-success (migration 262). Only a batch that actually produced
   // canonical results becomes what the public site renders; the RPC refuses
   // to switch on an empty dataset, so a failed batch can never blank the
@@ -342,6 +345,15 @@ async function maybeFinalizeRun(supabase: SupabaseClient): Promise<boolean> {
     await legacyPublish(supabase, run.id);
   }
 
+  // The switch is atomic in the DB, but warm serverless instances hold
+  // per-process unstable_cache entries (stats 30s, config 300s). Without an
+  // invalidation here, the live site can serve the previous dataset for many
+  // minutes after a publish — and stale "RUNNING" coverage mid-switch.
+  try {
+    invalidateAllCaches();
+  } catch {}
+
+  // run_finished means finalize executed (regardless of publish outcome).
   return true;
 }
 
@@ -350,7 +362,7 @@ async function maybeFinalizeRun(supabase: SupabaseClient): Promise<boolean> {
  * Used only when publish_simulation_run() does not exist, so a deploy can
  * never outrun its migration.
  */
-async function legacyPublish(supabase: SupabaseClient, runId: string): Promise<void> {
+async function legacyPublish(supabase: SupabaseClient, runId: string): Promise<boolean> {
   const { data: run } = await supabase
     .from("simulation_runs")
     .select("election_id, params")
@@ -358,7 +370,7 @@ async function legacyPublish(supabase: SupabaseClient, runId: string): Promise<v
     .maybeSingle();
 
   const eid = (run as any)?.election_id as string | undefined;
-  if (!eid) return;
+  if (!eid) return false;
 
   const multiplier = Number((run as any)?.params?.display_multiplier ?? 1);
   try {
@@ -373,8 +385,10 @@ async function legacyPublish(supabase: SupabaseClient, runId: string): Promise<v
       },
       { onConflict: "id" }
     );
+    return true;
   } catch (e: any) {
     console.warn(`[sim-engine] legacy publish failed: ${e?.message}`);
+    return false;
   }
 }
 
