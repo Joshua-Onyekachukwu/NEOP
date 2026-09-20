@@ -14,8 +14,16 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   const verified = stats.verified_polling_units;
   const hasData = covered > 0 || verified > 0;
 
-  const coveragePercent = inecTotal > 0 ? Math.min((covered / inecTotal) * 100, 100) : 0;
-  const verificationPercent = inecTotal > 0 ? Math.min((verified / inecTotal) * 100, 100) : 0;
+  // Prefer the server-computed, run-scoped percentages (coverage ledger).
+  // Client-side division by the INEC universe is only a fallback for
+  // non-simulation data — during/completed simulations it showed a
+  // full-country run stuck at ~4% (7,167 PUs / 176,846).
+  const coveragePercent =
+    Number((stats as any).coverage_percent || 0) ||
+    (inecTotal > 0 ? Math.min((covered / inecTotal) * 100, 100) : 0);
+  const verificationPercent =
+    Number((stats as any).verification_percent || 0) ||
+    (inecTotal > 0 ? Math.min((verified / inecTotal) * 100, 100) : 0);
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4" role="region" aria-label="Key statistics">

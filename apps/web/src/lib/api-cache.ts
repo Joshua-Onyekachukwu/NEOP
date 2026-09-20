@@ -155,6 +155,15 @@ export const getCachedStats = unstable_cache(
               mergedStates = states.map((s: any) => {
                 const c = covByState.get(s.state_id) || covByState.get(s.state_name);
                 if (!c) return s;
+                const stTotal = Number(c.total_pus ?? 0);
+                const stAwaiting = Number(c.awaiting ?? 0);
+                const stPublished = Number(c.published ?? 0);
+                const stUnavailable = Number(c.unavailable ?? 0);
+                const stAccounted = Math.max(0, stTotal - stAwaiting);
+                // Reporting scope excludes PUs that never reported at all
+                // (unavailable) — same denominator the national Verified
+                // card uses, so state bars reconcile with the headline.
+                const stReporting = Math.max(1, stTotal - stUnavailable - stAwaiting);
                 return {
                   ...s,
                   // Ledger coverage columns: REAL per-state counts (the
@@ -165,9 +174,26 @@ export const getCachedStats = unstable_cache(
                   failed: scaleLedger(c.failed),
                   disrupted: scaleLedger(c.disrupted),
                   unavailable: scaleLedger(c.unavailable),
-                  awaiting: Number(c.awaiting ?? 0),
-                  accounted: c.accounted ?? 0,
+                  awaiting: stAwaiting,
+                  accounted: c.accounted ?? stAccounted,
                   published_percent: c.published_percent ?? 0,
+                  // Run-scoped totals + coverage: the DB-wide per-state PU
+                  // counts (e.g. Abia 4,062) made state bars stick at the
+                  // run's slice (~4%) forever; the ledger universe is what
+                  // this run actually covers, so PUs/Cov/Ver and the bar
+                  // tell one story.
+                  total_pus: stTotal,
+                  total_polling_units: stTotal,
+                  covered: stAccounted,
+                  covered_pus: stAccounted,
+                  covered_polling_units: stAccounted,
+                  verified: stPublished,
+                  verified_pus: stPublished,
+                  verified_polling_units: stPublished,
+                  coverage_percent: stTotal > 0
+                    ? Number(((stAccounted / stTotal) * 100).toFixed(1))
+                    : 0,
+                  verification_percent: Number(((stPublished / stReporting) * 100).toFixed(1)),
                 };
               });
             }
@@ -210,7 +236,9 @@ export const getCachedStats = unstable_cache(
               coverage_percent: ledgerActive
                 ? Number(ledger.coverage_percent ?? 0)
                 : universe > 0 ? Number(((covered / universe) * 100).toFixed(1)) : 0,
-              verification_percent: covered > 0 ? Number(((verified / covered) * 100).toFixed(1)) : 0,
+              verification_percent: ledgerActive && Number(ledger.verified_percent ?? 0) > 0
+                ? Number(ledger.verified_percent)
+                : covered > 0 ? Number(((verified / covered) * 100).toFixed(1)) : 0,
               last_updated: sum.generated_at || new Date().toISOString(),
               disclaimer: "These are independently collected field observations and are not official INEC election results.",
               source: "live" as const,
