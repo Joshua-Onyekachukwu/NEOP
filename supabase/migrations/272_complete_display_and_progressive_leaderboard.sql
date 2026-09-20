@@ -19,6 +19,11 @@
 --    wave-progress drift (early waves over-weight APC, late waves
 --    over-weight NDC, mean preserved), producing the real-feeling
 --    APC-leads-then-NDC-overtakes narrative.
+-- 4. PRE-EXISTING (surfaced by 3): a later migration's string-rewrite of
+--    neop_sim_wave dropped `rs.polling_unit_id AS pu_id` from the party
+--    weight CTE's target — every wave step failed at runtime with
+--    column t.pu_id does not exist while the queue reported success=None.
+--    Restored; waves execute again.
 
 -- ── 1. Coverage ledger recognizes completed (published/archived) runs ──
 CREATE OR REPLACE FUNCTION public.get_pu_coverage_summary(p_run uuid DEFAULT NULL)
@@ -545,7 +550,7 @@ BEGIN
   ON CONFLICT (idempotency_key) DO NOTHING;
   GET DIAGNOSTICS v_subs2 = ROW_COUNT;
   WITH target AS (
-    SELECT rs.id AS sub_id, rs.valid_votes, st.name AS state_name
+    SELECT rs.id AS sub_id, rs.valid_votes, rs.polling_unit_id AS pu_id, st.name AS state_name
     FROM result_submissions rs
     JOIN polling_units pu ON pu.id = rs.polling_unit_id
     JOIN states st ON st.id = pu.state_id
