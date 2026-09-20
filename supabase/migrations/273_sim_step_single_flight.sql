@@ -35,6 +35,10 @@ BEGIN
     END IF;
   END IF;
 
+  -- Serialize claimers: the advisory xact lock closes the check-then-claim
+  -- TOCTOU — two concurrent ticks cannot both pass the RUNNING check below.
+  PERFORM pg_advisory_xact_lock(hashtext(v_run::text)::bigint);
+
   -- Reaper: requeue steps whose executor died mid-flight (cold start, 60s
   -- gateway timeout, deploy). 30 min >> the longest legitimate step, and
   -- every step is idempotent, so a requeue cannot double-publish.
@@ -44,7 +48,14 @@ BEGIN
     AND status = 'RUNNING'
     AND claimed_at < NOW() - INTERVAL '30 minutes';
 
-  -- Single-flight claim: exactly one PENDING step becomes RUNNING.
+  -- Single-flight gate: if any step of the run is RUNNING, another executor
+  -- owns the queue right now — hand back empty instead of claiming in
+  -- parallel and thrashing the DB.
+  IF EXISTS (SELECT 1 FROM sim_run_steps WHERE run_id = v_run AND status = 'RUNNING') THEN
+    RETURN NULL;
+  END IF;
+
+  -- Claim exactly one PENDING step.
   UPDATE sim_run_steps
   SET status = 'RUNNING', attempts = attempts + 1, claimed_at = NOW(), result = NULL
   WHERE id = (
