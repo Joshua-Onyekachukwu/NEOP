@@ -74,7 +74,9 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           className="font-display font-bold text-2xl md:text-3xl text-[var(--color-text)]"
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {stats.total_votes > 0 ? `${(stats.total_votes / 1_000_000).toFixed(1)}M` : "—"}
+          {stats.total_votes >= 1_000_000
+            ? `${(stats.total_votes / 1_000_000).toFixed(1)}M`
+            : stats.total_votes > 0 ? stats.total_votes.toLocaleString() : "—"}
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[10px]">
           {stats.total_votes > 0 ? `across all polling units` : `awaiting results`}
