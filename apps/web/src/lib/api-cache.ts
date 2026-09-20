@@ -419,13 +419,19 @@ export const getCachedPartyResults = unstable_cache(
           }
         } catch {}
 
-        // Fallback: published-canonical aggregate (migration 239)
-        try {
-          const { data: pubData, error: pubErr } = await supabase.rpc("get_party_totals_published");
-          if (!pubErr && pubData && pubData.length > 0) {
-            rpcData = pubData;
-          }
-        } catch {}
+        // Fallback: published-canonical aggregate (migration 239). Only
+        // consulted when the primary summary produced nothing — it used to
+        // overwrite the primary unconditionally, and with multiple simulated
+        // elections in the table that summed THREE runs into the public
+        // leaderboard while every other endpoint showed one.
+        if (!rpcData) {
+          try {
+            const { data: pubData, error: pubErr } = await supabase.rpc("get_party_totals_published");
+            if (!pubErr && pubData && pubData.length > 0) {
+              rpcData = pubData;
+            }
+          } catch {}
+        }
 
         if (!rpcData) {
           try {
@@ -508,10 +514,19 @@ export const getCachedPartyResults = unstable_cache(
         let totalResults = 0;
         let verifiedResults = 0;
         try {
-          const { count: pubCount } = await supabase
+          // Count only the active election's published rows — the unscoped
+          // variant double-counted every superseded simulation still on disk.
+          const activeElectionId = (await supabase
+            .from("system_config")
+            .select("active_election_id")
+            .eq("id", SYSTEM_CONFIG_ID)
+            .maybeSingle()).data?.active_election_id as string | undefined;
+          let countQuery = supabase
             .from("canonical_pu_results")
             .select("polling_unit_id", { count: "exact", head: true })
             .eq("status", "PUBLISHED");
+          if (activeElectionId) countQuery = countQuery.eq("election_id", activeElectionId);
+          const { count: pubCount } = await countQuery;
           totalResults = Number(pubCount || 0);
           verifiedResults = totalResults;
         } catch {}
