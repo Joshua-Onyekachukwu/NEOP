@@ -40,13 +40,16 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(v_run::text)::bigint);
 
   -- Reaper: requeue steps whose executor died mid-flight (cold start, 60s
-  -- gateway timeout, deploy). 30 min >> the longest legitimate step, and
-  -- every step is idempotent, so a requeue cannot double-publish.
+  -- gateway timeout, deploy, or the public stats-pump's 50s fetch abort
+  -- killing an in-flight wave). 3 min ≈ 3× the longest legitimate step
+  -- (~22s waves, 60s statement cap) and every step is idempotent, so a
+  -- requeue cannot double-publish — but a longer window would let one
+  -- orphan block the single-flight gate for its whole duration.
   UPDATE sim_run_steps
   SET status = 'PENDING', claimed_at = NULL
   WHERE run_id = v_run
     AND status = 'RUNNING'
-    AND claimed_at < NOW() - INTERVAL '30 minutes';
+    AND claimed_at < NOW() - INTERVAL '3 minutes';
 
   -- Single-flight gate: if any step of the run is RUNNING, another executor
   -- owns the queue right now — hand back empty instead of claiming in
