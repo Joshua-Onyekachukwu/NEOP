@@ -21,8 +21,10 @@
  *   display_voters?: number    votes the public site renders (>= target_voters)
  *   duration_minutes?: number  0 = flat out                  (0-30, default 5)
  *   waves?: number             1-12                          (default 6)
- *   discrepancy_rate?: number  0-1                           (default 0.05)
+ *   discrepancy_rate?: number  0-1                           (default 0.01)
  *   coverage_pct?: number      1-100    % of PUs in scope    (default 50)
+ *   failed_rate? / disrupted_rate? / unavailable_rate? /
+ *   max_published_pct?         outcome-profile overrides    (see OUTCOME_DEFAULTS)
  *   reset_first?: boolean      accepted for compatibility; the reset ALWAYS
  *                              runs as the queue's first CLEANUP step, so
  *                              every launch starts from a clean baseline
@@ -49,12 +51,19 @@ const SYSTEM_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
 // Configurable outcome profile (migration 245): every PU in the universe
 // gets a ledger row and an explicit fate. Failure modes are
 // admin-configurable per launch; nothing is hard-coded in the UI.
+// Outcome-profile defaults. `verified` on the public headline is
+// published / (published + disputed + disrupted), so these decide whether a
+// fully successful run looks finished or broken. The previous
+// 0.05/0.015/0.02/0.95 profile left 17% of reporting polling units
+// unresolved and capped published PUs at 95%, so a complete run still read
+// "83% verified". These values land the headline at ~98.5% while keeping
+// both failure paths exercised and visible.
 const OUTCOME_DEFAULTS = {
-  dispute_rate: 0.05,       // agents disagree -> HUMAN_REVIEW (admin queue)
-  failed_rate: 0.015,       // fails verification -> NOT countable
-  disrupted_rate: 0.02,     // zero votes recorded
+  dispute_rate: 0.01,       // agents disagree -> HUMAN_REVIEW (admin queue)
+  failed_rate: 0.005,       // fails verification -> NOT countable
+  disrupted_rate: 0.005,    // zero votes recorded
   unavailable_rate: 0.01,   // never reached / no data
-  max_published_pct: 0.95,  // ceiling of PUs that can successfully publish
+  max_published_pct: 1.0,   // ceiling of PUs that can successfully publish
 };
 
 export async function POST(request: NextRequest) {
@@ -88,7 +97,7 @@ export async function POST(request: NextRequest) {
     const duration_minutes = Math.max(0, Math.min(30, Number(body.duration_minutes ?? 5)));
     const duration_seconds = Math.round(duration_minutes * 60);
     const waves = Math.max(1, Math.min(12, Number(body.waves) || 6));
-    const discrepancy_rate = Math.max(0, Math.min(1, Number(body.discrepancy_rate ?? 0.05)));
+    const discrepancy_rate = Math.max(0, Math.min(1, Number(body.discrepancy_rate ?? 0.01)));
     // Coverage % of polling units in scope. Disk/row cost tracks coverage,
     // not voters — coverage is the knob for staying under disk quotas.
     const coverage_pct = Math.max(1, Math.min(100, Number(body.coverage_pct ?? 50)));
