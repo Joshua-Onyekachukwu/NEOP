@@ -35,9 +35,16 @@ BEGIN
     END IF;
   END IF;
 
-  -- Serialize claimers: the advisory xact lock closes the check-then-claim
-  -- TOCTOU — two concurrent ticks cannot both pass the RUNNING check below.
-  PERFORM pg_advisory_xact_lock(hashtext(v_run::text)::bigint);
+  -- Serialize claimers. pg_try_advisory_xact_lock (non-blocking): if another
+  -- tick holds the lock, this one exits immediately instead of queueing a
+  -- session. With a blocking lock, a 59s cron interval + a >59s tick caused
+  -- sessions to stack until the connection pool saturated the free-tier DB —
+  -- every other query (including the public summary RPCs) then timed out and
+  -- the live site served zeros. (Run 5, Sep 21 2026.)
+
+  IF NOT pg_try_advisory_xact_lock(hashtext(v_run::text)::bigint) THEN
+    RETURN NULL;
+  END IF;
 
   -- Reaper: requeue steps whose executor died mid-flight (cold start, 60s
   -- gateway timeout, deploy, or the public stats-pump's 50s fetch abort
