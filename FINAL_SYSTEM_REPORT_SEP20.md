@@ -81,3 +81,55 @@ caches), history. No dead simulation buttons found in the audit.
 Ready for: development, internal demo, controlled testing, pilot, and controlled
 election operation with the resilience knobs above noted. Not yet for unattended
 production election operation — that requires a supervised real-feed rehearsal.
+
+---
+
+# September 21 addendum — display-completion & progressive-narrative pass
+
+## What was asked and delivered (verified on the live site)
+
+1. **Coverage / Verified reach ~100% when a simulation completes, with total votes shown.**
+   Root cause: the coverage ledger RPC only recognized runs in
+   `RUNNING/COMPLETED/STOPPED` — a finished run is `PUBLISHED`, so at completion
+   the ledger went inactive and every headline stat fell back to DB-wide INEC
+   denominators (176,846 PUs), pinning the site at ~4%. Fixed in migration 272:
+   ledger recognizes `PUBLISHED`, finalizer reclassifies never-attempted PUs as
+   `UNAVAILABLE` (honest reporting-scope denominator), repairs stranded
+   disputed/failed PUs, and the stats cache prefers ledger-derived percentages.
+   Retest (Run 4): coverage 99.9%, verified 97.8%, total votes 684,455 — all on
+   the live site; state rows reconcile (Abia 4,062 PUs / 4,057 covered / 99.9%).
+
+2. **State-breakdown bars track their own PUs/COV/VER numbers** (previously stuck
+   at 3–4%). Cause: per-state `coverage_percent` used DB-wide PU totals instead
+   of the run's per-state scope. Fixed via run-ledger merge in `api-cache.ts`
+   (migration 272 + code). Retest mid-Run-5 (live): all 37 rows present, each
+   bar equals its own COV÷PU (e.g. Abia 425/4,062 = 10.5%) and moves as waves
+   publish; at finalize they land at the run's ~100% (proven on Run 4).
+
+3. **Progressive national leaderboard — APC leads early, NDC overtakes late.**
+   Two parts: (a) `neop_sim_wave` (migration 272) now drifts the close-scenario
+   party mix linearly across waves — early waves over-weight APC
+   (APC .378/NDC .195), late waves over-weight NDC (APC .182/NDC .405) with the
+   wave-weighted mean preserved, so cumulative totals cross after ~wave 10/12;
+   (b) `get_election_summary` now follows the RUNNING run's election from its
+   first published row (previously the site kept showing the old dataset until
+   finalize, hiding the progression). Retest (Run 5, live): at ~5k PUs the site
+   shows APC 37.9% / NDC 19.9%; bucket ratios per wave confirm the designed
+   drift (0.54 → 0.65 NDC:APC per 100); crossover expected near run end.
+
+## New incident found & fixed during Run 5 (migration 273)
+
+**Wave throughput collapse** (~10 concurrent wave steps → <1 step/8 min on the
+free-tier DB). The public stats route's opportunistic pump (tick?max=10, once
+per minute per warm serverless instance) plus cron plus dashboard pollers made
+unbounded parallel claims. Fixes, all live + committed:
+- `claim_simulation_step` now enforces **single-flight** via a per-run advisory
+  xact lock + RUNNING-existence check (closes the TOCTOU listed as a risk above),
+  with a 3-minute stale-claim reaper (the pump's 50s fetch abort was orphaning
+  in-flight waves; idempotent steps make requeue safe).
+- Waves execute in 12–22s; healthy cadence observed at ~15–60s/step thereafter.
+
+Commits: `d96fefd`, `03aa679`, `ad56c66`, `f8d3071`, `59de476`, `2dc6e8f`;
+migrations 270–273. Run 5 (close scenario, 12 waves, ~44k-PU scope) was launched
+through the admin API exactly as the dashboard does — outcome recorded below
+when finalized.
