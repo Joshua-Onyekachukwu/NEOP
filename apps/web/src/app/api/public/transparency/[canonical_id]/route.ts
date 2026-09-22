@@ -15,10 +15,10 @@ function getServiceClient() {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { canonical_id: string } }
+  { params }: { params: Promise<{ canonical_id: string }> }
 ) {
   try {
-    const { canonical_id } = params;
+    const { canonical_id } = await params;
 
     if (!UUID_RE.test(canonical_id)) {
       return NextResponse.json(

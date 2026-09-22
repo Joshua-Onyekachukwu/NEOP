@@ -14,14 +14,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin(request);
     if (!isAdminSuccess(auth)) return auth.error;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { id } = params;
+    const { id } = await params;
 
     const { data: volunteer, error } = await supabase
       .from("volunteers")
@@ -97,14 +97,14 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin(request);
     if (!isAdminSuccess(auth)) return auth.error;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     const { verification_status, status, training_status } = body;
