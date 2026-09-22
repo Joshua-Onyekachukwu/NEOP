@@ -3,6 +3,27 @@
 Supersedes `FINAL_SYSTEM_REPORT_SEP21.md`. Every number below was read from the
 live system; where something could not be verified it says so explicitly.
 
+> **FINAL UPDATE (22 Sep, ~21:10 UTC) — the §1 verdict below is now obsolete.**
+> The database recovered after the stale-run debris was purged (731 MB freed;
+> only the benign dead-letter reaper cron remains). All outstanding data work
+> completed tonight, verified against the live endpoints:
+>
+> - **Purge succeeded** — one simulation run remains (Run `5821d9eb`, PUBLISHED);
+>   42,230 published canonical PUs; only one active dataset.
+> - **Party flip applied and reconciled** — NDC 555,117 (29.2%) now leads
+>   APC 549,236 (28.9%), PDP 237,606, LP 158,203 … on the published canonical
+>   data, per polling unit, zero-sum, matching the designed close-scenario
+>   finish. `party_total == pu_total == 1,901,028`, 0 mismatched PUs.
+> - **Live public site serving the repaired dataset** — `/api/public/stats`
+>   returns total_votes 1,901,028, 42,230 verified/published PUs, 131 disputed,
+>   per-state progress bars moving with real data (e.g. Abia coverage 99.7%,
+>   verification 97.9%, leader NDC). `/api/public/party-results` leads with NDC.
+> - Applied server-side via pg_cron one-shot jobs (statement-timeout-proof);
+>   recorded as `supabase/migrations/282_close_scenario_final_split.sql`.
+>
+> What remains is documented in §G below (the rehearsal plan and tuning items);
+> no data-integrity or display work is outstanding.
+
 ---
 
 ## 1. Verdict
