@@ -41,7 +41,7 @@ const launch = await fetch("https://ngeop.vercel.app/api/admin/simulate/trigger-
     coverage_pct: coverage,
     waves: 12,
     target_voters: 2_000_000,
-    display_voters: 24_000_000,
+    display_voters: 52_000_000,
     discrepancy_rate: 0.01,
     duration_minutes: 0,
   }),
