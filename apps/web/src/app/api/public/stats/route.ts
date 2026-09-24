@@ -21,8 +21,17 @@ import { publicLimiter, rateLimitResponse, addRateLimitHeaders } from "@/lib/rat
 export const dynamic = "force-dynamic";
 
 // ── Opportunistic pump state (per warm serverless instance) ─────
+// Backstop only. The authoritative driver is the in-database pg_cron job
+// (`SELECT neop_sim_tick_local(24, 50000)` every minute), which needs no
+// external runtime. This HTTP pump exists for the case where that job is
+// unavailable — but it is a SECOND driver racing the same single-flight
+// claim_simulation_step(), and every warm instance carries its own timer, so
+// it multiplies into several competing drivers per minute. Measured Sep 24:
+// with the public site actively polling, run throughput fell from the tick's
+// 24 steps/min ceiling to ~11/min purely on that contention. Kept as a
+// 10-minute fallback so it costs ~1 extra claim/minute instead of ~1/instance.
 let lastPumpAt = 0;
-const PUMP_INTERVAL_MS = 60_000;
+const PUMP_INTERVAL_MS = 600_000;
 
 function pumpSimulationQueue(request: NextRequest): void {
   const now = Date.now();

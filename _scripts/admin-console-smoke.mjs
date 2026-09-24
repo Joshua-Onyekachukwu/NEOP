@@ -67,6 +67,15 @@ const PASSWORD = env.NEOP_ADMIN_PASSWORD;
 const results = [];
 let infraFailure = false;
 
+// Hoisted so writeJson() can be called from the early-exit paths (before the
+// `failed` binding below is initialised) without a TDZ ReferenceError.
+function failureList() {
+  return results.filter((r) => !r.ok);
+}
+function realFailureList() {
+  return failureList().filter((r) => !r.infra);
+}
+
 const check = (name, ok, detail = "", infra = false) => {
   if (infra) infraFailure = true;
   results.push({ name, ok, detail, infra });
@@ -210,8 +219,8 @@ try {
   check("middleware: /admin/dashboard with session cookie returns 200", false, e.message, isInfraError(e));
 }
 
-const failed = results.filter((r) => !r.ok);
-const realFailures = failed.filter((r) => !r.infra);
+const failed = failureList();
+const realFailures = realFailureList();
 
 console.log(
   `\n${results.length - failed.length}/${results.length} checks passed` +
@@ -223,7 +232,7 @@ function writeJson() {
   writeFileSync(
     JSON_OUT,
     JSON.stringify(
-      { base: BASE, results, passed: failed.length === 0, infraFailure, exit: realFailures.length ? 1 : infraFailure ? 2 : 0 },
+      { base: BASE, results, passed: failureList().length === 0, infraFailure, exit: realFailureList().length ? 1 : infraFailure ? 2 : 0 },
       null,
       1
     )

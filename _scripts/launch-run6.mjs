@@ -44,6 +44,7 @@ const launch = await fetch("https://ngeop.vercel.app/api/admin/simulate/trigger-
     display_voters: 52_000_000,
     discrepancy_rate: 0.01,
     duration_minutes: 0,
+    release_published: true,
   }),
 });
 const text = await launch.text();

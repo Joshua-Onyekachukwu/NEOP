@@ -18,6 +18,18 @@ interface RateLimitConfig {
   windowMs: number;
   /** Maximum requests per window per IP */
   max: number;
+  /**
+   * Optional bucket name. Defaults to the request's pathname, so each
+   * endpoint gets its OWN budget per IP.
+   *
+   * This matters: a single page load fans out to several public endpoints
+   * (/stats, /results, /party-results, /config, /polling-units,
+   * /polling-units/status-changes). Keying the counter on IP + window alone
+   * made those share one 120/min budget, so the page rate-limited ITSELF —
+   * measured Sep 24: near-total 429 storm on every public endpoint mid-run,
+   * freezing the UI at an empty leaderboard and a 0 headline.
+   */
+  bucket?: string;
 }
 
 interface RateLimitResult {
@@ -59,7 +71,17 @@ export function rateLimit(config: RateLimitConfig) {
   return {
     check(request: NextRequest): RateLimitResult {
       const ip = getClientIp(request);
-      const key = `${ip}:${config.windowMs}`;
+      // Per-endpoint bucket (see RateLimitConfig.bucket) — without this every
+      // public route shares one counter and a normal page load 429s itself.
+      let bucket = config.bucket;
+      if (!bucket) {
+        try {
+          bucket = new URL(request.url).pathname;
+        } catch {
+          bucket = "public";
+        }
+      }
+      const key = `${bucket}:${ip}:${config.windowMs}`;
       const now = Date.now();
       const resetMs = now + config.windowMs;
 

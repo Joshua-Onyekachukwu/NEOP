@@ -28,6 +28,11 @@
  *   reset_first?: boolean      accepted for compatibility; the reset ALWAYS
  *                              runs as the queue's first CLEANUP step, so
  *                              every launch starts from a clean baseline
+ *   release_published?: boolean  release-then-run (migration 285): release
+ *                              the currently published simulated dataset
+ *                              BEFORE the quota gate so coverage is gated
+ *                              against the full plan envelope. Refused for
+ *                              LIVE_ELECTION mode and non-simulated data.
  * }
  *
  * Pre-flight (migration 261): the launch is REFUSED (400) when the
@@ -102,6 +107,12 @@ export async function POST(request: NextRequest) {
     // not voters — coverage is the knob for staying under disk quotas.
     const coverage_pct = Math.max(1, Math.min(100, Number(body.coverage_pct ?? 50)));
     const reset_first = body.reset_first !== false;
+    // Release-then-run (migration 285): when true, the dataset currently
+    // published on the live site is released BEFORE the quota gate runs, so
+    // coverage is gated against the plan envelope rather than the envelope
+    // minus the old dataset. The release function refuses LIVE_ELECTION
+    // mode and refuses to release anything but a [SIM]/[TEST] dataset — a
+    // real dataset can never be released from this path.
 
     // Optional per-launch outcome profile overrides (§4: configurable,
     // not hard-coded). dispute_rate is BOUND to discrepancy_rate — the
@@ -117,6 +128,21 @@ export async function POST(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ── Release-then-run (migration 285) ─────────────────────────
+    // Runs BEFORE the gate: the old dataset is about to be replaced by
+    // this launch, so gating on top of it would understate the achievable
+    // coverage. No-op (refusal object) when there is nothing to release.
+    let release: Record<string, unknown> | null = null;
+    if (body.release_published === true) {
+      const { data: relData, error: relErr } = await supabase.rpc(
+        "simulation_release_published"
+      );
+      release = (relData as Record<string, unknown>) ?? {
+        released: false,
+        error: relErr?.message ?? "release rpc unavailable",
+      };
+    }
 
     // ── Pre-flight quota guard ──────────────────────────────────
     // Storage cost tracks COVERAGE (published PUs × ~6.2 KB + the full
@@ -167,6 +193,7 @@ export async function POST(request: NextRequest) {
             retained_bytes: verdict.retainedBytes,
             projected_peak_with_retained: verdict.projectedPeakBytes,
           },
+          release,
         },
         { status: 400 }
       );
@@ -282,6 +309,7 @@ export async function POST(request: NextRequest) {
         coverage_pct,
         run_id: runId,
         outcomes,
+        release,
         cleanup:
           "queued as first step — reclaims superseded batches only; the dataset " +
           "currently published on the live site is retained until this run publishes",

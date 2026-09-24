@@ -7,12 +7,24 @@ import { invalidateAllCaches } from "@/lib/api-cache";
 /**
  * DB-checkpointed simulation engine executor.
  *
- * Each call claims PENDING steps of the active run from sim_run_steps
- * (SKIP LOCKED — safe under concurrency), executes them, and marks them
- * DONE/FAILED. Every step is idempotent and durably recorded, so a run
+ * Each call executes the next PENDING step(s) of the active run and marks
+ * them DONE/FAILED. Every step is idempotent and durably recorded, so a run
  * survives Vercel cold starts: whoever calls next (cron every minute,
  * the dashboard poller, or the launch pumper) simply continues from
  * the queue.
+ *
+ * MIGRATION 287 — EXECUTION MODEL. The engine no longer claims steps in JS.
+ * Run 7 evidence: with the JS path claiming steps directly, three drivers
+ * (in-DB cron tick, legacy pg_net HTTP driver, JS poller) raced for
+ * claim_simulation_step()'s single-flight lock; the in-DB tick — the only
+ * one with a 24-step/50 s budget — read every lost race as "queue drained"
+ * and exited, capping throughput at ~4 steps/min for 1-second waves
+ * (101-minute wall for 5.4 minutes of compute).
+ *
+ * The HTTP path now delegates each invocation to neop_sim_tick_local()
+ * (in-DB, budget-bounded, advisory-lock-guarded) and only falls back to
+ * the JS loop if the RPC is unavailable. One executor = no contention:
+ * the claim can never be held mid-step by a 20–100 s JS wave anymore.
  */
 
 const DATA_CHUNKS = 24;
@@ -30,7 +42,7 @@ interface StepRow {
   id: number;
   run_id: string;
   seq: number;
-  kind: "LEDGER" | "INIT" | "WAVE" | "CLEANUP";
+  kind: "LEDGER" | "INIT" | "WAVE" | "CLEANUP" | "COMPACTION";
   wave_index: number | null;
   chunk_index: number | null;
   chunk_count: number | null;
@@ -63,6 +75,29 @@ export async function executeTickSteps(
   try {
     await supabase.rpc("retry_failed_steps", { p_max_attempts: 4 });
   } catch {}
+
+  // Delegation window: hand the whole invocation to the in-DB tick once.
+  // The tick itself loops (24 steps / 50 s budget), waits out claim
+  // contention instead of exiting, and finalizes+publishes on drain.
+  try {
+    const { data: tick, error: tickErr } = await supabase.rpc("neop_sim_tick_local", {
+      p_max: maxSteps,
+      p_budget_ms: budgetMs,
+    });
+    if (tickErr) throw new Error(tickErr.message);
+    const t = (Array.isArray(tick) ? tick[0] : tick) ?? {};
+    processed = Number(t.processed ?? 0);
+    const { count } = await supabase
+      .from("sim_run_steps")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "PENDING");
+    remaining = Number(count ?? 0);
+    runFinished = t.finalized === true;
+    if (t.error) lastError = String(t.error);
+    return { processed, remaining, run_finished: runFinished, last_error: lastError };
+  } catch {
+    // RPC unavailable (migration 275 not applied): legacy JS loop below.
+  }
 
   while (processed < maxSteps && Date.now() - started < budgetMs) {
     const { data: claimed, error: claimErr } = await supabase.rpc(
@@ -125,6 +160,8 @@ async function executeStep(supabase: SupabaseClient, step: StepRow): Promise<any
   switch (step.kind) {
     case "CLEANUP":
       return executeCleanupStep(supabase, step);
+    case "COMPACTION":
+      return executeCompactionStep(supabase, step);
     case "LEDGER":
       return executeLedgerStep(supabase, step);
     case "INIT":
@@ -151,9 +188,30 @@ async function executeCleanupStep(supabase: SupabaseClient, step: StepRow): Prom
     p_keep_run: step.run_id,
   });
   if (error) throw new Error(`cleanup: ${error.message}`);
-  // Compaction is skipped on purpose: VACUUM FULL needs an exclusive lock
-  // and its space return is unnecessary for the quota math (the guard
-  // already projects the DELETEd size). Autovacuum reclaims the rest.
+  // Compaction is skipped here on purpose: VACUUM FULL needs an exclusive
+  // lock, and its space return is unnecessary for the quota math (the guard
+  // already projects the DELETEd size). Autovacuum reclaims the rest during
+  // the run; the deep reclaim happens once, post-publication, via the
+  // queued COMPACTION step below (migration 285).
+  return data ?? {};
+}
+
+/**
+ * Final step of every run (after the run has published): schedule the
+ * bare-statement VACUUM FULL one-shots on the churn-heaviest tables via
+ * pg_cron (migration 285). Bare single statements are mandatory — pg_cron
+ * wraps multi-statement commands in a transaction block and VACUUM cannot
+ * run inside one. The one-shots fire outside any transaction a minute
+ * later and are named with the run prefix so they can be identified and
+ * unscheduled afterwards; the dead-space reclaim that previously required
+ * the manual 873→779 MB cleanup now happens on every run automatically.
+ */
+async function executeCompactionStep(supabase: SupabaseClient, step: StepRow): Promise<any> {
+  const { data, error } = await supabase.rpc("sim_schedule_compaction", {
+    p_run: step.run_id,
+    p_delay_minutes: 2,
+  });
+  if (error) throw new Error(`compaction: ${error.message}`);
   return data ?? {};
 }
 

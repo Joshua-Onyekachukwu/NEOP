@@ -484,6 +484,7 @@ const AdminDashboard: React.FC = () => {
           discrepancy_rate: 0.05,
           coverage_pct: simCoverage,
           reset_first: true,
+          release_published: true,
         }),
         signal: controller.signal,
       });
@@ -549,6 +550,7 @@ const AdminDashboard: React.FC = () => {
             discrepancy_rate: 0.05,
             coverage_pct: simCoverage,
             reset_first: true,
+            release_published: true,
           }),
           signal: controller.signal,
         });

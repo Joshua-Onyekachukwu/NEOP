@@ -1,0 +1,21 @@
+-- ============================================================
+-- NEOP 286 — neop_sim_tick_local: execute the COMPACTION step kind (285)
+-- ============================================================
+-- Without this branch the in-DB driver's ELSE arm completes a COMPACTION
+-- step as a noop and the post-publication VACUUM FULL one-shots would
+-- never be scheduled. The branch mirrors the HTTP engine's
+-- executeCompactionStep (lib/sim-engine.ts):
+--
+--     ELSIF v_step.kind = 'COMPACTION' THEN
+--       v_result := public.sim_schedule_compaction(v_step.run_id, 2);
+--
+-- Full function body applied to the database as migration
+-- 'sim_tick_local_compaction_step' (identical to 275's definition plus the
+-- branch above). Keep this file as the durable record.
+-- ============================================================
+
+-- The complete function is 285 + this branch; see the applied migration
+-- history in Supabase for the verbatim definition. The delta vs 275 is the
+-- COMPACTION branch shown above, inserted between the CLEANUP and LEDGER
+-- arms, and the function signature/head is unchanged:
+--   neop_sim_tick_local(p_max int DEFAULT 4, p_budget_ms int DEFAULT 30000)
