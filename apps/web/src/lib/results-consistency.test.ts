@@ -163,12 +163,20 @@ suite("Results consistency: derived rates", () => {
     expect(stats.coverage_percent).toBeCloseTo(derived, 0);
   });
 
-  it("verification_percent is computed from verified/covered", async () => {
+  it("verification_percent is the published share of REPORTING PUs", async () => {
     const stats = await fetchJSON("/api/public/stats");
     if (!stats.verification_percent || !stats.covered_polling_units) return;
-    const derived = (stats.verified_polling_units / stats.total_polling_units) * 100;
-    // The API computes it against the universe (see api-cache.ts) — assert it
-    // tracks the underlying counts rather than being an independent number.
+    // §2 glossary (get_pu_coverage_summary): verified_percent = published /
+    // (total − unavailable − awaiting) — of the PUs that actually reported,
+    // how many published a result. The old assertion divided by the whole
+    // universe, which conflated the verification rate with the published
+    // share and contradicted the API on any dataset with unreported PUs.
+    const reporting =
+      stats.total_polling_units -
+      (stats.unavailable_pus || 0) -
+      (stats.awaiting_pus || 0);
+    if (reporting <= 0) return;
+    const derived = (stats.verified_polling_units / reporting) * 100;
     expect(stats.verification_percent).toBeCloseTo(derived, 0);
   });
 
@@ -255,5 +263,66 @@ suite("Results consistency: config denominator and data mode", () => {
     const stats = await fetchJSON("/api/public/stats");
     if (!stats.disclaimer) return; // older API shape
     expect(stats.disclaimer.toLowerCase()).toContain("not official");
+  });
+});
+
+// ─── /stats must carry a leaderboard; one word per denominator (§2) ───
+
+suite("Results consistency: stats leaderboard + rate glossary", () => {
+  it("/api/public/stats always carries a leaderboard array", async () => {
+    const stats = await fetchJSON("/api/public/stats");
+    // Regression (Phase 3, Issue 4): the summary's party rows were dropped,
+    // so /stats had no leaderboard at all while /party-results worked —
+    // any consumer keying off stats saw a silent empty national board.
+    expect(Array.isArray(stats.leaderboard)).toBe(true);
+  });
+
+  it("stats leaderboard agrees with the party-results endpoint", async () => {
+    const [stats, parties] = await Promise.all([
+      fetchJSON("/api/public/stats"),
+      fetchJSON("/api/public/party-results"),
+    ]);
+    const sb = stats.leaderboard;
+    const pr = parties.parties;
+    if (!Array.isArray(sb) || sb.length === 0 || !Array.isArray(pr) || pr.length === 0) return;
+    // Same source (get_election_summary party rows) — same winner, same
+    // size, and identical per-party totals (display scaling applies to
+    // both equally).
+    expect(sb.length).toBe(pr.length);
+    const byAbbrS = Object.fromEntries(sb.map((p: any) => [p.abbreviation, Number(p.total_votes)]));
+    for (const p of pr) {
+      expect(byAbbrS[p.abbreviation], `${p.abbreviation} total`).toBe(Number(p.total_votes));
+    }
+    expect(sb[0].total_votes).toBe(Math.max(...sb.map((p: any) => Number(p.total_votes))));
+    expect(sb[0].abbreviation).toBe(pr[0].abbreviation);
+  });
+
+  it("leaderboard percentages are shares of the leaderboard grand total", async () => {
+    const stats = await fetchJSON("/api/public/stats");
+    const lb = stats.leaderboard;
+    if (!Array.isArray(lb) || lb.length === 0) return;
+    const grand = lb.reduce((s: number, p: any) => s + Number(p.total_votes || 0), 0);
+    if (grand <= 0) return; // all-zero dataset
+    for (const p of lb) {
+      expect(p.percentage, `${p.abbreviation} share`).toBeCloseTo(
+        ((Number(p.total_votes) / grand) * 100),
+        0
+      );
+    }
+  });
+
+  it("accounted share + awaiting share = 100% of the universe (one denominator, stated)", async () => {
+    const stats = await fetchJSON("/api/public/stats");
+    if (stats.accounted_pus == null) return; // non-ledger dataset
+    // coverage_percent IS the accounted share — the two must agree, so the
+    // UI can label the card "Accounted" without inventing a number.
+    const derivedAccounted = (stats.accounted_pus / stats.total_polling_units) * 100;
+    expect(stats.coverage_percent).toBeCloseTo(derivedAccounted, 0);
+    // published_percent must be the PUBLISHED share of the same universe —
+    // the number the ticker and lifecycle show as "published (N%)".
+    if (stats.published_percent != null) {
+      const derivedPublished = (stats.published_pus / stats.total_polling_units) * 100;
+      expect(stats.published_percent).toBeCloseTo(derivedPublished, 0);
+    }
   });
 });

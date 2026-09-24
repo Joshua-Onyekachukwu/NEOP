@@ -40,6 +40,8 @@ interface GlobalStats {
   coverage_percent: number;
   verification_percent: number;
   total_votes: number;
+  /** Published share of the universe (ledger runs only; null otherwise). */
+  published_percent?: number | null;
   published_pus?: number | null;
   disputed_pus?: number | null;
   failed_pus?: number | null;
@@ -179,6 +181,10 @@ export function RealtimeLayer({
           coverage_percent: statsData.coverage_percent || 0,
           verification_percent: statsData.verification_percent || 0,
           total_votes: statsData.total_votes || 0,
+          // Published share of the universe — StatsBar shows it under the
+          // Accounted card so one page never presents two numbers as
+          // "coverage" (§2 glossary).
+          published_percent: statsData.published_percent ?? null,
           published_pus: statsData.published_pus,
           disputed_pus: statsData.disputed_pus,
           failed_pus: statsData.failed_pus,

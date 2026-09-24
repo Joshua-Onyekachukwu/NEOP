@@ -25,6 +25,35 @@ async function getDisplayScale(): Promise<number> {
   return 1;
 }
 
+/**
+ * National leaderboard rows for the stats payload — the SAME source the
+ * party-results endpoint uses (get_election_summary's per-party rows), so
+ * the two endpoints can never disagree. Accepts either key convention
+ * (summary rows use name/abbreviation/color; the published-totals RPC uses
+ * party_name/party_abbreviation/party_color).
+ */
+function buildLeaderboard(parties: any[] | null | undefined): any[] {
+  if (!Array.isArray(parties) || parties.length === 0) return [];
+  const rows = parties
+    .map((p: any) => ({
+      name: p.name || p.party_name || p.abbreviation || p.party_abbreviation,
+      abbreviation: p.abbreviation || p.party_abbreviation,
+      color: p.color || p.party_color || null,
+      total_votes: Number(p.total_votes || 0),
+    }))
+    .sort(
+      (a: any, b: any) =>
+        b.total_votes - a.total_votes ||
+        String(a.abbreviation).localeCompare(String(b.abbreviation))
+    );
+  const grand = rows.reduce((s: number, r: any) => s + r.total_votes, 0);
+  // Percentages are shares of the unscaled grand total — display scaling
+  // multiplies magnitudes only, so shares must be computed here.
+  return rows.map((r: any) => ({
+    ...r,
+    percentage: grand > 0 ? Number(((r.total_votes / grand) * 100).toFixed(1)) : 0,
+  }));
+}
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -232,7 +261,19 @@ export const getCachedStats = unstable_cache(
               sim_run_id: ledger?.run_id ?? null,
               sim_run_status: ledger?.run_status ?? null,
               total_votes: Number(nat.total_votes || 0),
+              // National leaderboard — same summary rows /api/public/party-
+              // results serves. This was previously dropped here, so /stats
+              // carried no leaderboard at all while party-results worked;
+              // any consumer keying off stats got a silent empty/0.
+              leaderboard: buildLeaderboard(sum.parties),
               state_breakdown: mergedStates,
+              // §2 glossary — one word per denominator, never one word for
+              // two numbers (get_pu_coverage_summary computes all three):
+              //   coverage_percent     = ACCOUNTED share of the universe
+              //                          (published+disputed+failed+disrupted
+              //                          +unavailable; awaiting excluded)
+              //   published_percent    = PUBLISHED share of the universe
+              //   verification_percent = published share of REPORTING PUs
               coverage_percent: ledgerActive
                 ? Number(ledger.coverage_percent ?? 0)
                 : universe > 0 ? Number(((covered / universe) * 100).toFixed(1)) : 0,
@@ -346,6 +387,9 @@ export const getCachedStats = unstable_cache(
           covered_polling_units: totalCovered,
           verified_polling_units: totalVerified,
           total_votes: totalVotes,
+          // Legacy fallback chain has no party aggregate — the field must
+          // still exist so consumers can rely on one stats shape.
+          leaderboard: [],
           state_breakdown: breakdown.map((row: any) => {
             const stateTotal = Number(row.total_pus || row.total_polling_units || 0);
             const stateCovered = Number(row.covered_pus || row.covered_polling_units || row.covered || 0);
@@ -378,11 +422,17 @@ export const getCachedStats = unstable_cache(
       if (m > 1) {
         sbResult.total_votes = Math.round(Number(sbResult.total_votes || 0) * m);
         // State-level display numbers must scale identically so every
-        // surface reconciles with the national headline.
+        // surface reconciles with the national headline. The leaderboard's
+        // percentage shares were computed on unscaled totals above, so they
+        // survive the scaling untouched.
         sbResult.state_breakdown = (sbResult.state_breakdown || []).map((s: any) => ({
           ...s,
           total_votes: Math.round(Number(s.total_votes || 0) * m),
           leader_votes: Math.round(Number(s.leader_votes || 0) * m),
+        }));
+        sbResult.leaderboard = (sbResult.leaderboard || []).map((p: any) => ({
+          ...p,
+          total_votes: Math.round(Number(p.total_votes || 0) * m),
         }));
       }
       lastGoodStats.value = sbResult;
@@ -408,6 +458,7 @@ export const getCachedStats = unstable_cache(
       covered_polling_units: 0,
       verified_polling_units: 0,
       total_votes: 0,
+      leaderboard: [],
       state_breakdown: [],
       coverage_percent: 0,
       verification_percent: 0,

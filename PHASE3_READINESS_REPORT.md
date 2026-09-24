@@ -335,17 +335,25 @@ after Run 8 or Run 9.** The only manual vacuum in this session predates the fix.
   `9ea7865`). Until committed + deployed, production launches cannot pass the release flag and
   coverage stays capped at ~12% without a manual release.
 
-### Additional findings from the post-publish public check
+### Additional findings from the post-publish public check — **BOTH FIXED 2026-09-24 (late session)**
 
-* **Highest-value page 4: `/api/public/stats` returns no populated `leaderboard` at all** (empty even
-  cache-busted, after publish), while `/api/public/party-results` returns the full ordered party
-  totals. The site's national headline therefore renders **0**. This is the same symptom as Issue 2
-  but it survives publication — so it is a **route/front-end contract mismatch**, not merely a
-  pre-publish state, and it needs its own fix.
-* **Coverage semantics disagree between endpoints:** `/api/public/stats` reported
-  `coverage_percent: 99.7` (ledger-accounted PUs) for the same dataset where
-  `get_election_summary()` reports **14.4%** (published PUs). Two different denominators presented
-  under one name — a correctness/clarity defect in public reporting.
+* ~~**Highest-value page 4: `/api/public/stats` returns no populated `leaderboard` at all**~~
+  **FIXED:** `getCachedStats()` was dropping `get_election_summary`'s `parties` rows on the floor
+  (the same field that makes `/party-results` work). `/stats` now carries `leaderboard` built from
+  that one source — 9 parties, display-scaled, percentage shares computed on unscaled totals.
+  Verified live: NDC 17,455,048 (38.9%) identical on both endpoints; 4 new consistency tests pin it.
+* ~~**Coverage semantics disagree between endpoints**~~ **FIXED (rename, not renumber):** the DB
+  emits three distinct, well-defined rates (`coverage_percent` = accounted/total 99.7,
+  `published_percent` = published/total 11.5, `verified_percent` = published/reporting 98.0) — the
+  defect was UI labelling. The stat card is now **"Accounted"** with the published share shown
+  explicitly under it (`· published 11.5%`), the Verified card says "published results", and a
+  §2-glossary comment in `api-cache.ts` states each denominator at the source. The stale
+  `verification_percent` test assertion (which embodied the old conflation) was corrected to the
+  real contract. Also fixed en route: `middleware.ts` bucketed ALL `/api/public/*` into one
+  per-IP token bucket — the middleware-layer twin of Issue 1; now per-endpoint (a bot-classified
+  visitor drained 60 tokens on one homepage load).
+* Remaining work: **commit + deploy** (fixes verified on local dev against production data;
+  production still serves the old code).
 
 ---
 
@@ -374,9 +382,9 @@ after Run 8 or Run 9.** The only manual vacuum in this session predates the fix.
 
 ### Public system
 * ✅ Live updates, map, state pages render — re-verified in final Phase H pass, desktop + mobile, zero console errors
-* ❌ `/api/public/stats` never populates `leaderboard` → national headline shows **0** (Issue 4, open)
-* ❌ Coverage shown as 99.7% by `/stats` vs 14.4% by the summary for the same data (Issue 5, open)
-* ❌ 429 storm (Issue 1, fixed in code, **not yet deployed**)
+* ✅ `/api/public/stats` leaderboard — **fixed** (same source as `/party-results`; 4 regression tests)
+* ✅ Coverage semantics — **fixed**: card labelled "Accounted", published share shown separately, one denominator per word (§2 glossary comment at source)
+* ❌ 429 storm (Issues 1 + middleware twin, both fixed in code, **not yet deployed**)
 
 ### Admin
 * ✅ Real simulation startable through Admin; progress and errors visible
@@ -400,15 +408,14 @@ rehearsal but should be fixed before the rehearsal is made public-facing.
 
 ## 10. Outstanding work, in priority order
 
-1. **Commit + deploy the working tree** — connector idempotency-hash fix, per-endpoint rate limits,
-   pump backoff, release wiring, migrations 293/294 in the migration history. This is now the **only
+1. **Commit + deploy the working tree** — connector idempotency-hash fix, per-endpoint rate limits
+   (route layer **and** the middleware public bucket), pump backoff, release wiring, stats
+   leaderboard, coverage relabel, migrations 293/294. This is now the **only
    gate** between the current state and a supervised real-feed rehearsal.
 2. **Supervised real-feed rehearsal on production** — enable flag in a bounded window, monitor the
    ledger live, kill-switch drill on prod, rollback script staged and ready.
-3. Unify coverage semantics — `/stats` reports 99.7% (ledger-accounted PUs) where the summary
-   reports 11.5% (published PUs): same word, two denominators, on the same public page.
-4. Decide the pre-publish public state (Issue 2).
-5. Add the audit-churn trim to the per-run CLEANUP step, so churn is bounded even when runs are
+3. Decide the pre-publish public state (Issue 2).
+4. Add the audit-churn trim to the per-run CLEANUP step, so churn is bounded even when runs are
    *retained* rather than released.
-6. Optional: rewrite `neop_sim_wave`'s `wave_cmp` temp-table join (the residual 20–36 s/chunk
+5. Optional: rewrite `neop_sim_wave`'s `wave_cmp` temp-table join (the residual 20–36 s/chunk
    bottleneck) to push steady-state runs from 15.8 min toward the ~12 min tick-cadence floor.

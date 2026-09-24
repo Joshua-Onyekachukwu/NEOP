@@ -428,7 +428,17 @@ export function middleware(request: NextRequest) {
   const ip = getClientIp(request);
   const config = getRateConfig(pathname, bot, underAttack);
   const now = Date.now();
-  const bucketKey = `${ip}:${config.label}`;
+  // Per-ENDPOINT bucket for public API paths. A single page load fans out to
+  // ~6 /api/public/* endpoints and then polls several of them, so one shared
+  // per-IP bucket let a normal visitor 429 themselves — the middleware-layer
+  // copy of the route-layer bug fixed in src/lib/rate-limit.ts (measured
+  // Sep 24: bot-classified visitors drained 60 tokens in under a minute on
+  // the homepage alone). Each endpoint keeps its own budget, so abuse
+  // impact per endpoint is unchanged.
+  const bucketKey =
+    pathname.indexOf("/api/public") === 0
+      ? `${ip}:${config.label}:${pathname}`
+      : `${ip}:${config.label}`;
   const result = checkBucket(bucketKey, config.maxTokens, config.refillRate, now);
 
   let response: NextResponse;

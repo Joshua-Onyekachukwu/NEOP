@@ -18,18 +18,31 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
   // Client-side division by the INEC universe is only a fallback for
   // non-simulation data — during/completed simulations it showed a
   // full-country run stuck at ~4% (7,167 PUs / 176,846).
+  //
+  // §2 glossary — one word per denominator: coverage_percent from the API
+  // is the ACCOUNTED share of the universe (published+disputed+failed+
+  // disrupted+unavailable; awaiting excluded), so this card is labelled
+  // "Accounted". The PUBLISHED share arrives separately as
+  // published_percent and is shown under it — labelling both "coverage"
+  // made the same page present 99.7% and 11.5% as one number.
   const coveragePercent =
     Number((stats as any).coverage_percent || 0) ||
     (inecTotal > 0 ? Math.min((covered / inecTotal) * 100, 100) : 0);
   const verificationPercent =
     Number((stats as any).verification_percent || 0) ||
     (inecTotal > 0 ? Math.min((verified / inecTotal) * 100, 100) : 0);
+  // Ledger-scoped published share (null when no run ledger exists).
+  const publishedPercent =
+    (stats as any).published_percent != null
+      ? Number((stats as any).published_percent)
+      : null;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4" role="region" aria-label="Key statistics">
-      {/* Coverage */}
+      {/* Accounted (§2 glossary: published+disputed+failed+disrupted+
+          unavailable share of the universe — NOT the published share) */}
       <div className="py-[14px] md:py-[16px] px-[14px] md:px-[20px] border-r border-[var(--color-gray-100)]">
-        <div className="stat-label mb-[4px]">Coverage</div>
+        <div className="stat-label mb-[4px]">Accounted</div>
         <div
           className="font-display font-bold text-2xl md:text-3xl text-[var(--color-green-bright)]"
           style={{ fontVariantNumeric: "tabular-nums" }}
@@ -43,7 +56,13 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           />
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[4px]">
-          {hasData ? `${covered.toLocaleString()} of ${inecTotal.toLocaleString()} PUs` : `Awaiting simulation data`}
+          {hasData
+            ? `${covered.toLocaleString()} of ${inecTotal.toLocaleString()} PUs${
+                publishedPercent != null
+                  ? ` · published ${publishedPercent.toFixed(1)}%`
+                  : ""
+              }`
+            : `Awaiting simulation data`}
         </div>
       </div>
 
@@ -63,7 +82,7 @@ const StatsBar: React.FC<{ refreshKey?: number }> = ({ refreshKey }) => {
           />
         </div>
         <div className="font-mono text-[10px] text-[var(--color-text-dim)] mt-[4px]">
-          {hasData ? `${verified.toLocaleString()} results confirmed` : `No results yet`}
+          {hasData ? `${verified.toLocaleString()} published results` : `No results yet`}
         </div>
       </div>
 
